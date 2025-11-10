@@ -1,1 +1,20 @@
 /target
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.pyo
+*.so
+*.dylib
+*.dll
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+# SQLite
+*.db
+*.sqlite
+*.sqlite3

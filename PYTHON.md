@@ -129,18 +129,66 @@ print(f"Recorded generations: {generations}")
 
 ## Building for Distribution
 
-To build wheels for distribution:
+### Local Development
 
 ```bash
-# Build for current platform
+# Install in current environment for development
+maturin develop --release
+```
+
+### Building for Current Platform
+
+```bash
+# Build for current platform (macOS ARM or Intel)
 maturin build --release
 
 # Build for multiple Python versions (requires them to be installed)
 maturin build --release --find-interpreter
-
-# Install in current environment
-maturin develop --release
 ```
+
+### Cross-Platform Builds
+
+#### macOS Universal (Apple Silicon + Intel)
+
+```bash
+# Build a universal wheel that works on both ARM and Intel Macs
+maturin build --release --target universal2-apple-darwin
+```
+
+First add the required targets:
+```bash
+rustup target add aarch64-apple-darwin
+rustup target add x86_64-apple-darwin
+```
+
+#### Linux x86_64 (using Docker)
+
+**Note:** Requires Docker to be installed and running.
+
+```bash
+# Build for Linux x86_64 with Python 3.12
+docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.12
+
+# Build for multiple Python versions
+docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.10 -i python3.11 -i python3.12
+```
+
+First add the Linux target:
+```bash
+rustup target add x86_64-unknown-linux-gnu
+```
+
+#### Build All Platforms
+
+```bash
+# macOS universal
+maturin build --release --target universal2-apple-darwin
+
+# Linux x86_64 (via Docker)
+docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.10 -i python3.11 -i python3.12
+```
+
+All wheels will be created in `target/wheels/`.
 
 ## Performance Notes
 

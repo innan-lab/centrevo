@@ -6,9 +6,10 @@
 
 use crate::evolution::{SubstitutionModel, RecombinationParams, GCContentFitness, LengthFitness, SequenceSimilarityFitness};
 use crate::base::{Alphabet, Nucleotide};
+use serde::{Serialize, Deserialize};
 
 /// Parameters for defining the initial repeat sequence structure.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepeatStructure {
     /// Alphabet used for sequences
     pub alphabet: Alphabet,
@@ -51,7 +52,7 @@ impl RepeatStructure {
 }
 
 /// Parameters for mutation processes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MutationConfig {
     /// Substitution model for point mutations
     pub model: SubstitutionModel,
@@ -72,7 +73,7 @@ impl MutationConfig {
 }
 
 /// Parameters for recombination processes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecombinationConfig {
     /// Recombination parameters
     pub params: RecombinationParams,
@@ -97,7 +98,7 @@ impl RecombinationConfig {
 }
 
 /// Parameters for fitness/selection.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FitnessConfig {
     /// GC content fitness function
     pub gc_content: Option<GCContentFitness>,
@@ -137,7 +138,7 @@ impl FitnessConfig {
 }
 
 /// High-level simulation parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulationConfig {
     /// Number of diploid individuals in population
     pub population_size: usize,

@@ -1,6 +1,8 @@
+use serde::{Serialize, Deserialize};
+
 /// Represents a single nucleotide base.
 /// Uses u8 internally (0=A, 1=C, 2=G, 3=T) for efficiency.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Nucleotide {
     A = 0,

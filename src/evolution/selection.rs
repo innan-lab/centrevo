@@ -4,6 +4,7 @@
 //! length-based, and sequence similarity fitness functions.
 
 use crate::genome::{Chromosome, Individual};
+use serde::{Serialize, Deserialize};
 
 /// Trait for scoring fitness of a single haplotype (chromosome).
 pub trait HaplotypeFitness {
@@ -31,7 +32,7 @@ pub trait IndividualFitness: HaplotypeFitness {
 /// GC content-based fitness function.
 ///
 /// Fitness is maximized when the GC content is close to the optimum value.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GCContentFitness {
     /// Optimal GC content (between 0.0 and 1.0)
     pub optimum: f64,
@@ -89,7 +90,7 @@ impl IndividualFitness for GCContentFitness {}
 /// Length-based fitness function.
 ///
 /// Fitness follows a log-normal distribution centered around the optimal length.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LengthFitness {
     /// Optimal sequence length in bases
     pub optimum: usize,
@@ -142,7 +143,7 @@ impl IndividualFitness for LengthFitness {}
 /// Sequence similarity fitness function.
 ///
 /// Fitness is higher when two haplotypes are more similar.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SequenceSimilarityFitness {
     /// Shape parameter controlling decline rate (higher = steeper decline)
     pub shape: f64,

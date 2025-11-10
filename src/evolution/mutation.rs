@@ -5,12 +5,13 @@
 
 use rand::Rng;
 use crate::base::{Alphabet, Nucleotide, Sequence};
+use serde::{Serialize, Deserialize};
 
 /// Substitution model for nucleotide mutations.
 ///
 /// This implements a simple uniform substitution model where all off-diagonal
 /// substitutions occur with equal probability.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubstitutionModel {
     /// The alphabet for this model
     alphabet: Alphabet,

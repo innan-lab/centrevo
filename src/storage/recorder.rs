@@ -5,9 +5,10 @@ use crate::simulation::{Population, SimulationConfig};
 use crate::storage::{Database, DatabaseError};
 use rusqlite::params;
 use std::sync::Arc;
+use serde::{Serialize, Deserialize};
 
 /// Recording strategy for when to persist simulation state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RecordingStrategy {
     /// Record every N generations.
     EveryN(usize),
@@ -170,13 +171,9 @@ impl Recorder {
 
     /// Record simulation metadata.
     pub fn record_metadata(&mut self, config: &SimulationConfig) -> Result<(), DatabaseError> {
-        // Create a simple JSON summary without full serialization
-        let params_json = format!(
-            r#"{{"population_size": {}, "total_generations": {}, "seed": {}}}"#,
-            config.population_size,
-            config.total_generations,
-            config.seed.map(|s| s.to_string()).unwrap_or_else(|| "null".to_string())
-        );
+        // Serialize configuration to JSON
+        let params_json = serde_json::to_string(config)
+            .unwrap_or_else(|_| "{}".to_string());
         
         let start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -326,7 +323,6 @@ mod tests {
     use super::*;
     use crate::base::{Alphabet, Nucleotide};
     use crate::genome::{Chromosome, Haplotype, Individual};
-    use crate::simulation::{MutationConfig, RecombinationConfig, FitnessConfig, RepeatStructure};
 
     fn create_test_individual(id: &str, length: usize) -> Individual {
         let alphabet = Alphabet::dna();

@@ -5,9 +5,10 @@
 
 use rand::Rng;
 use crate::base::Sequence;
+use serde::{Serialize, Deserialize};
 
 /// Type of recombination event
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RecombinationType {
     /// No recombination occurs
     None,
@@ -18,7 +19,7 @@ pub enum RecombinationType {
 }
 
 /// Parameters for recombination events.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecombinationParams {
     /// Probability of a double-strand break per base per generation
     break_prob: f64,

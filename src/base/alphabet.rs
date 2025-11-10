@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 /// Shared, immutable alphabet.
 /// Use Arc to share one instance across all chromosomes in a population.
@@ -84,6 +85,28 @@ impl PartialEq for Alphabet {
 }
 
 impl Eq for Alphabet {}
+
+// Custom serialization for Alphabet
+impl Serialize for Alphabet {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Serialize as the character list
+        self.chars.as_ref().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Alphabet {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Deserialize as a Vec and create new Alphabet
+        let chars = Vec::<char>::deserialize(deserializer)?;
+        Ok(Alphabet::new(chars))
+    }
+}
 
 #[cfg(test)]
 mod tests {

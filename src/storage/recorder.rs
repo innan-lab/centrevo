@@ -24,10 +24,10 @@ pub enum RecordingStrategy {
 }
 
 impl RecordingStrategy {
-    /// Check if we should record at the given generation.
+    /// Check if generation should be recorded
     pub fn should_record(&self, generation: usize) -> bool {
         match self {
-            Self::EveryN(n) => generation % n == 0,
+            Self::EveryN(n) => generation.is_multiple_of(*n),
             Self::Specific(gens) => gens.contains(&generation),
             Self::All => true,
             Self::None => false,

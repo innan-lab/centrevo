@@ -128,11 +128,6 @@ impl Chromosome {
         }
     }
 
-    /// Convert to string representation
-    pub fn to_string(&self) -> String {
-        self.sequence.to_string()
-    }
-
     /// Convert to formatted string with RU and HOR delimiters
     pub fn to_formatted_string(&self, ru_delim: char, hor_delim: char) -> String {
         let chars: Vec<char> = self.sequence
@@ -166,6 +161,12 @@ impl Chromosome {
             ru_length: self.ru_length,
             rus_per_hor: self.rus_per_hor,
         }
+    }
+}
+
+impl std::fmt::Display for Chromosome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.sequence)
     }
 }
 

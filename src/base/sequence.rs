@@ -1,5 +1,6 @@
-use std::sync::Arc;
 use super::{Nucleotide, Alphabet};
+use std::fmt;
+use std::sync::Arc;
 
 /// Mutable sequence - use for active operations
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,14 +123,6 @@ impl Sequence {
             .expect("Invalid base in sequence")
     }
 
-    /// Convert to string
-    pub fn to_string(&self) -> String {
-        self.data
-            .iter()
-            .filter_map(|&idx| self.alphabet.get_char(idx))
-            .collect()
-    }
-
     /// Convert to immutable shared sequence
     pub fn into_shared(self) -> SharedSequence {
         SharedSequence {
@@ -144,6 +137,17 @@ impl Sequence {
             data: self.data.clone().into(),
             alphabet: self.alphabet.clone(),
         }
+    }
+}
+
+impl fmt::Display for Sequence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for &idx in &self.data {
+            if let Some(ch) = self.alphabet.get_char(idx) {
+                write!(f, "{}", ch)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -192,14 +196,6 @@ impl SharedSequence {
         &self.alphabet
     }
 
-    /// Convert to string
-    pub fn to_string(&self) -> String {
-        self.data
-            .iter()
-            .filter_map(|&idx| self.alphabet.get_char(idx))
-            .collect()
-    }
-
     /// Clone data into mutable sequence
     pub fn to_mutable(&self) -> Sequence {
         Sequence {
@@ -223,6 +219,17 @@ impl PartialEq for SharedSequence {
 }
 
 impl Eq for SharedSequence {}
+
+impl fmt::Display for SharedSequence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for &idx in self.data.iter() {
+            if let Some(ch) = self.alphabet.get_char(idx) {
+                write!(f, "{}", ch)?;
+            }
+        }
+        Ok(())
+    }
+}
 
 // Errors
 #[derive(Debug, Clone)]

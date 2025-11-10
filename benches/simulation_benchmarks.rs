@@ -1,6 +1,7 @@
 //! Benchmarks for simulation module (population, engine, full simulation runs).
+use std::hint::black_box;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
 use centrevo::base::{Alphabet, Nucleotide};
 use centrevo::simulation::{
     Simulation, RepeatStructure, MutationConfig, RecombinationConfig,
@@ -173,7 +174,7 @@ fn bench_population_operations(c: &mut Criterion) {
     let chr_length = 10_000;
     
     for pop_size in pop_sizes {
-        let mut sim = create_test_simulation(pop_size, chr_length, 1);
+        let sim = create_test_simulation(pop_size, chr_length, 1);
         
         group.bench_with_input(
             BenchmarkId::new("compute_fitness", pop_size),

@@ -1,6 +1,6 @@
 //! Benchmarks for evolution module (mutation, recombination, selection operations).
-
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
 use centrevo::base::{Alphabet, Nucleotide, Sequence};
 use centrevo::genome::{Chromosome, Haplotype, Individual};
 use centrevo::evolution::{

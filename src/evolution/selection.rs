@@ -76,7 +76,7 @@ impl HaplotypeFitness for GCContentFitness {
         let gc_content = chromosome.gc_content();
         
         // Handle edge cases with small epsilon to avoid log(0)
-        let gc = gc_content.max(1e-10).min(1.0 - 1e-10);
+        let gc = gc_content.clamp(1e-10, 1.0 - 1e-10);
 
         let (alpha, beta) = self.to_alpha_beta();
         

@@ -130,7 +130,9 @@ impl Database {
         for suffix in &["-wal", "-shm"] {
             let fname = format!("{}{}", self.db_path, suffix);
             if let Err(e) = std::fs::remove_file(&fname) {
-                if e.kind() != std::io::ErrorKind::NotFound {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    // File doesn't exist, that's fine
+                } else {
                     eprintln!("Warning: failed to remove {}: {}", fname, e);
                 }
             }

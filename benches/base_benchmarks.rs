@@ -1,6 +1,6 @@
 //! Benchmarks for base module (nucleotide, alphabet, sequence operations).
-
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
 use centrevo::base::{Alphabet, Nucleotide, Sequence};
 
 /// Benchmark nucleotide conversions

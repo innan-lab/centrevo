@@ -14,9 +14,15 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rayon = "1.10"
+clap = { version = "4.5", features = ["derive", "cargo"] }
+anyhow = "1.0"
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }
+
+[[bin]]
+name = "centrevo"
+path = "src/bin/centrevo.rs"
 
 [[bench]]
 name = "base_benchmarks"

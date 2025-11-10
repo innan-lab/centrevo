@@ -8,6 +8,10 @@ pub mod genome;
 pub mod evolution;
 pub mod simulation;
 pub mod storage;
+
+#[cfg(feature = "python")]
+pub mod python;
+
 // TODO: Uncomment as modules are implemented
 // pub mod utils;
 

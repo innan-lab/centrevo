@@ -1,3 +1,4 @@
+# Rust
 /target
 # Python
 __pycache__/
@@ -18,3 +19,7 @@ dist/
 *.db
 *.sqlite
 *.sqlite3
+# MacOS
+.DS_Store
+# VSCode
+.vscode/

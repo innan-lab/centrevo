@@ -5,8 +5,8 @@
 
 pub mod base;
 pub mod genome;
+pub mod evolution;
 // TODO: Uncomment as modules are implemented
-// pub mod evolution;
 // pub mod simulation;
 // pub mod utils;
 // pub mod storage;

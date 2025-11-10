@@ -4,7 +4,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::{PyList, PyString};
+use pyo3::types::PyList;
 use std::path::PathBuf;
 
 use crate::base::{Alphabet, Nucleotide};

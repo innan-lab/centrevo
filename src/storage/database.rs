@@ -90,7 +90,7 @@ impl Database {
     }
 
     /// Begin a transaction for batched operations.
-    pub fn transaction(&mut self) -> Result<Transaction, DatabaseError> {
+    pub fn transaction(&mut self) -> Result<Transaction<'_>, DatabaseError> {
         self.conn
             .transaction()
             .map_err(|e| DatabaseError::Transaction(e.to_string()))

@@ -16,6 +16,7 @@ pub struct Simulation {
     /// Current population
     population: Population,
     /// Repeat structure parameters
+    #[allow(dead_code)]  // Will be used in future iterations
     structure: RepeatStructure,
     /// Mutation configuration
     mutation: MutationConfig,

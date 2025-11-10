@@ -9,6 +9,8 @@ pub mod evolution;
 pub mod simulation;
 pub mod storage;
 
+// Python bindings module (conditionally compiled)
+// Use `maturin develop` or `maturin build` to build as Python extension
 #[cfg(feature = "python")]
 pub mod python;
 

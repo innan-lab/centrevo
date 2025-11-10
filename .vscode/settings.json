@@ -1,0 +1,12 @@
+{
+  // Disable Python testing since this is primarily a Rust project
+  "python.testing.pytestEnabled": false,
+  "python.testing.unittestEnabled": false,
+  
+  // Configure Rust testing
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.cargo.features": [],
+  
+  // Python is only used for bindings, not tests
+  "python.languageServer": "Pylance"
+}

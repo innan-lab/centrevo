@@ -19,24 +19,114 @@ pip install target/wheels/centrevo-*.whl
 ### Basic Simulation
 
 ```python
-import centrevo
+import centrevo as cv
 
-# Create a population
-alphabet = centrevo.Alphabet.dna()
-base_a = centrevo.Nucleotide.A()
-
-structure = centrevo.RepeatStructure(
+# Define genome structure
+alphabet = cv.Alphabet.dna()
+structure = cv.RepeatStructure(
     alphabet=alphabet,
-    init_base=base_a,
+    init_base=cv.Nucleotide.A(),
     ru_length=171,
     rus_per_hor=12,
     hors_per_chr=50,
     chrs_per_hap=1,
 )
 
-pop = centrevo.create_initial_population(size=100, structure=structure)
+# Configure evolutionary parameters
+mutation = cv.MutationConfig.uniform(alphabet, 0.001)
+recombination = cv.RecombinationConfig.standard(0.01, 0.7, 0.1)
+fitness = cv.FitnessConfig.neutral()
+config = cv.SimulationConfig(population_size=100, total_generations=1000, seed=42)
+
+# Create and run simulation
+sim = cv.Simulation(structure, mutation, recombination, fitness, config)
+sim.run_for(100)
+
+# Access population
+pop = sim.population()
 print(f"Population size: {pop.size()}")
+print(f"Generation: {sim.generation()}")
 ```
+
+### Custom Sequence Initialization
+
+Start simulations with custom sequences from FASTA, JSON, or previous databases:
+
+```python
+import centrevo as cv
+
+# From FASTA file
+sim = cv.Simulation.from_sequences(
+    source_type="fasta",
+    source_path="initial_sequences.fasta",
+    structure=structure,
+    mutation=mutation,
+    recombination=recombination,
+    fitness=fitness,
+    config=config,
+)
+
+# From JSON
+import json
+sequences = [
+    {"id": "ind0_h1", "seq": "ACGT" * 51300},
+    {"id": "ind0_h2", "seq": "TGCA" * 51300},
+    # ... more sequences
+]
+sim = cv.Simulation.from_sequences(
+    source_type="json",
+    source_path=json.dumps(sequences),
+    structure=structure,
+    mutation=mutation,
+    recombination=recombination,
+    fitness=fitness,
+    config=config,
+)
+
+# From previous database
+sim = cv.Simulation.from_sequences(
+    source_type="database",
+    source_path="previous_run.db",
+    sim_id="my_sim",
+    generation=500,  # Optional
+    structure=structure,
+    mutation=mutation,
+    recombination=recombination,
+    fitness=fitness,
+    config=config,
+)
+```
+
+**See [Custom Sequences Guide](../docs/PYTHON_CUSTOM_SEQUENCES.md) for complete documentation.**
+
+### Checkpoint and Resume
+
+Save and resume simulations with full RNG state:
+
+```python
+import centrevo as cv
+
+# Run simulation with checkpoints
+sim = cv.Simulation(structure, mutation, recombination, fitness, config)
+recorder = cv.Recorder("sim.db", "my_sim", cv.RecordingStrategy.every_n(100))
+
+# Record configuration (required for resuming)
+recorder.record_full_config(structure, mutation, recombination, fitness, config)
+
+# Run with periodic checkpoints
+for _ in range(10):
+    sim.run_for(100)
+    recorder.record_generation(sim.population(), sim.generation())
+    recorder.record_checkpoint(sim, sim.generation())
+    print(f"Checkpoint saved at generation {sim.generation()}")
+
+# Later: resume from checkpoint
+sim_resumed = cv.Simulation.from_checkpoint("sim.db", "my_sim")
+print(f"Resumed at generation {sim_resumed.generation()}")
+sim_resumed.run_for(1000)
+```
+
+**See [Custom Sequences Guide](../docs/PYTHON_CUSTOM_SEQUENCES.md#checkpoint-resume) for full checkpoint documentation.**
 
 ### Diversity Analysis
 
@@ -268,7 +358,10 @@ print(df.describe())
 
 ## Examples
 
-See `examples/python_analysis_example.py` for comprehensive examples.
+See comprehensive examples:
+- `examples/python_analysis_example.py` - Analysis and visualization examples
+- `examples/python_custom_sequences.py` - Custom initialization and checkpoint examples
+- `docs/PYTHON_CUSTOM_SEQUENCES.md` - Complete guide to custom sequences and resume functionality
 
 ## Dependencies
 

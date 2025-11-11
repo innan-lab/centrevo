@@ -126,7 +126,20 @@ class Recorder:
     """Simulation recorder."""
     def __init__(self, db_path: str, sim_id: str, strategy: RecordingStrategy) -> None: ...
     def record_metadata(self, config: SimulationConfig) -> None: ...
+    def record_full_config(
+        self,
+        structure: RepeatStructure,
+        mutation: MutationConfig,
+        recombination: RecombinationConfig,
+        fitness: FitnessConfig,
+        config: SimulationConfig,
+    ) -> None:
+        """Record complete simulation configuration for resumability."""
+        ...
     def record_generation(self, population: Population, generation: int) -> None: ...
+    def record_checkpoint(self, simulation: Simulation, generation: int) -> None:
+        """Record a checkpoint for resuming the simulation."""
+        ...
     def __repr__(self) -> str: ...
 
 class QueryBuilder:
@@ -140,6 +153,137 @@ class QueryBuilder:
 def create_initial_population(size: int, structure: RepeatStructure) -> Population:
     """Create an initial population with uniform sequences."""
     ...
+
+class MutationConfig:
+    """Mutation configuration for simulations."""
+    @staticmethod
+    def uniform(alphabet: Alphabet, rate: float) -> MutationConfig:
+        """Create a uniform mutation rate configuration."""
+        ...
+    def __repr__(self) -> str: ...
+
+class RecombinationConfig:
+    """Recombination configuration for simulations."""
+    @staticmethod
+    def standard(
+        break_prob: float,
+        crossover_prob: float,
+        gc_extension_prob: float,
+    ) -> RecombinationConfig:
+        """Create a standard recombination configuration."""
+        ...
+    def __repr__(self) -> str: ...
+
+class FitnessConfig:
+    """Fitness configuration for simulations."""
+    @staticmethod
+    def neutral() -> FitnessConfig:
+        """Create a neutral fitness configuration (no selection)."""
+        ...
+    def __repr__(self) -> str: ...
+
+class Simulation:
+    """Simulation engine for evolutionary processes."""
+    def __init__(
+        self,
+        structure: RepeatStructure,
+        mutation: MutationConfig,
+        recombination: RecombinationConfig,
+        fitness: FitnessConfig,
+        config: SimulationConfig,
+    ) -> None:
+        """Create a new simulation with uniform initial sequences."""
+        ...
+    
+    @staticmethod
+    def from_sequences(
+        source_type: str,
+        source_path: str,
+        structure: RepeatStructure,
+        mutation: MutationConfig,
+        recombination: RecombinationConfig,
+        fitness: FitnessConfig,
+        config: SimulationConfig,
+        sim_id: Optional[str] = None,
+        generation: Optional[int] = None,
+    ) -> Simulation:
+        """Create a simulation from custom sequences.
+        
+        Args:
+            source_type: Type of input - "fasta", "json", or "database"
+            source_path: Path to FASTA/JSON file, JSON string, or database path
+            structure: Repeat structure configuration
+            mutation: Mutation configuration
+            recombination: Recombination configuration
+            fitness: Fitness configuration
+            config: Simulation configuration
+            sim_id: Simulation ID (required for "database" source)
+            generation: Generation to load (optional for "database" source, defaults to last)
+            
+        Returns:
+            Simulation instance initialized with custom sequences
+            
+        Examples:
+            >>> # From FASTA file
+            >>> sim = Simulation.from_sequences(
+            ...     "fasta", "sequences.fasta", structure, mutation, 
+            ...     recombination, fitness, config
+            ... )
+            
+            >>> # From JSON string
+            >>> json_data = '[{"id": "seq1", "seq": "ACGT..."}]'
+            >>> sim = Simulation.from_sequences(
+            ...     "json", json_data, structure, mutation,
+            ...     recombination, fitness, config
+            ... )
+            
+            >>> # From database
+            >>> sim = Simulation.from_sequences(
+            ...     "database", "simulation.db", structure, mutation,
+            ...     recombination, fitness, config,
+            ...     sim_id="exp1", generation=1000
+            ... )
+        """
+        ...
+    
+    @staticmethod
+    def from_checkpoint(db_path: str, sim_id: str) -> Simulation:
+        """Resume a simulation from a checkpoint.
+        
+        Args:
+            db_path: Path to the database file
+            sim_id: Simulation ID to resume
+            
+        Returns:
+            Simulation instance ready to continue from checkpoint
+            
+        Example:
+            >>> sim = Simulation.from_checkpoint("simulation.db", "exp1")
+            >>> sim.run_for(100)  # Continue for 100 more generations
+        """
+        ...
+    
+    def population(self) -> Population:
+        """Get the current population."""
+        ...
+    
+    def generation(self) -> int:
+        """Get the current generation number."""
+        ...
+    
+    def step(self) -> None:
+        """Advance simulation by one generation."""
+        ...
+    
+    def run_for(self, generations: int) -> None:
+        """Run simulation for a specific number of generations."""
+        ...
+    
+    def run(self) -> None:
+        """Run simulation for the configured number of generations."""
+        ...
+    
+    def __repr__(self) -> str: ...
 
 # Analysis functions - Diversity metrics
 def nucleotide_diversity(population: Population, chromosome_idx: int) -> float:

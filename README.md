@@ -11,80 +11,101 @@ Centrevo is a fast, flexible simulator for studying the evolution of tandemly re
 
 - **High Performance**: Written in Rust with parallel computation support via Rayon
 - **Realistic Models**: Mutation, recombination, and selection with customizable fitness functions
-- **Persistent Storage**: SQLite-based recording with flexible strategies and async compression
+- **Persistent Storage**: SQLite-based recording with flexible strategies
 - **Python Bindings**: Full Python API via PyO3 with PyArrow integration for efficient data export
 - **Complete CLI**: Command-line interface for simulation management, execution, analysis, and export
 - **Analysis Module**: Population genetics metrics including diversity, LD, distance, and composition analysis
 - **Visualization**: Built-in plotting utilities with matplotlib for common analysis tasks
-- **Well-Tested**: 309 unit tests with comprehensive coverage
+- **Well-Tested**: Comprehensive test coverage with unit and integration tests
 - **Benchmarked**: Performance benchmarks included for optimization
 
-## Quick Start
+## Installation
 
-### Installation
+### Prerequisites
 
-**From source:**
+- **Rust** (1.70+): Install from [rust-lang.org](https://www.rust-lang.org/tools/install)
+- **Cargo**: Comes with Rust
+
+### Build from Source
+
+#### macOS / Linux (Native)
+
 ```bash
 git clone https://github.com/innan-lab/centrevo.git
 cd centrevo
 cargo build --release
 ```
 
-The binary will be available at `./target/release/centrevo`.
+The CLI binary will be available at `./target/release/centrevo`.
 
-### Running Your First Simulation
+#### Linux (Cross-compilation using Docker)
+
+If you don't have Rust installed or want to build in a containerized environment:
+
+```bash
+git clone https://github.com/innan-lab/centrevo.git
+cd centrevo
+
+# Build using the official Rust Docker image
+docker run --rm -v "$(pwd)":/workspace -w /workspace rust:1.70 cargo build --release
+
+# The binary will be in target/release/centrevo
+./target/release/centrevo --version
+```
+
+For Python wheel building on Linux with Docker, see [PYTHON.md](PYTHON.md#building-for-distribution).
+
+### Python Package
+
+#### Local Development
+
+To use the Python bindings locally, you'll need `maturin`:
+
+```bash
+pip install maturin
+maturin develop --release
+```
+
+#### Build Python Wheels (Using Docker)
+
+To build distributable Python wheels for Linux using Docker:
+
+```bash
+# Build for Python 3.12 on Linux x86_64
+docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.12
+
+# Build for multiple Python versions
+docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.10 -i python3.11 -i python3.12
+
+# Wheels will be in target/wheels/
+ls target/wheels/
+```
+
+For more Python build options and usage documentation, see [PYTHON.md](PYTHON.md).
+
+## Quick Start
+
+### Command Line Interface
 
 ```bash
 # Use the interactive setup wizard
 ./target/release/centrevo setup
 
-# Or initialize manually
-./target/release/centrevo init \
-  -N my_first_sim \
-  -n 100 \
-  -g 1000 \
-  --seed 42
-
-# Run the simulation
-./target/release/centrevo run -N my_first_sim
-
-# Analyze results
-./target/release/centrevo analyze -N my_first_sim -g 1000
-
-# Export data
-./target/release/centrevo export -N my_first_sim -g 1000 --format csv
+# Or initialize and run manually
+./target/release/centrevo init -N my_sim -n 100 -g 1000 --seed 42
+./target/release/centrevo run -N my_sim
+./target/release/centrevo analyze -N my_sim -g 1000
+./target/release/centrevo export -N my_sim -g 1000 --format csv
 ```
 
-## Usage
+See [CLI.md](CLI.md) for complete CLI documentation.
 
-### Command Line
-
-Centrevo provides a comprehensive CLI with the following commands:
-
-```bash
-centrevo <COMMAND>
-
-Commands:
-  setup        Interactive wizard to setup and run a simulation
-  init         Initialize a new simulation
-  run          Run an existing simulation
-  list         List simulations in database
-  info         Show simulation info
-  generations  List recorded generations
-  analyze      Analyze simulation data with population genetics metrics
-  export       Export simulation data (sequences, metadata, fitness)
-  validate     Validate database integrity
-  help         Print help
-```
-
-See [CLI.md](CLI.md) for complete documentation.
-
-### Python
+### Python API
 
 ```python
 import centrevo
 
-# Create simulation structure
+# Create simulation
 alphabet = centrevo.Alphabet.dna()
 structure = centrevo.RepeatStructure(
     alphabet=alphabet,
@@ -95,43 +116,11 @@ structure = centrevo.RepeatStructure(
     chrs_per_hap=1
 )
 
-# Configure simulation
-config = centrevo.SimulationConfig(
-    population_size=100,
-    total_generations=1000,
-    seed=42
-)
-
-# Create population
 population = centrevo.create_initial_population(100, structure)
 
-# Setup recording
-recorder = centrevo.Recorder(
-    "simulation.db",
-    "my_simulation",
-    centrevo.RecordingStrategy.every_n(100)
-)
-
-# Record
-recorder.record_metadata(config)
-recorder.record_generation(population, 0)
-
-# Analyze population
+# Analyze
 pi = centrevo.nucleotide_diversity(population, 0)
-tajima_d = centrevo.tajimas_d(population, 0)
-gc = centrevo.gc_content(population, None, None, None)
-
 print(f"Nucleotide diversity: {pi:.6f}")
-print(f"Tajima's D: {tajima_d:.4f}")
-print(f"GC content: {gc:.2%}")
-
-# Export for visualization
-diversity_metrics = centrevo.export_diversity_metrics(population, 0)
-ld_data = centrevo.export_ld_decay(population, 0, 0, 1000, 10)
-
-# Visualize
-import centrevo.plotting as cplt
-fig = cplt.plot_ld_decay(ld_data)
 ```
 
 See [PYTHON.md](PYTHON.md) for complete Python API documentation.
@@ -144,24 +133,33 @@ Centrevo is organized into several modules:
 - **`genome`**: Chromosome, Haplotype, and Individual representations
 - **`evolution`**: Mutation, recombination, and fitness models
 - **`simulation`**: Simulation engine and population dynamics
-- **`storage`**: SQLite persistence with async recording and compression
+- **`storage`**: SQLite persistence with recording strategies
 - **`analysis`**: Population genetics metrics (diversity, LD, distance, composition)
 - **`python`**: Python bindings (optional, requires PyO3)
+
+See [src/README.md](src/README.md) for detailed implementation documentation.
+
+## Usage
+
+For detailed usage documentation:
+
+- **[CLI Guide](CLI.md)**: Complete command-line interface reference
+- **[Python API](PYTHON.md)**: Python binding documentation and examples
+- **[Implementation Guide](src/README.md)**: In-depth module implementation details
+- **[Python Implementation](python/README.md)**: Python package implementation details
+- **[Storage Module](src/storage/README.md)**: Database and persistence details
+- **[Benchmarks](benches/README.md)**: Performance benchmarking guide
 
 ## Performance
 
 Centrevo is designed for performance:
 
 - **Parallel computation**: Uses Rayon for multi-core parallelism
-- **Memory efficient**: Arc-based sequence sharing for cheap cloning
-- **Optimized storage**: Binary BLOB storage with optional async compression
+- **Memory efficient**: Arc-based sequence sharing for efficient cloning
+- **Optimized storage**: Binary BLOB storage with WAL mode for concurrent access
 - **Benchmarked**: Comprehensive benchmark suite included
 
-Example performance (on a typical laptop):
-- 100 individuals × 100KB chromosomes: ~1-5 seconds per generation
-- 1000 individuals × 10KB chromosomes: ~2-10 seconds per generation
-
-See [benches/README.md](benches/README.md) for benchmarking details.
+See [benches/README.md](benches/README.md) for benchmarking details and performance metrics.
 
 ## Testing
 
@@ -171,23 +169,30 @@ Centrevo has comprehensive test coverage:
 # Run all tests
 cargo test
 
-# Run with coverage
-cargo tarpaulin
+# Run specific module tests
+cargo test --lib storage
+cargo test --lib analysis
 
 # Run benchmarks
 cargo bench
 ```
 
-All 309 tests pass with 0 failures.
-
 ## Documentation
 
-- **[CLI Guide](CLI.md)**: Complete command-line reference
-- **[Python API](PYTHON.md)**: Python binding documentation  
-- **[Storage Module](src/storage/README.md)**: Database and persistence details
+### User Documentation
+
+- **[CLI Guide](CLI.md)**: Complete command-line interface reference
+- **[Python API](PYTHON.md)**: Python binding documentation and examples
+
+### Developer Documentation
+
+- **[Implementation Guide](src/README.md)**: In-depth Rust module documentation
+- **[Python Implementation](python/README.md)**: Python package internals
+- **[Storage Module](src/storage/README.md)**: Database schema and persistence details
 - **[Benchmarks](benches/README.md)**: Performance benchmarking guide
 - **[Roadmap](ROADMAP.md)**: Development roadmap and future plans
 - **[Changelog](CHANGELOG.md)**: Version history and changes
+- **[Contributing](CONTRIBUTING.md)**: Contribution guidelines
 
 Generate API documentation:
 ```bash
@@ -197,24 +202,6 @@ cargo doc --open
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Development Setup
-
-```bash
-# Clone repository
-git clone https://github.com/innan-lab/centrevo.git
-cd centrevo
-
-# Build
-cargo build
-
-# Run tests
-cargo test
-
-# Check code
-cargo clippy
-cargo fmt --check
-```
 
 ## License
 
@@ -237,10 +224,6 @@ Built with:
 
 - **Issues**: [GitHub Issues](https://github.com/innan-lab/centrevo/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/innan-lab/centrevo/discussions)
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for planned features and development phases.
 
 ---
 

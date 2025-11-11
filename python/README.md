@@ -2,379 +2,376 @@
 
 High-performance population genetics simulator with comprehensive analysis tools.
 
-## Installation
+This README describes the **implementation details** of the Python package. For **usage documentation**, see [PYTHON.md](../PYTHON.md) in the root directory.
+
+## Package Structure
+
+```
+python/
+├── centrevo/           # Python package
+│   ├── __init__.py    # Package initialization and re-exports
+│   ├── __init__.pyi   # Type stubs for IDE support
+│   ├── plotting.py    # Visualization utilities
+│   ├── plotting.pyi   # Type stubs for plotting module
+│   └── py.typed       # PEP 561 marker for type checking
+├── tests/             # Python test suite
+│   ├── test_analysis.py
+│   ├── test_core.py
+│   ├── test_custom_sequences.py
+│   └── test_storage.py
+├── pytest.ini         # pytest configuration
+└── README.md          # This file
+```
+
+## Building the Package
+
+### Prerequisites
+
+- Python >= 3.8
+- Rust toolchain (for compiling the extension)
+- maturin (Python build tool)
+
+### Build Process
 
 ```bash
-# Install from source (requires Rust and maturin)
+# Install maturin
 pip install maturin
+
+# Development build (debug)
+maturin develop
+
+# Release build (optimized)
 maturin develop --release
 
-# Or build wheel
+# Build wheel for distribution
 maturin build --release
-pip install target/wheels/centrevo-*.whl
 ```
 
-## Quick Start
+The build process:
+1. Compiles Rust code in `src/python/` to a native extension module
+2. Packages the extension with Python code in `python/centrevo/`
+3. Creates a wheel file in `target/wheels/`
 
-### Basic Simulation
+## Implementation Architecture
 
-```python
-import centrevo as cv
+### Rust Bindings (src/python/)
 
-# Define genome structure
-alphabet = cv.Alphabet.dna()
-structure = cv.RepeatStructure(
-    alphabet=alphabet,
-    init_base=cv.Nucleotide.A(),
-    ru_length=171,
-    rus_per_hor=12,
-    hors_per_chr=50,
-    chrs_per_hap=1,
-)
+The Python package is implemented using [PyO3](https://pyo3.rs/), which provides:
 
-# Configure evolutionary parameters
-mutation = cv.MutationConfig.uniform(alphabet, 0.001)
-recombination = cv.RecombinationConfig.standard(0.01, 0.7, 0.1)
-fitness = cv.FitnessConfig.neutral()
-config = cv.SimulationConfig(population_size=100, total_generations=1000, seed=42)
+- **Zero-copy data exchange**: Using PyArrow for efficient data transfer
+- **Automatic type conversion**: Between Rust and Python types
+- **Native performance**: All computations done in Rust
+- **Memory safety**: Rust's ownership system prevents memory leaks
 
-# Create and run simulation
-sim = cv.Simulation(structure, mutation, recombination, fitness, config)
-sim.run_for(100)
+Key binding modules:
+- `src/python/bindings.rs` - Core type bindings (Nucleotide, Sequence, Population, etc.)
+- `src/python/analysis.rs` - Analysis function bindings (diversity, LD, distance, etc.)
+- `src/python/mod.rs` - Module registration and exports
 
-# Access population
-pop = sim.population()
-print(f"Population size: {pop.size()}")
-print(f"Generation: {sim.generation()}")
+### Python Layer (python/centrevo/)
+
+#### `__init__.py`
+
+Main package initialization:
+- Re-exports all Rust types and functions from the native module
+- Provides helper functions (e.g., `create_initial_population`)
+- No Python-side computation (pure Rust delegation)
+
+#### `plotting.py`
+
+Visualization utilities using matplotlib:
+- `plot_diversity_trajectory()` - Time series plots
+- `plot_ld_decay()` - LD decay curves
+- `plot_distance_matrix()` - Heatmaps
+- `plot_nucleotide_composition()` - Bar charts
+- `plot_multiple_diversity_metrics()` - Multi-panel plots
+
+PyArrow export helpers:
+- `export_to_pyarrow_table()` - Generic dict → PyArrow Table
+- `export_ld_decay_to_pyarrow()` - LD data → PyArrow Table
+- `export_distance_matrix_to_pyarrow()` - Distance matrix → PyArrow Table
+
+## Type Stubs (`.pyi` files)
+
+The package includes type stubs for IDE support and static type checking:
+
+- `__init__.pyi` - Complete type signatures for all exported functions and classes
+- `plotting.pyi` - Type signatures for plotting functions
+
+These enable:
+- Autocomplete in IDEs (VS Code, PyCharm, etc.)
+- Type checking with mypy
+- Better documentation in Jupyter notebooks
+
+## Testing
+
+### Test Structure
+
+```
+tests/
+├── test_core.py             # Core functionality tests
+├── test_analysis.py         # Analysis function tests
+├── test_custom_sequences.py # Custom initialization tests
+└── test_storage.py          # Database/persistence tests
 ```
 
-### Custom Sequence Initialization
+### Running Tests
 
-Start simulations with custom sequences from FASTA, JSON, or previous databases:
+```bash
+# Install test dependencies
+pip install pytest
 
-```python
-import centrevo as cv
+# Run all tests
+pytest
 
-# From FASTA file
-sim = cv.Simulation.from_sequences(
-    source_type="fasta",
-    source_path="initial_sequences.fasta",
-    structure=structure,
-    mutation=mutation,
-    recombination=recombination,
-    fitness=fitness,
-    config=config,
-)
+# Run with verbose output
+pytest -v
 
-# From JSON
-import json
-sequences = [
-    {"id": "ind0_h1", "seq": "ACGT" * 51300},
-    {"id": "ind0_h2", "seq": "TGCA" * 51300},
-    # ... more sequences
-]
-sim = cv.Simulation.from_sequences(
-    source_type="json",
-    source_path=json.dumps(sequences),
-    structure=structure,
-    mutation=mutation,
-    recombination=recombination,
-    fitness=fitness,
-    config=config,
-)
+# Run specific test file
+pytest tests/test_analysis.py
 
-# From previous database
-sim = cv.Simulation.from_sequences(
-    source_type="database",
-    source_path="previous_run.db",
-    sim_id="my_sim",
-    generation=500,  # Optional
-    structure=structure,
-    mutation=mutation,
-    recombination=recombination,
-    fitness=fitness,
-    config=config,
-)
+# Run specific test
+pytest tests/test_analysis.py::test_nucleotide_diversity
 ```
 
-**See [Custom Sequences Guide](../docs/PYTHON_CUSTOM_SEQUENCES.md) for complete documentation.**
+### Test Coverage
 
-### Checkpoint and Resume
+Tests cover:
+- Core type creation and manipulation
+- Analysis functions (diversity, LD, distance, composition)
+- Custom sequence initialization (FASTA, JSON, database)
+- Checkpoint and resume functionality
+- Database operations and queries
+- Error handling and edge cases
 
-Save and resume simulations with full RNG state:
+## PyArrow Integration
 
-```python
-import centrevo as cv
+The package uses PyArrow for efficient data exchange:
 
-# Run simulation with checkpoints
-sim = cv.Simulation(structure, mutation, recombination, fitness, config)
-recorder = cv.Recorder("sim.db", "my_sim", cv.RecordingStrategy.every_n(100))
+### Why PyArrow?
 
-# Record configuration (required for resuming)
-recorder.record_full_config(structure, mutation, recombination, fitness, config)
+- **Zero-copy**: No data copying between Rust and Python
+- **Columnar format**: Efficient for analytics
+- **Interoperability**: Works with pandas, polars, DuckDB, etc.
+- **Type safety**: Strong typing in Arrow format
 
-# Run with periodic checkpoints
-for _ in range(10):
-    sim.run_for(100)
-    recorder.record_generation(sim.population(), sim.generation())
-    recorder.record_checkpoint(sim, sim.generation())
-    print(f"Checkpoint saved at generation {sim.generation()}")
+### Implementation
 
-# Later: resume from checkpoint
-sim_resumed = cv.Simulation.from_checkpoint("sim.db", "my_sim")
-print(f"Resumed at generation {sim_resumed.generation()}")
-sim_resumed.run_for(1000)
+Export functions return Python dicts that can be converted to PyArrow:
+
+```rust
+// Rust side (simplified)
+#[pyfunction]
+fn export_diversity_metrics(population: &Population, chr_idx: usize) -> PyResult<PyObject> {
+    // Calculate metrics
+    let metrics = calculate_diversity(&population, chr_idx);
+    
+    // Return as Python dict
+    Python::with_gil(|py| {
+        let dict = PyDict::new(py);
+        dict.set_item("nucleotide_diversity", metrics.pi)?;
+        dict.set_item("tajimas_d", metrics.tajima_d)?;
+        // ... more metrics
+        Ok(dict.into())
+    })
+}
 ```
 
-**See [Custom Sequences Guide](../docs/PYTHON_CUSTOM_SEQUENCES.md#checkpoint-resume) for full checkpoint documentation.**
-
-### Diversity Analysis
-
 ```python
-# Calculate diversity metrics
-pi = centrevo.nucleotide_diversity(pop, chromosome_idx=0)
-tajima_d = centrevo.tajimas_d(pop, chromosome_idx=0)
-theta_w = centrevo.wattersons_theta(pop, chromosome_idx=0)
-hap_div = centrevo.haplotype_diversity(pop, chromosome_idx=0)
-
-print(f"π: {pi:.6f}")
-print(f"Tajima's D: {tajima_d:.6f}")
-print(f"θ_W: {theta_w:.6f}")
-print(f"Haplotype diversity: {hap_div:.6f}")
-```
-
-### Linkage Disequilibrium
-
-```python
-# Calculate LD between two sites
-ld_stats = centrevo.linkage_disequilibrium(
-    pop, pos1=100, pos2=500,
-    chromosome_idx=0, haplotype_idx=0
-)
-
-print(f"D: {ld_stats['D']:.6f}")
-print(f"D': {ld_stats['D_prime']:.6f}")
-print(f"r²: {ld_stats['r_squared']:.6f}")
-
-# Calculate LD decay
-ld_decay_dict = centrevo.ld_decay(
-    pop, chromosome_idx=0, haplotype_idx=0,
-    max_distance=1000, bin_size=50
-)
-
-print(f"Distances: {ld_decay_dict['distances'][:5]}")
-print(f"r² values: {ld_decay_dict['r_squared_values'][:5]}")
-```
-
-### Distance Analysis
-
-```python
-# Calculate pairwise distances
-distances = centrevo.pairwise_distances(pop, chromosome_idx=0)
-print(f"Number of pairwise distances: {len(distances)}")
-
-# Calculate full distance matrix
-matrix = centrevo.distance_matrix(pop, chromosome_idx=0)
-print(f"Distance matrix size: {len(matrix)}×{len(matrix[0])}")
-```
-
-### Composition Analysis
-
-```python
-# Population-level GC content
-gc_pop = centrevo.gc_content(pop, None, None, None)
-print(f"Population GC content: {gc_pop:.4f}")
-
-# Individual-level GC content
-gc_ind = centrevo.gc_content(pop, individual_idx=0, haplotype_idx=None, chromosome_idx=None)
-print(f"Individual 0 GC content: {gc_ind:.4f}")
-
-# Nucleotide composition
-comp = centrevo.nucleotide_composition(pop, None, None, None)
-for nuc, freq in sorted(comp.items()):
-    print(f"{nuc}: {freq:.4f}")
-```
-
-## Data Export with PyArrow
-
-Export analysis results to PyArrow format for use with pandas or polars:
-
-```python
-import centrevo
-from centrevo.plotting import export_to_pyarrow_table
-import pandas as pd
-import polars as pl
-
-# Export diversity metrics
-metrics = centrevo.export_diversity_metrics(pop, chromosome_idx=0)
-
-# Convert to PyArrow Table
-diversity_data = [metrics]  # List of dicts from multiple generations
-table = export_to_pyarrow_table(diversity_data)
-
-# Convert to pandas or polars
-df_pandas = table.to_pandas()
-df_polars = pl.from_arrow(table)
-
-print(df_pandas)
-```
-
-### Export LD Decay
-
-```python
-from centrevo.plotting import export_ld_decay_to_pyarrow
-
-# Export LD decay data
-ld_data = centrevo.export_ld_decay(
-    pop, chromosome_idx=0, haplotype_idx=0,
-    max_distance=1000, bin_size=50
-)
-
-# Convert to PyArrow Table
-table = export_ld_decay_to_pyarrow(ld_data)
-
-# Use with pandas/polars
-df = table.to_pandas()
-```
-
-### Export Distance Matrix
-
-```python
-# Export distance matrix in long format
-dist_data = centrevo.export_distance_matrix(pop, chromosome_idx=0)
-
-# Each entry has sequence_i, sequence_j, distance
-df = pd.DataFrame(dist_data)
-pivot_matrix = df.pivot(index='sequence_i', columns='sequence_j', values='distance')
-```
-
-## Visualization
-
-Simple plotting utilities for common analyses:
-
-```python
-from centrevo.plotting import (
-    plot_diversity_trajectory,
-    plot_ld_decay,
-    plot_distance_matrix,
-    plot_nucleotide_composition,
-)
-
-# Plot nucleotide composition
-comp = centrevo.nucleotide_composition(pop, None, None, None)
-fig = plot_nucleotide_composition(comp, save_path="composition.png")
-
-# Plot distance matrix heatmap
-matrix = centrevo.distance_matrix(pop, chromosome_idx=0)
-fig = plot_distance_matrix(matrix, save_path="distances.png")
-
-# Plot LD decay
-ld_data = centrevo.export_ld_decay(pop, 0, 0, 1000, 50)
-fig = plot_ld_decay(ld_data, save_path="ld_decay.png")
-
-# Plot diversity over time (requires data from multiple generations)
-# diversity_data = [centrevo.export_diversity_metrics(pop_t, 0) for pop_t in populations]
-# fig = plot_diversity_trajectory(diversity_data, metric='nucleotide_diversity')
-```
-
-## Advanced Usage
-
-### Custom Visualizations
-
-For complex visualizations, work directly with PyArrow data:
-
-```python
+# Python side
 import pyarrow as pa
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 # Get data
-ld_data = centrevo.export_ld_decay(pop, 0, 0, 1000, 50)
-df = pd.DataFrame(ld_data)
+metrics = centrevo.export_diversity_metrics(pop, 0)
 
-# Custom plot
-sns.set_style("whitegrid")
-fig, ax = plt.subplots(figsize=(12, 6))
-sns.lineplot(data=df, x='distance', y='r_squared', ax=ax)
-ax.set_title("Custom LD Decay Plot")
-plt.show()
+# Convert to Arrow
+table = pa.Table.from_pylist([metrics])
+
+# Use with pandas/polars
+df_pandas = table.to_pandas()
+df_polars = pl.from_arrow(table)
 ```
 
-### Batch Analysis
+## Custom Sequence Initialization
 
+### Implementation Details
+
+Located in `src/simulation/initialization.rs`:
+
+#### FASTA Parser
+- Uses basic line-by-line parsing
+- Validates sequence IDs match expected format (`ind{N}_h{1|2}`)
+- Checks sequence lengths against structure
+- Reports detailed errors with line numbers
+
+#### JSON Parser
+- Expects array of objects with `id` and `seq` fields
+- Validates same criteria as FASTA
+- More compact for programmatic generation
+
+#### Database Loader
+- Queries SQLite database for generation data
+- Reconstructs population from stored sequences
+- Validates chromosome count and lengths
+- Uses latest generation if not specified
+
+### Checkpoint/Resume
+
+Implemented in `src/simulation/engine.rs`:
+
+#### Checkpoint Storage
+- Saves full RNG state (rand_chacha::ChaCha8Rng)
+- Stores generation number
+- References population data via foreign key
+- Atomic transaction for consistency
+
+#### Resume Process
+1. Load configuration from database
+2. Reconstruct population from sequences
+3. Restore RNG state from checkpoint
+4. Validate generation continuity
+5. Continue simulation from exact state
+
+**Key benefit**: Bit-for-bit reproducibility when resuming
+
+## Performance Considerations
+
+### Rust → Python
+
+- All heavy computation happens in Rust
+- Python only handles:
+  - Function calls and argument passing
+  - Plotting with matplotlib
+  - Data format conversion (optional)
+
+### Memory Management
+
+- Rust types wrapped in PyO3 smart pointers
+- Automatic reference counting
+- No manual memory management needed
+- GIL released during long computations (where possible)
+
+### Parallelism
+
+- Rayon parallelism in Rust (transparent to Python)
+- No Python GIL issues during parallel computation
+- Linear scaling with core count for large populations
+
+## Development Workflow
+
+### Making Changes
+
+1. **Edit Rust code** in `src/python/`
+2. **Rebuild**: `maturin develop --release`
+3. **Test**: `pytest`
+4. **Update type stubs** if API changed
+
+### Adding New Functions
+
+Example: Adding a new analysis function
+
+1. **Implement in Rust** (`src/analysis/`)
+```rust
+pub fn my_new_metric(population: &Population) -> f64 {
+    // Implementation
+}
+```
+
+2. **Create Python binding** (`src/python/analysis.rs`)
+```rust
+#[pyfunction]
+fn my_new_metric(population: &Population) -> PyResult<f64> {
+    Ok(crate::analysis::my_new_metric(population))
+}
+```
+
+3. **Register function** (`src/python/mod.rs`)
+```rust
+m.add_function(wrap_pyfunction!(my_new_metric, m)?)?;
+```
+
+4. **Add type stub** (`python/centrevo/__init__.pyi`)
 ```python
-# Analyze multiple populations or generations
-results = []
-
-for gen in range(0, 1000, 100):
-    pop = load_population(gen)  # Your loading logic
-    metrics = centrevo.export_diversity_metrics(pop, 0)
-    results.append(metrics)
-
-# Convert to DataFrame
-df = pd.DataFrame(results)
-
-# Analyze trends
-print(df.describe())
+def my_new_metric(population: Population) -> float: ...
 ```
 
-## API Reference
+5. **Write tests** (`tests/test_analysis.py`)
+```python
+def test_my_new_metric():
+    pop = create_test_population()
+    result = centrevo.my_new_metric(pop)
+    assert isinstance(result, float)
+    assert result >= 0.0
+```
 
-### Analysis Functions
-
-- `nucleotide_diversity(pop, chr_idx)` - Calculate π
-- `tajimas_d(pop, chr_idx)` - Calculate Tajima's D
-- `wattersons_theta(pop, chr_idx)` - Calculate θ_W
-- `haplotype_diversity(pop, chr_idx)` - Calculate haplotype diversity
-- `linkage_disequilibrium(pop, pos1, pos2, chr_idx, hap_idx)` - Calculate LD
-- `ld_decay(pop, chr_idx, hap_idx, max_dist, bin_size)` - Calculate LD decay
-- `haplotype_blocks(pop, chr_idx, hap_idx, threshold)` - Identify LD blocks
-- `pairwise_distances(pop, chr_idx)` - Calculate all pairwise distances
-- `distance_matrix(pop, chr_idx)` - Calculate distance matrix
-- `gc_content(pop, ind_idx, hap_idx, chr_idx)` - Calculate GC content (flexible)
-- `nucleotide_composition(pop, ind_idx, hap_idx, chr_idx)` - Calculate composition
-- `count_segregating_sites(pop, chr_idx, hap_idx)` - Count polymorphic sites
-
-### Export Functions
-
-- `export_diversity_metrics(pop, chr_idx)` - Export all diversity metrics
-- `export_distance_matrix(pop, chr_idx)` - Export distance matrix (long format)
-- `export_ld_decay(pop, chr_idx, hap_idx, max_dist, bin_size)` - Export LD decay
-
-### Plotting Functions
-
-- `plot_diversity_trajectory(data, metric, ...)` - Plot metric over time
-- `plot_ld_decay(data, ...)` - Plot LD decay
-- `plot_distance_matrix(matrix, ...)` - Plot distance heatmap
-- `plot_nucleotide_composition(comp, ...)` - Plot nucleotide frequencies
-- `plot_multiple_diversity_metrics(data, ...)` - Multi-panel diversity plots
-
-### PyArrow Helpers
-
-- `export_to_pyarrow_table(data, schema=None)` - Convert to PyArrow Table
-- `export_ld_decay_to_pyarrow(data)` - Convert LD decay to PyArrow
-- `export_distance_matrix_to_pyarrow(data)` - Convert distances to PyArrow
-
-## Examples
-
-See comprehensive examples:
-- `examples/python_analysis_example.py` - Analysis and visualization examples
-- `examples/python_custom_sequences.py` - Custom initialization and checkpoint examples
-- `docs/PYTHON_CUSTOM_SEQUENCES.md` - Complete guide to custom sequences and resume functionality
+6. **Update documentation** (PYTHON.md)
 
 ## Dependencies
 
-- Python >= 3.8
-- pyarrow >= 14.0.0
-- matplotlib >= 3.5.0
-- numpy >= 1.21.0
+### Rust Dependencies (from Cargo.toml)
 
-Optional:
-- pandas >= 1.5.0 (for DataFrame conversion)
-- polars >= 0.19.0 (for DataFrame conversion)
-- jupyter >= 1.0.0 (for notebooks)
+```toml
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+arrow = "50.0"  # PyArrow interop
+# ... other deps
+```
+
+### Python Dependencies (runtime)
+
+- `pyarrow >= 14.0.0` - Data interchange
+- `matplotlib >= 3.5.0` - Plotting
+- `numpy >= 1.21.0` - Numerical operations
+
+### Python Dependencies (development)
+
+- `pytest >= 7.0.0` - Testing framework
+- `maturin >= 1.0.0` - Build tool
+- `mypy` - Type checking (optional)
+
+## Troubleshooting
+
+### Build Issues
+
+**Error: "pyo3 version mismatch"**
+```bash
+cargo clean
+maturin develop --release
+```
+
+**Error: "cannot find -lpython"**
+- Ensure Python development headers are installed
+- macOS: `xcode-select --install`
+- Linux: `apt-get install python3-dev`
+
+### Import Issues
+
+**Error: "No module named 'centrevo'"**
+```bash
+# Rebuild and install
+maturin develop --release
+```
+
+**Error: "Symbol not found"**
+- Rebuild from clean state
+- Check Python version matches build
+
+### Performance Issues
+
+- Ensure using `--release` flag (10-100x faster)
+- Check that parallel features are enabled
+- Profile with `py-spy` if needed
+
+## Future Enhancements
+
+Planned improvements:
+- [ ] Streaming API for large datasets
+- [ ] More plotting utilities
+- [ ] Jupyter widget for interactive exploration
+- [ ] Async API for long-running simulations
+- [ ] Better error messages with suggestions
+- [ ] Type hints for all plotting functions
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - same as parent Centrevo project.

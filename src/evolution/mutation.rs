@@ -100,13 +100,23 @@ impl SubstitutionModel {
     ) -> usize {
         let mut mutation_count = 0;
 
-        for i in 0..sequence.len() {
-            if let Some(base) = sequence.get(i) {
-                let new_base = self.mutate_base(base, rng);
-                if new_base != base {
-                    sequence.set(i, new_base).expect("valid index");
-                    mutation_count += 1;
+        // Optimize: direct access to indices for faster mutation
+        let indices = sequence.indices_mut();
+        let alphabet_size = self.alphabet.len();
+        
+        for i in 0..indices.len() {
+            // Check if mutation occurs
+            if rng.random_bool(self.mu) {
+                let current_idx = indices[i] as usize;
+                
+                // Generate a random index excluding current
+                let mut new_idx = rng.random_range(0..alphabet_size - 1);
+                if new_idx >= current_idx {
+                    new_idx += 1;
                 }
+                
+                indices[i] = new_idx as u8;
+                mutation_count += 1;
             }
         }
 

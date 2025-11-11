@@ -8,6 +8,7 @@
 
 use crate::base::Sequence;
 use crate::simulation::Population;
+use crate::analysis::utils::{hamming_distance_fast, harmonic_number};
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -77,7 +78,7 @@ pub fn nucleotide_diversity(
         .into_par_iter()
         .map(|i| {
             (i + 1..n)
-                .map(|j| hamming_distance(sequences[i], sequences[j]))
+                .map(|j| hamming_distance_fast(sequences[i], sequences[j]))
                 .sum::<usize>()
         })
         .sum();
@@ -298,14 +299,6 @@ pub fn haplotype_diversity(
 
 // ===== Helper Functions =====
 
-/// Calculate Hamming distance between two sequences
-#[inline]
-fn hamming_distance(seq1: &Sequence, seq2: &Sequence) -> usize {
-    (0..seq1.len().min(seq2.len()))
-        .filter(|&i| seq1.get(i) != seq2.get(i))
-        .count()
-}
-
 /// Calculate number of segregating sites
 fn segregating_sites(sequences: &[&Sequence]) -> usize {
     let n_seq = sequences.len();
@@ -322,10 +315,6 @@ fn segregating_sites(sequences: &[&Sequence]) -> usize {
         .count()
 }
 
-/// Calculate harmonic number for Watterson's estimator
-fn harmonic_number(n: usize) -> f64 {
-    (1..n).map(|i| 1.0 / i as f64).sum()
-}
 
 #[cfg(test)]
 mod tests {
@@ -596,7 +585,7 @@ mod tests {
             seq2.push(if i % 2 == 0 { Nucleotide::A } else { Nucleotide::C });
         }
         
-        let dist = hamming_distance(&seq1, &seq2);
+        let dist = hamming_distance_fast(&seq1, &seq2);
         assert_eq!(dist, 5); // Half are different
     }
 }

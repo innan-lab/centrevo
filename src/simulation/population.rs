@@ -8,6 +8,7 @@ use crate::evolution::IndividualFitness;
 use crate::simulation::FitnessConfig;
 use rand::Rng;
 use std::sync::Arc;
+use rayon::prelude::*;
 
 /// A population of diploid individuals.
 #[derive(Debug, Clone)]
@@ -83,7 +84,7 @@ impl Population {
     /// Compute fitness values for all individuals.
     pub fn compute_fitness(&self, config: &FitnessConfig) -> Vec<f64> {
         self.individuals
-            .iter()
+            .par_iter()
             .map(|ind| {
                 let mut fitness = 1.0;
 

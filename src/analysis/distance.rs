@@ -7,6 +7,8 @@
 
 use crate::base::Sequence;
 use crate::simulation::Population;
+use crate::analysis::utils::hamming_distance_fast;
+use rayon::prelude::*;
 
 /// Calculate pairwise distances between all sequences
 /// 
@@ -54,9 +56,10 @@ pub fn pairwise_distances(
     let n = sequences.len();
     let mut distances = Vec::with_capacity(n * (n - 1) / 2);
 
+    // Use optimized hamming distance calculation
     for i in 0..n {
         for j in (i + 1)..n {
-            let dist = hamming_distance(sequences[i], sequences[j]);
+            let dist = hamming_distance_fast(sequences[i], sequences[j]);
             distances.push(dist);
         }
     }
@@ -120,30 +123,30 @@ pub fn distance_matrix(
         return vec![vec![0.0; n]; n];
     }
 
-    let mut matrix = vec![vec![0.0; n]; n];
-
-    for i in 0..n {
-        for j in i..n {
-            if i == j {
-                matrix[i][j] = 0.0;
-            } else {
-                let dist = hamming_distance(sequences[i], sequences[j]) as f64 / length;
-                matrix[i][j] = dist;
-                matrix[j][i] = dist;
+    // Compute matrix in parallel by rows
+    let matrix: Vec<Vec<f64>> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let mut row = vec![0.0; n];
+            for j in 0..n {
+                if i == j {
+                    row[j] = 0.0;
+                } else if i < j {
+                    let dist = hamming_distance_fast(sequences[i], sequences[j]) as f64 / length;
+                    row[j] = dist;
+                } else {
+                    // Fill in symmetric value (will be set by row j)
+                    let dist = hamming_distance_fast(sequences[j], sequences[i]) as f64 / length;
+                    row[j] = dist;
+                }
             }
-        }
-    }
+            row
+        })
+        .collect();
 
     matrix
 }
 
-/// Calculate Hamming distance between two sequences
-#[inline]
-fn hamming_distance(seq1: &Sequence, seq2: &Sequence) -> usize {
-    (0..seq1.len().min(seq2.len()))
-        .filter(|&i| seq1.get(i) != seq2.get(i))
-        .count()
-}
 
 #[cfg(test)]
 mod tests {

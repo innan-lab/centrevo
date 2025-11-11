@@ -9,6 +9,7 @@ use crate::base::Sequence;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use std::sync::Arc;
+use rayon::prelude::*;
 
 /// Main simulation engine.
 #[derive(Debug)]
@@ -135,68 +136,97 @@ impl Simulation {
 
     /// Apply mutation to all individuals in the population.
     fn apply_mutation(&mut self) -> Result<(), String> {
-        for individual in self.population.individuals_mut() {
-            // Mutate first haplotype
-            for chr in individual.haplotype1_mut().chromosomes_mut() {
-                let seq = chr.sequence_mut();
-                self.mutation.model.mutate_sequence(seq, &mut self.rng);
-            }
+        let pop_size = self.population.size();
+        
+        // Generate seeds for each individual
+        let seeds: Vec<u64> = (0..pop_size)
+            .map(|_| self.rng.random())
+            .collect();
+        
+        // Parallel mutation with independent RNGs per individual
+        self.population
+            .individuals_mut()
+            .par_iter_mut()
+            .zip(seeds.par_iter())
+            .for_each(|(individual, &seed)| {
+                let mut local_rng = StdRng::seed_from_u64(seed);
+                
+                // Mutate first haplotype
+                for chr in individual.haplotype1_mut().chromosomes_mut() {
+                    let seq = chr.sequence_mut();
+                    self.mutation.model.mutate_sequence(seq, &mut local_rng);
+                }
 
-            // Mutate second haplotype
-            for chr in individual.haplotype2_mut().chromosomes_mut() {
-                let seq = chr.sequence_mut();
-                self.mutation.model.mutate_sequence(seq, &mut self.rng);
-            }
-        }
+                // Mutate second haplotype
+                for chr in individual.haplotype2_mut().chromosomes_mut() {
+                    let seq = chr.sequence_mut();
+                    self.mutation.model.mutate_sequence(seq, &mut local_rng);
+                }
+            });
 
         Ok(())
     }
 
     /// Apply recombination to all individuals in the population.
     fn apply_recombination(&mut self) -> Result<(), String> {
-        for individual in self.population.individuals_mut() {
-            let (hap1, hap2) = individual.haplotypes_mut();
+        let pop_size = self.population.size();
+        
+        // Generate seeds for each individual
+        let seeds: Vec<u64> = (0..pop_size)
+            .map(|_| self.rng.random())
+            .collect();
+        
+        // Parallel recombination with independent RNGs per individual
+        self.population
+            .individuals_mut()
+            .par_iter_mut()
+            .zip(seeds.par_iter())
+            .try_for_each(|(individual, &seed)| -> Result<(), String> {
+                let mut local_rng = StdRng::seed_from_u64(seed);
+                let (hap1, hap2) = individual.haplotypes_mut();
 
-            // Recombine corresponding chromosomes
-            for chr_idx in 0..hap1.len().min(hap2.len()) {
-                if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx)) {
-                    // Sample recombination event
-                    let event = self.recombination.params.sample_event(
-                        chr1.len(),
-                        &mut self.rng,
-                    );
+                // Recombine corresponding chromosomes
+                for chr_idx in 0..hap1.len().min(hap2.len()) {
+                    if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx)) {
+                        // Sample recombination event
+                        let event = self.recombination.params.sample_event(
+                            chr1.len(),
+                            &mut local_rng,
+                        );
 
-                    // Apply the recombination event
-                    match event {
-                        crate::evolution::RecombinationType::None => {
-                            // No recombination
-                        }
-                        crate::evolution::RecombinationType::Crossover { position } => {
-                            // Perform crossover
-                            let (new1, new2) = self.recombination.params.crossover(
-                                chr1.sequence(),
-                                chr2.sequence(),
-                                position,
-                            ).map_err(|e| format!("Crossover failed: {}", e))?;
-                            
-                            *chr1.sequence_mut() = new1;
-                            *chr2.sequence_mut() = new2;
-                        }
-                        crate::evolution::RecombinationType::GeneConversion { start, end } => {
-                            // Perform gene conversion (chr1 -> chr2)
-                            let new2 = self.recombination.params.gene_conversion(
-                                chr2.sequence(),
-                                chr1.sequence(),
-                                start,
-                                end,
-                            ).map_err(|e| format!("Gene conversion failed: {}", e))?;
-                            
-                            *chr2.sequence_mut() = new2;
+                        // Apply the recombination event
+                        match event {
+                            crate::evolution::RecombinationType::None => {
+                                // No recombination
+                            }
+                            crate::evolution::RecombinationType::Crossover { position } => {
+                                // Perform crossover
+                                let (new1, new2) = self.recombination.params.crossover(
+                                    chr1.sequence(),
+                                    chr2.sequence(),
+                                    position,
+                                ).map_err(|e| format!("Crossover failed: {}", e))?;
+                                
+                                *chr1.sequence_mut() = new1;
+                                *chr2.sequence_mut() = new2;
+                            }
+                            crate::evolution::RecombinationType::GeneConversion { start, end } => {
+                                // Perform gene conversion (chr1 -> chr2)
+                                let new2 = self.recombination.params.gene_conversion(
+                                    chr2.sequence(),
+                                    chr1.sequence(),
+                                    start,
+                                    end,
+                                ).map_err(|e| format!("Gene conversion failed: {}", e))?;
+                                
+                                *chr2.sequence_mut() = new2;
+                            }
                         }
                     }
                 }
-            }
-        }
+                
+                Ok(())
+            })?;
 
         Ok(())
     }
@@ -213,30 +243,47 @@ impl Simulation {
             self.config.population_size,
         );
 
-        // Generate offspring from parent pairs
-        let mut offspring = Vec::with_capacity(self.config.population_size);
+        // Pre-allocate generation string to avoid repeated allocations
+        let gen_str = format!("ind_gen{}_", self.generation() + 1);
         
-        for (i, (parent1_idx, parent2_idx)) in pairs.iter().enumerate() {
-            let parent1 = self.population.get(*parent1_idx).unwrap();
-            let parent2 = self.population.get(*parent2_idx).unwrap();
+        // Generate seeds for each offspring
+        let seeds: Vec<u64> = (0..self.config.population_size)
+            .map(|_| self.rng.random())
+            .collect();
+        
+        // Get immutable reference to population for parallel access
+        let population = &self.population;
+        
+        // Generate offspring from parent pairs in parallel
+        let offspring: Vec<Individual> = pairs
+            .par_iter()
+            .zip(seeds.par_iter())
+            .enumerate()
+            .map(|(i, ((parent1_idx, parent2_idx), &seed))| {
+                let mut local_rng = StdRng::seed_from_u64(seed);
+                
+                let parent1 = population.get(*parent1_idx).unwrap();
+                let parent2 = population.get(*parent2_idx).unwrap();
 
-            // Each parent contributes one gamete (haplotype)
-            // For simplicity, randomly pick one haplotype from each parent
-            let hap1 = if self.rng.random_bool(0.5) {
-                parent1.haplotype1().clone()
-            } else {
-                parent1.haplotype2().clone()
-            };
+                // Each parent contributes one gamete (haplotype)
+                // Randomly pick one haplotype from each parent
+                let hap1 = if local_rng.random_bool(0.5) {
+                    parent1.haplotype1().clone()
+                } else {
+                    parent1.haplotype2().clone()
+                };
 
-            let hap2 = if self.rng.random_bool(0.5) {
-                parent2.haplotype1().clone()
-            } else {
-                parent2.haplotype2().clone()
-            };
+                let hap2 = if local_rng.random_bool(0.5) {
+                    parent2.haplotype1().clone()
+                } else {
+                    parent2.haplotype2().clone()
+                };
 
-            let child = Individual::new(format!("ind_gen{}_{}", self.generation() + 1, i), hap1, hap2);
-            offspring.push(child);
-        }
+                // More efficient ID construction
+                let id = format!("{}{}", gen_str, i);
+                Individual::new(id, hap1, hap2)
+            })
+            .collect();
 
         Ok(offspring)
     }

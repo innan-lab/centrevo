@@ -53,13 +53,27 @@ fn bench_mutation(c: &mut Criterion) {
             let label = format!("rate_{}_size_{}", rate, size);
             group.throughput(Throughput::Elements(size as u64));
             
+            // Standard mutation
             group.bench_with_input(
-                BenchmarkId::new("mutate_sequence", &label),
+                BenchmarkId::new("standard", &label),
                 &size,
                 |b, &s| {
                     b.iter(|| {
                         let mut seq = create_test_sequence(s, alphabet.clone());
                         model.mutate_sequence(&mut seq, &mut rng);
+                        black_box(seq)
+                    });
+                }
+            );
+            
+            // Poisson mutation
+            group.bench_with_input(
+                BenchmarkId::new("poisson", &label),
+                &size,
+                |b, &s| {
+                    b.iter(|| {
+                        let mut seq = create_test_sequence(s, alphabet.clone());
+                        model.mutate_sequence_poisson(&mut seq, &mut rng);
                         black_box(seq)
                     });
                 }

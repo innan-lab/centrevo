@@ -151,16 +151,16 @@ impl Simulation {
             .for_each(|(individual, &seed)| {
                 let mut local_rng = StdRng::seed_from_u64(seed);
                 
-                // Mutate first haplotype
+                // Mutate first haplotype using Poisson pre-sampling
                 for chr in individual.haplotype1_mut().chromosomes_mut() {
                     let seq = chr.sequence_mut();
-                    self.mutation.model.mutate_sequence(seq, &mut local_rng);
+                    self.mutation.model.mutate_sequence_poisson(seq, &mut local_rng);
                 }
 
-                // Mutate second haplotype
+                // Mutate second haplotype using Poisson pre-sampling
                 for chr in individual.haplotype2_mut().chromosomes_mut() {
                     let seq = chr.sequence_mut();
-                    self.mutation.model.mutate_sequence(seq, &mut local_rng);
+                    self.mutation.model.mutate_sequence_poisson(seq, &mut local_rng);
                 }
             });
 

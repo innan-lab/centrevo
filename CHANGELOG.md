@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Python Analysis Bindings** (Phase 2 Week 4)
+  - Complete Python bindings for all analysis functions
+  - `nucleotide_diversity()`, `tajimas_d()`, `wattersons_theta()`, `haplotype_diversity()`
+  - `linkage_disequilibrium()`, `ld_decay()`, `haplotype_blocks()`
+  - `pairwise_distances()`, `distance_matrix()`
+  - `gc_content()`, `nucleotide_composition()`, `count_segregating_sites()`
+  - PyArrow export functions for efficient data interchange
+  - `export_diversity_metrics()`, `export_distance_matrix()`, `export_ld_decay()`
+
+- **Python Plotting Utilities**
+  - `centrevo.plotting` module with matplotlib-based visualizations
+  - `plot_diversity_trajectory()` - diversity metrics over time
+  - `plot_ld_decay()` - LD decay visualization
+  - `plot_distance_matrix()` - genetic distance heatmap
+  - `plot_nucleotide_composition()` - nucleotide frequency bar chart
+  - `plot_multiple_diversity_metrics()` - multi-panel diversity plots
+  - PyArrow helper functions for pandas/polars conversion
+
+- **Dependencies**
+  - Added pyarrow (>=14.0.0) for efficient data export
+  - Added matplotlib (>=3.5.0) for visualizations
+  - Added numpy (>=1.21.0) for numerical operations
+  - Optional dev dependencies: pytest, jupyter, pandas, polars
+
 ### Changed
 - **BREAKING**: Simplified diversity metrics API by removing `haplotype_idx` parameter
   - `nucleotide_diversity()`, `tajimas_d()`, `wattersons_theta()`, and `haplotype_diversity()` 

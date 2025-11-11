@@ -15,6 +15,7 @@ use crate::storage::{QueryBuilder, Recorder, RecordingStrategy};
 /// Python module for Centrevo.
 #[pymodule]
 fn centrevo(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Core classes
     m.add_class::<PyNucleotide>()?;
     m.add_class::<PyAlphabet>()?;
     m.add_class::<PyChromosome>()?;
@@ -26,7 +27,13 @@ fn centrevo(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRecorder>()?;
     m.add_class::<PyQueryBuilder>()?;
     m.add_class::<PyRecordingStrategy>()?;
+    
+    // Core functions
     m.add_function(wrap_pyfunction!(create_initial_population, m)?)?;
+    
+    // Analysis functions
+    super::analysis::register_analysis_functions(m)?;
+    
     Ok(())
 }
 
@@ -254,8 +261,8 @@ impl PyIndividual {
 
 /// Population of individuals.
 #[pyclass(name = "Population")]
-struct PyPopulation {
-    inner: Population,
+pub(super) struct PyPopulation {
+    pub(super) inner: Population,
 }
 
 #[pymethods]

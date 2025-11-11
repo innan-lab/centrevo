@@ -1,0 +1,11 @@
+{
+  "include": ["python/centrevo"],
+  "exclude": ["**/__pycache__", "**/.*", "target"],
+  "stubPath": "python/centrevo",
+  "reportUnusedVariable": "none",
+  "reportUnusedFunction": "none",
+  "reportUnusedClass": "none",
+  "reportUnusedImport": "none",
+  "reportUnusedExpression": "none",
+  "typeCheckingMode": "basic"
+}

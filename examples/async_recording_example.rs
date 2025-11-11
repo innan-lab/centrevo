@@ -80,7 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         if generation % 10 == 0 {
             // Record generation (non-blocking, unless buffer is full)
-            recorder.record_generation(sim.population(), generation).await?;
+            let rng_state = sim.rng_state_bytes();
+            recorder.record_generation(sim.population(), generation, rng_state).await?;
             
             // Check buffer status
             let fill_ratio = recorder.buffer_fill_ratio();

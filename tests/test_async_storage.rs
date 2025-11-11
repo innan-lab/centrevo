@@ -69,8 +69,9 @@ async fn test_full_simulation_with_async_recording() {
         sim.step().unwrap();
 
         if generation % 10 == 0 {
+            let dummy_rng_state = vec![0u8; 32];
             recorder
-                .record_generation(sim.population(), generation)
+                .record_generation(sim.population(), generation, dummy_rng_state)
                 .await
                 .unwrap();
         }
@@ -106,8 +107,9 @@ async fn test_async_recording_with_rapid_succession() {
 
     // Record 20 generations rapidly
     for generation in 0..20 {
+        let dummy_rng_state = vec![0u8; 32];
         recorder
-            .record_generation(&pop, generation)
+            .record_generation(&pop, generation, dummy_rng_state)
             .await
             .unwrap();
     }
@@ -138,8 +140,9 @@ async fn test_buffer_overflow_handling() {
 
     // Try to fill the buffer quickly
     for generation in 0..5 {
+        let dummy_rng_state = vec![0u8; 32];
         recorder
-            .record_generation(&pop, generation)
+            .record_generation(&pop, generation, dummy_rng_state)
             .await
             .unwrap();
     }
@@ -171,7 +174,8 @@ async fn test_compression_ratio_comparison() {
         let recorder = AsyncRecorder::new(&path, "compression_test", config).unwrap();
         let pop = create_test_population(50, 1000);
 
-        recorder.record_generation(&pop, 0).await.unwrap();
+        let dummy_rng_state = vec![0u8; 32];
+        recorder.record_generation(&pop, 0, dummy_rng_state).await.unwrap();
 
         let stats = recorder.close().await.unwrap();
         results.push((level, stats));
@@ -249,8 +253,9 @@ async fn test_concurrent_recorders() {
             let pop = create_test_population(30, 500);
 
             for generation in 0..5 {
+                let dummy_rng_state = vec![0u8; 32];
                 recorder
-                    .record_generation(&pop, generation)
+                    .record_generation(&pop, generation, dummy_rng_state)
                     .await
                     .unwrap();
             }
@@ -286,8 +291,9 @@ async fn test_snapshot_consistency() {
     let pop = create_test_population(20, 200);
 
     // Record same population twice
-    recorder.record_generation(&pop, 0).await.unwrap();
-    recorder.record_generation(&pop, 1).await.unwrap();
+    let dummy_rng_state = vec![0u8; 32];
+    recorder.record_generation(&pop, 0, dummy_rng_state.clone()).await.unwrap();
+    recorder.record_generation(&pop, 1, dummy_rng_state).await.unwrap();
 
     let stats = recorder.close().await.unwrap();
 
@@ -328,7 +334,8 @@ async fn test_performance_vs_sync() {
         let config = BufferConfig::medium();
         let recorder = AsyncRecorder::new(async_path, "async_test", config).unwrap();
         for generation in 0..10 {
-            recorder.record_generation(&pop, generation).await.unwrap();
+            let dummy_rng_state = vec![0u8; 32];
+            recorder.record_generation(&pop, generation, dummy_rng_state).await.unwrap();
         }
         recorder.close().await.unwrap();
     }

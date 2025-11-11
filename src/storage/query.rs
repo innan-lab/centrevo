@@ -281,6 +281,84 @@ impl QueryBuilder {
         Ok(snapshots)
     }
 
+    /// Get the latest checkpoint for a simulation.
+    pub fn get_latest_checkpoint(&self, sim_id: &str) -> Result<CheckpointInfo, DatabaseError> {
+        let mut stmt = self
+            .db
+            .connection()
+            .prepare(
+                "SELECT generation, rng_state, timestamp
+                FROM checkpoints 
+                WHERE sim_id = ?1
+                ORDER BY generation DESC
+                LIMIT 1",
+            )
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let checkpoint = stmt
+            .query_row(params![sim_id], |row| {
+                Ok(CheckpointInfo {
+                    sim_id: sim_id.to_string(),
+                    generation: row.get::<_, i64>(0)? as usize,
+                    rng_state: row.get(1)?,
+                    timestamp: row.get(2)?,
+                })
+            })
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(checkpoint)
+    }
+
+    /// Get a specific checkpoint by generation.
+    pub fn get_checkpoint(
+        &self,
+        sim_id: &str,
+        generation: usize,
+    ) -> Result<CheckpointInfo, DatabaseError> {
+        let mut stmt = self
+            .db
+            .connection()
+            .prepare(
+                "SELECT generation, rng_state, timestamp
+                FROM checkpoints 
+                WHERE sim_id = ?1 AND generation = ?2",
+            )
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let checkpoint = stmt
+            .query_row(params![sim_id, generation as i64], |row| {
+                Ok(CheckpointInfo {
+                    sim_id: sim_id.to_string(),
+                    generation: row.get::<_, i64>(0)? as usize,
+                    rng_state: row.get(1)?,
+                    timestamp: row.get(2)?,
+                })
+            })
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        Ok(checkpoint)
+    }
+
+    /// Get complete simulation configuration from database.
+    pub fn get_full_config(&self, sim_id: &str) -> Result<crate::storage::SimulationSnapshot, DatabaseError> {
+        let mut stmt = self
+            .db
+            .connection()
+            .prepare(
+                "SELECT config_json FROM simulations WHERE sim_id = ?1",
+            )
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let config_json: String = stmt
+            .query_row(params![sim_id], |row| row.get(0))
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let snapshot: crate::storage::SimulationSnapshot = serde_json::from_str(&config_json)
+            .map_err(|e| DatabaseError::Query(format!("Failed to parse config: {}", e)))?;
+
+        Ok(snapshot)
+    }
+
     /// Close the query builder.
     pub fn close(self) -> Result<(), DatabaseError> {
         self.db.close()
@@ -298,6 +376,15 @@ pub struct SimulationInfo {
     pub mutation_rate: f64,
     pub recombination_rate: f64,
     pub parameters_json: String,
+}
+
+/// Checkpoint information for resumability.
+#[derive(Debug, Clone)]
+pub struct CheckpointInfo {
+    pub sim_id: String,
+    pub generation: usize,
+    pub rng_state: Vec<u8>,
+    pub timestamp: i64,
 }
 
 #[cfg(test)]

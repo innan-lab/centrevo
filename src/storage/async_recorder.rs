@@ -23,6 +23,7 @@ enum RecorderMessage {
         min_fitness: f64,
         max_fitness: f64,
         std_fitness: f64,
+        rng_state: Vec<u8>,
     },
     /// Flush and shutdown the recorder.
     Shutdown,
@@ -205,6 +206,11 @@ impl AsyncRecorder {
     /// 2. Send to background task (blocks only if buffer is full)
     /// 3. Return immediately (background task handles compression/write)
     ///
+    /// # Parameters
+    /// - `population`: The current population to record
+    /// - `generation`: The generation number
+    /// - `rng_state`: The RNG state bytes for checkpointing
+    ///
     /// # Performance
     /// - Snapshot creation: ~1-5ms (parallel)
     /// - Send to channel: <1μs (unless buffer full)
@@ -213,6 +219,7 @@ impl AsyncRecorder {
         &self,
         population: &Population,
         generation: usize,
+        rng_state: Vec<u8>,
     ) -> Result<(), DatabaseError> {
         // Create snapshots in parallel (happens in caller's context)
         use rayon::prelude::*;
@@ -264,6 +271,7 @@ impl AsyncRecorder {
                 min_fitness,
                 max_fitness,
                 std_fitness,
+                rng_state,
             })
             .await;
         
@@ -334,7 +342,7 @@ async fn background_recorder_task(
             timestamp INTEGER DEFAULT (strftime('%s', 'now'))
         );
 
-        -- Simulation metadata table
+        -- Simulation metadata table (expanded for full config)
         CREATE TABLE IF NOT EXISTS simulations (
             sim_id TEXT PRIMARY KEY,
             start_time INTEGER NOT NULL,
@@ -343,7 +351,8 @@ async fn background_recorder_task(
             num_generations INTEGER NOT NULL,
             mutation_rate REAL NOT NULL,
             recombination_rate REAL NOT NULL,
-            parameters_json TEXT NOT NULL
+            parameters_json TEXT NOT NULL,
+            config_json TEXT  -- Complete simulation configuration
         );
 
         -- Fitness history table for aggregated statistics
@@ -357,13 +366,24 @@ async fn background_recorder_task(
             PRIMARY KEY (sim_id, generation)
         );
 
+        -- Checkpoints table for resumability
+        CREATE TABLE IF NOT EXISTS checkpoints (
+            sim_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            rng_state BLOB NOT NULL,
+            timestamp INTEGER NOT NULL,
+            PRIMARY KEY (sim_id, generation)
+        );
+
         -- Indices for fast queries
         CREATE INDEX IF NOT EXISTS idx_pop_sim_gen 
             ON population_state(sim_id, generation);
         CREATE INDEX IF NOT EXISTS idx_pop_individual 
             ON population_state(individual_id);
         CREATE INDEX IF NOT EXISTS idx_fitness_sim_gen 
-            ON fitness_history(sim_id, generation);"
+            ON fitness_history(sim_id, generation);
+        CREATE INDEX IF NOT EXISTS idx_checkpoints_sim_gen
+            ON checkpoints(sim_id, generation);"
     )
     .map_err(|e| DatabaseError::Initialization(e.to_string()))?;
     
@@ -381,6 +401,7 @@ async fn background_recorder_task(
                 min_fitness,
                 max_fitness,
                 std_fitness,
+                rng_state,
             } => {
                 // Decrement buffer fill counter
                 buffer_fill.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
@@ -401,6 +422,7 @@ async fn background_recorder_task(
                     min_fitness,
                     max_fitness,
                     std_fitness,
+                    &rng_state,
                 )?;
                 let write_time = write_start.elapsed();
                 total_write_time += write_time;
@@ -486,6 +508,7 @@ fn write_compressed_snapshots(
     min_fitness: f64,
     max_fitness: f64,
     std_fitness: f64,
+    rng_state: &[u8],
 ) -> Result<(), DatabaseError> {
     let tx = conn
         .transaction()
@@ -523,6 +546,20 @@ fn write_compressed_snapshots(
         (sim_id, generation, mean_fitness, min_fitness, max_fitness, std_fitness)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![sim_id, generation as i64, mean_fitness, min_fitness, max_fitness, std_fitness],
+    )
+    .map_err(|e| DatabaseError::Insert(e.to_string()))?;
+    
+    // Insert checkpoint with RNG state
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    
+    tx.execute(
+        "INSERT OR REPLACE INTO checkpoints 
+        (sim_id, generation, rng_state, timestamp)
+        VALUES (?1, ?2, ?3, ?4)",
+        params![sim_id, generation as i64, rng_state, timestamp],
     )
     .map_err(|e| DatabaseError::Insert(e.to_string()))?;
     
@@ -572,6 +609,10 @@ mod tests {
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)
+    }
+    
+    fn dummy_rng_state() -> Vec<u8> {
+        vec![0u8; 32]  // Dummy RNG state for testing
     }
     
     #[tokio::test]
@@ -627,7 +668,7 @@ mod tests {
         let pop = create_test_population(5, 100);
         
         recorder
-            .record_generation(&pop, 0)
+            .record_generation(&pop, 0, dummy_rng_state())
             .await
             .expect("Failed to record generation");
         
@@ -652,7 +693,7 @@ mod tests {
         // Record 5 generations
         for generation in 0..5 {
             recorder
-                .record_generation(&pop, generation)
+                .record_generation(&pop, generation, dummy_rng_state())
                 .await
                 .expect("Failed to record generation");
         }
@@ -685,7 +726,7 @@ mod tests {
         
         // Record a generation
         recorder
-            .record_generation(&pop, 0)
+            .record_generation(&pop, 0, dummy_rng_state())
             .await
             .expect("Failed to record");
         
@@ -718,7 +759,7 @@ mod tests {
             let pop = create_test_population(10, 100);
             
             recorder
-                .record_generation(&pop, 0)
+                .record_generation(&pop, 0, dummy_rng_state())
                 .await
                 .expect("Failed to record");
             
@@ -747,7 +788,7 @@ mod tests {
         let pop = create_test_population(100, 500);
         
         recorder
-            .record_generation(&pop, 0)
+            .record_generation(&pop, 0, dummy_rng_state())
             .await
             .expect("Failed to record");
         
@@ -774,7 +815,7 @@ mod tests {
         // Record multiple generations in quick succession
         for generation in 0..10 {
             recorder
-                .record_generation(&pop, generation)
+                .record_generation(&pop, generation, dummy_rng_state())
                 .await
                 .expect("Failed to record");
         }
@@ -802,8 +843,8 @@ mod tests {
         let pop = create_test_population(50, 200);
         
         // Record quickly to fill buffer
-        recorder.record_generation(&pop, 0).await.expect("Failed to record");
-        recorder.record_generation(&pop, 1).await.expect("Failed to record");
+        recorder.record_generation(&pop, 0, dummy_rng_state()).await.expect("Failed to record");
+        recorder.record_generation(&pop, 1, dummy_rng_state()).await.expect("Failed to record");
         
         // At some point, buffer should be high
         let is_high = recorder.is_buffer_high();
@@ -829,7 +870,7 @@ mod tests {
         let pop = create_test_population(20, 500);
         
         recorder
-            .record_generation(&pop, 0)
+            .record_generation(&pop, 0, dummy_rng_state())
             .await
             .expect("Failed to record");
         

@@ -68,19 +68,23 @@ enum Commands {
         #[arg(short = 'N', long)]
         name: String,
 
-        /// Mutation rate
+        /// Resume from checkpoint (ignores other parameters)
+        #[arg(long)]
+        resume: bool,
+
+        /// Mutation rate (ignored if --resume is set)
         #[arg(long, default_value = "0.001")]
         mutation_rate: f64,
 
-        /// Recombination break probability
+        /// Recombination break probability (ignored if --resume is set)
         #[arg(long, default_value = "0.01")]
         recomb_rate: f64,
 
-        /// Crossover probability (given break)
+        /// Crossover probability (given break) (ignored if --resume is set)
         #[arg(long, default_value = "0.7")]
         crossover_prob: f64,
 
-        /// Recording interval (record every N generations)
+        /// Recording interval (record every N generations) (ignored if --resume is set)
         #[arg(long, default_value = "100")]
         record_every: usize,
 
@@ -223,6 +227,7 @@ fn main() -> Result<()> {
         Commands::Run {
             database,
             name,
+            resume,
             mutation_rate,
             recomb_rate,
             crossover_prob,
@@ -232,6 +237,7 @@ fn main() -> Result<()> {
             run_simulation(
                 &database,
                 &name,
+                resume,
                 mutation_rate,
                 recomb_rate,
                 crossover_prob,
@@ -344,6 +350,7 @@ fn init_simulation(
 fn run_simulation(
     database: &PathBuf,
     name: &str,
+    resume: bool,
     mutation_rate: f64,
     recomb_rate: f64,
     crossover_prob: f64,
@@ -353,99 +360,201 @@ fn run_simulation(
     println!("🧬 Centrevo - Running Simulation");
     println!("============================================\n");
     
-    // Open database and get simulation info
-    let query = QueryBuilder::new(database).context("Failed to open database")?;
-    let info = query
-        .get_simulation_info(name)
-        .context("Failed to get simulation info")?;
-    
-    println!("Simulation: {}", name);
-    println!("Population size: {}", info.pop_size);
-    println!("Target generations: {}", info.num_generations);
-    println!("Mutation rate: {}", mutation_rate);
-    println!("Recombination rate: {}", recomb_rate);
-    println!();
-    
-    // Check if simulation already has data
-    let recorded_gens = query
-        .get_recorded_generations(name)
-        .context("Failed to get recorded generations")?;
-    
-    if !recorded_gens.is_empty() && recorded_gens.iter().max().copied().unwrap_or(0) >= info.num_generations {
-        println!("✓ Simulation already complete!");
-        println!("  Recorded {} generations", recorded_gens.len());
-        return Ok(());
-    }
-    
-    println!("Starting simulation from generation 0...\n");
-    
-    // Load initial population
-    let initial_individuals = query.get_generation(name, 0)
-        .context("Failed to load initial population. Did you run 'centrevo init' first?")?;
-    
-    if initial_individuals.is_empty() {
-        anyhow::bail!("No initial population found. Please run 'centrevo init' first.");
-    }
-    
-    // Setup simulation components
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(
-        alphabet.clone(),
-        Nucleotide::A,
-        171,  // TODO: These should match init params from database
-        12,
-        100,
-        1,
-    );
-    
-    let mutation = MutationConfig::uniform(alphabet, mutation_rate)
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let recombination = RecombinationConfig::standard(recomb_rate, crossover_prob, 0.1)
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let fitness = FitnessConfig::neutral();
-    let config = SimulationConfig::new(info.pop_size, info.num_generations, None);
-    
-    // Create simulation engine
-    let mut sim = Simulation::new(structure, mutation, recombination, fitness, config)
-        .map_err(|e| anyhow::anyhow!(e))?;
-    
-    // Setup recorder
-    let mut recorder = Recorder::new(
-        database,
-        name,
-        RecordingStrategy::EveryN(record_every),
-    ).context("Failed to create recorder")?;
-    
-    // Run simulation
-    println!("Running {} generations...", info.num_generations);
-    
-    for generation in 1..=info.num_generations {
-        sim.step().map_err(|e| anyhow::anyhow!("Generation {}: {}", generation, e))?;
+    // If resuming, load from checkpoint
+    if resume {
+        println!("📂 Resuming simulation from checkpoint...");
         
-        // Record if needed
-        recorder.record_if_needed(sim.population(), generation)
-            .with_context(|| format!("Failed to record generation {}", generation))?;
+        // Load simulation from checkpoint
+        let mut sim = Simulation::from_checkpoint(database, name)
+            .map_err(|e| anyhow::anyhow!("Failed to resume: {}", e))?;
         
-        // Show progress
-        if show_progress && (generation % 10 == 0 || generation == info.num_generations) {
-            let progress = generation as f64 / info.num_generations as f64 * 100.0;
-            print!("\rProgress: {:.1}% ({}/{})", progress, generation, info.num_generations);
-            io::stdout().flush().ok();
-        }
-    }
-    
-    if show_progress {
+        let start_generation = sim.generation();
+        let total_generations = sim.config().total_generations;
+        
+        println!("✓ Loaded checkpoint from generation {}", start_generation);
+        println!("  Population size: {}", sim.config().population_size);
+        println!("  Target generations: {}", total_generations);
         println!();
+        
+        if start_generation >= total_generations {
+            println!("✓ Simulation already complete!");
+            return Ok(());
+        }
+        
+        // Setup recorder with full config
+        use centrevo::storage::SimulationSnapshot;
+        let snapshot = SimulationSnapshot {
+            structure: sim.structure().clone(),
+            mutation: sim.mutation().clone(),
+            recombination: sim.recombination().clone(),
+            fitness: sim.fitness().clone(),
+            config: sim.config().clone(),
+        };
+        
+        let mut recorder = Recorder::new(
+            database,
+            name,
+            RecordingStrategy::EveryN(record_every),
+        ).context("Failed to create recorder")?;
+        
+        // Record full config if not already recorded
+        recorder.record_full_config(&snapshot)
+            .context("Failed to record configuration")?;
+        
+        // Run simulation from checkpoint
+        let remaining_generations = total_generations - start_generation;
+        println!("Running {} remaining generations...", remaining_generations);
+        
+        for i in 1..=remaining_generations {
+            let generation = start_generation + i;
+            sim.step().map_err(|e| anyhow::anyhow!("Generation {}: {}", generation, e))?;
+            
+            // Record if needed (with RNG state for checkpoint)
+            if recorder.should_record(generation) {
+                let rng_state = sim.rng_state_bytes();
+                recorder.record_generation(sim.population(), generation)
+                    .with_context(|| format!("Failed to record generation {}", generation))?;
+                recorder.record_checkpoint(generation, &rng_state)
+                    .with_context(|| format!("Failed to record checkpoint {}", generation))?;
+            }
+            
+            // Show progress
+            if show_progress && (i % 10 == 0 || generation == total_generations) {
+                let progress = generation as f64 / total_generations as f64 * 100.0;
+                print!("\rProgress: {:.1}% ({}/{})", progress, generation, total_generations);
+                io::stdout().flush().ok();
+            }
+        }
+        
+        if show_progress {
+            println!();
+        }
+        
+        // Finalize
+        recorder.finalize_metadata()
+            .context("Failed to finalize metadata")?;
+        
+        println!("\n✓ Simulation complete!");
+        println!("  Final generation: {}", total_generations);
+        
+    } else {
+        // Original run logic (from generation 0)
+        
+        // Open database and get simulation info
+        let query = QueryBuilder::new(database).context("Failed to open database")?;
+        let info = query
+            .get_simulation_info(name)
+            .context("Failed to get simulation info")?;
+        
+        println!("Simulation: {}", name);
+        println!("Population size: {}", info.pop_size);
+        println!("Target generations: {}", info.num_generations);
+        println!("Mutation rate: {}", mutation_rate);
+        println!("Recombination rate: {}", recomb_rate);
+        println!();
+        
+        // Check if simulation already has data
+        let recorded_gens = query
+            .get_recorded_generations(name)
+            .context("Failed to get recorded generations")?;
+        
+        if !recorded_gens.is_empty() && recorded_gens.iter().max().copied().unwrap_or(0) >= info.num_generations {
+            println!("✓ Simulation already complete!");
+            println!("  Recorded {} generations", recorded_gens.len());
+            println!("\n💡 Use '--resume' flag to continue from checkpoint");
+            return Ok(());
+        }
+        
+        println!("Starting simulation from generation 0...\n");
+        
+        // Load initial population
+        let initial_individuals = query.get_generation(name, 0)
+            .context("Failed to load initial population. Did you run 'centrevo init' first?")?;
+        
+        if initial_individuals.is_empty() {
+            anyhow::bail!("No initial population found. Please run 'centrevo init' first.");
+        }
+        
+        query.close().ok();
+        
+        // Setup simulation components
+        let alphabet = Alphabet::dna();
+        let structure = RepeatStructure::new(
+            alphabet.clone(),
+            Nucleotide::A,
+            171,  // TODO: These should match init params from database
+            12,
+            100,
+            1,
+        );
+        
+        let mutation = MutationConfig::uniform(alphabet, mutation_rate)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let recombination = RecombinationConfig::standard(recomb_rate, crossover_prob, 0.1)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let fitness = FitnessConfig::neutral();
+        let config = SimulationConfig::new(info.pop_size, info.num_generations, None);
+        
+        // Create simulation engine
+        let mut sim = Simulation::new(structure.clone(), mutation.clone(), recombination.clone(), fitness.clone(), config.clone())
+            .map_err(|e| anyhow::anyhow!(e))?;
+        
+        // Setup recorder
+        use centrevo::storage::SimulationSnapshot;
+        let snapshot = SimulationSnapshot {
+            structure,
+            mutation,
+            recombination,
+            fitness,
+            config: config.clone(),
+        };
+        
+        let mut recorder = Recorder::new(
+            database,
+            name,
+            RecordingStrategy::EveryN(record_every),
+        ).context("Failed to create recorder")?;
+        
+        recorder.record_full_config(&snapshot)
+            .context("Failed to record configuration")?;
+        
+        // Run simulation
+        println!("Running {} generations...", info.num_generations);
+        
+        for generation in 1..=info.num_generations {
+            sim.step().map_err(|e| anyhow::anyhow!("Generation {}: {}", generation, e))?;
+            
+            // Record if needed (with RNG state for checkpoint)
+            if recorder.should_record(generation) {
+                let rng_state = sim.rng_state_bytes();
+                recorder.record_generation(sim.population(), generation)
+                    .with_context(|| format!("Failed to record generation {}", generation))?;
+                recorder.record_checkpoint(generation, &rng_state)
+                    .with_context(|| format!("Failed to record checkpoint {}", generation))?;
+            }
+            
+            // Show progress
+            if show_progress && (generation % 10 == 0 || generation == info.num_generations) {
+                let progress = generation as f64 / info.num_generations as f64 * 100.0;
+                print!("\rProgress: {:.1}% ({}/{})", progress, generation, info.num_generations);
+                io::stdout().flush().ok();
+            }
+        }
+        
+        if show_progress {
+            println!();
+        }
+        
+        // Finalize
+        recorder.finalize_metadata()
+            .context("Failed to finalize metadata")?;
+        
+        println!("\n✓ Simulation complete!");
+        println!("  Final generation: {}", info.num_generations);
+        println!("  Recorded generations: {} snapshots", 
+                 (info.num_generations / record_every) + 1);
     }
     
-    // Finalize
-    recorder.finalize_metadata()
-        .context("Failed to finalize metadata")?;
-    
-    println!("\n✓ Simulation complete!");
-    println!("  Final generation: {}", info.num_generations);
-    println!("  Recorded generations: {} snapshots", 
-             (info.num_generations / record_every) + 1);
     println!("\n💡 Use 'centrevo info -N {}' to view results", name);
     
     Ok(())
@@ -1141,6 +1250,7 @@ fn setup_wizard(use_defaults: bool) -> Result<()> {
         run_simulation(
             &database,
             &name,
+            false, // not resume
             mutation_rate,
             recomb_rate,
             crossover_prob,

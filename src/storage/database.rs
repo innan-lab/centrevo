@@ -53,7 +53,7 @@ impl Database {
                     timestamp INTEGER DEFAULT (strftime('%s', 'now'))
                 );
 
-                -- Simulation metadata table
+                -- Simulation metadata table (expanded for full config)
                 CREATE TABLE IF NOT EXISTS simulations (
                     sim_id TEXT PRIMARY KEY,
                     start_time INTEGER NOT NULL,
@@ -62,7 +62,9 @@ impl Database {
                     num_generations INTEGER NOT NULL,
                     mutation_rate REAL NOT NULL,
                     recombination_rate REAL NOT NULL,
-                    parameters_json TEXT NOT NULL
+                    parameters_json TEXT NOT NULL,
+                    -- Full configuration for resumability
+                    config_json TEXT  -- Complete simulation configuration
                 );
 
                 -- Fitness history table for aggregated statistics
@@ -76,13 +78,24 @@ impl Database {
                     PRIMARY KEY (sim_id, generation)
                 );
 
+                -- Checkpoints table for resumability
+                CREATE TABLE IF NOT EXISTS checkpoints (
+                    sim_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    rng_state BLOB NOT NULL,  -- 32 bytes: 4x u64 for Xoshiro256PlusPlus
+                    timestamp INTEGER NOT NULL,
+                    PRIMARY KEY (sim_id, generation)
+                );
+
                 -- Indices for fast queries
                 CREATE INDEX IF NOT EXISTS idx_pop_sim_gen 
                     ON population_state(sim_id, generation);
                 CREATE INDEX IF NOT EXISTS idx_pop_individual 
                     ON population_state(individual_id);
                 CREATE INDEX IF NOT EXISTS idx_fitness_sim_gen 
-                    ON fitness_history(sim_id, generation);",
+                    ON fitness_history(sim_id, generation);
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_sim_gen
+                    ON checkpoints(sim_id, generation);",
             )
             .map_err(|e| DatabaseError::Initialization(e.to_string()))?;
 

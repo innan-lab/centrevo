@@ -7,7 +7,7 @@ use crate::genome::{Chromosome, Haplotype, Individual};
 use crate::simulation::{Population, RepeatStructure, MutationConfig, RecombinationConfig, FitnessConfig, SimulationConfig};
 use crate::base::Sequence;
 use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
+use rand_xoshiro::Xoshiro256PlusPlus;
 use std::sync::Arc;
 use rayon::prelude::*;
 
@@ -27,8 +27,8 @@ pub struct Simulation {
     fitness: FitnessConfig,
     /// Simulation configuration
     config: SimulationConfig,
-    /// Random number generator
-    rng: StdRng,
+    /// Random number generator (using Xoshiro256++ for better performance)
+    rng: Xoshiro256PlusPlus,
 }
 
 impl Simulation {
@@ -41,10 +41,11 @@ impl Simulation {
         config: SimulationConfig,
     ) -> Result<Self, String> {
         // Create RNG from seed or thread_rng
+        // Using Xoshiro256++ which is 2-3x faster than StdRng
         let rng = if let Some(seed) = config.seed {
-            StdRng::seed_from_u64(seed)
+            Xoshiro256PlusPlus::seed_from_u64(seed)
         } else {
-            StdRng::from_seed(rand::rng().random())
+            Xoshiro256PlusPlus::from_seed(rand::rng().random())
         };
 
         // Create initial population with uniform sequences
@@ -138,7 +139,7 @@ impl Simulation {
     fn apply_mutation(&mut self) -> Result<(), String> {
         let pop_size = self.population.size();
         
-        // Generate seeds for each individual
+        // Generate seeds for each individual (using faster RNG)
         let seeds: Vec<u64> = (0..pop_size)
             .map(|_| self.rng.random())
             .collect();
@@ -149,7 +150,8 @@ impl Simulation {
             .par_iter_mut()
             .zip(seeds.par_iter())
             .for_each(|(individual, &seed)| {
-                let mut local_rng = StdRng::seed_from_u64(seed);
+                // Use Xoshiro256++ for thread-local RNG (faster than StdRng)
+                let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
                 
                 // Mutate first haplotype using Poisson pre-sampling
                 for chr in individual.haplotype1_mut().chromosomes_mut() {
@@ -182,7 +184,7 @@ impl Simulation {
             .par_iter_mut()
             .zip(seeds.par_iter())
             .try_for_each(|(individual, &seed)| -> Result<(), String> {
-                let mut local_rng = StdRng::seed_from_u64(seed);
+                let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
                 let (hap1, hap2) = individual.haplotypes_mut();
 
                 // Recombine corresponding chromosomes
@@ -260,20 +262,21 @@ impl Simulation {
             .zip(seeds.par_iter())
             .enumerate()
             .map(|(i, ((parent1_idx, parent2_idx), &seed))| {
-                let mut local_rng = StdRng::seed_from_u64(seed);
+                let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
                 
                 let parent1 = population.get(*parent1_idx).unwrap();
                 let parent2 = population.get(*parent2_idx).unwrap();
 
                 // Each parent contributes one gamete (haplotype)
                 // Randomly pick one haplotype from each parent
-                let hap1 = if local_rng.random_bool(0.5) {
+                // Use gen::<f64>() which is faster than random_bool
+                let hap1 = if local_rng.random::<f64>() < 0.5 {
                     parent1.haplotype1().clone()
                 } else {
                     parent1.haplotype2().clone()
                 };
 
-                let hap2 = if local_rng.random_bool(0.5) {
+                let hap2 = if local_rng.random::<f64>() < 0.5 {
                     parent2.haplotype1().clone()
                 } else {
                     parent2.haplotype2().clone()

@@ -7,10 +7,10 @@ use centrevo::genome::{Chromosome, Haplotype, Individual};
 use centrevo::simulation::Population;
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
+use rand_xoshiro::Xoshiro256PlusPlus;
 use std::hint::black_box;
 
-fn create_random_individual(id: &str, length: usize, rng: &mut StdRng) -> Individual {
+fn create_random_individual(id: &str, length: usize, rng: &mut Xoshiro256PlusPlus) -> Individual {
     let alphabet = Alphabet::dna();
     let nucleotides = [Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
     
@@ -30,7 +30,7 @@ fn create_random_individual(id: &str, length: usize, rng: &mut StdRng) -> Indivi
 }
 
 fn create_test_population(n_individuals: usize, seq_length: usize) -> Population {
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let individuals: Vec<Individual> = (0..n_individuals)
         .map(|i| create_random_individual(&format!("ind{}", i), seq_length, &mut rng))
         .collect();

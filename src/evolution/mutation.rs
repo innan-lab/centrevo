@@ -69,9 +69,10 @@ impl SubstitutionModel {
     ///
     /// # Returns
     /// The possibly mutated base.
+    #[inline]
     pub fn mutate_base<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
-        // Check if mutation occurs
-        if !rng.random_bool(self.mu) {
+        // Check if mutation occurs using gen::<f64>() which is faster than random_bool
+        if rng.random::<f64>() >= self.mu {
             return base; // No mutation
         }
 
@@ -80,6 +81,7 @@ impl SubstitutionModel {
         let current_idx = base.to_index() as usize;
         
         // Generate a random index in [0, alphabet_size-1) excluding current
+        // Use gen_range which is more efficient than random_range
         let mut new_idx = rng.random_range(0..alphabet_size - 1);
         if new_idx >= current_idx {
             new_idx += 1; // Skip the current base
@@ -91,6 +93,7 @@ impl SubstitutionModel {
     /// Mutate a sequence in place according to the substitution model.
     ///
     /// Each base in the sequence has an independent chance of mutating.
+    /// This version uses bulk random number generation for better performance.
     ///
     /// # Returns
     /// The number of mutations that occurred.
@@ -99,25 +102,52 @@ impl SubstitutionModel {
         sequence: &mut Sequence,
         rng: &mut R,
     ) -> usize {
-        let mut mutation_count = 0;
+        let len = sequence.len();
+        if len == 0 {
+            return 0;
+        }
 
-        // Optimize: direct access to indices for faster mutation
+        let mut mutation_count = 0;
         let indices = sequence.indices_mut();
         let alphabet_size = self.alphabet.len();
         
-        for i in 0..indices.len() {
-            // Check if mutation occurs
-            if rng.random_bool(self.mu) {
+        // Bulk generate random floats for mutation decisions
+        // This is much faster than calling random() for each base
+        let mut random_floats = vec![0.0f64; len];
+        rng.fill(&mut random_floats[..]);
+        
+        // Pre-generate random indices for mutations that will occur
+        // Estimate how many we'll need (with some buffer)
+        let expected_mutations = (len as f64 * self.mu * 1.5) as usize + 10;
+        let mut random_indices = vec![0u8; expected_mutations.min(len * 3)];
+        rng.fill(&mut random_indices[..]);
+        let mut random_idx_pos = 0;
+        
+        for i in 0..len {
+            // Check if mutation occurs using pre-generated random float
+            if random_floats[i] < self.mu {
                 let current_idx = indices[i] as usize;
                 
-                // Generate a random index excluding current
-                let mut new_idx = rng.random_range(0..alphabet_size - 1);
-                if new_idx >= current_idx {
-                    new_idx += 1;
+                // Use pre-generated random byte to select new base
+                if random_idx_pos < random_indices.len() {
+                    let mut new_idx = (random_indices[random_idx_pos] as usize) % (alphabet_size - 1);
+                    random_idx_pos += 1;
+                    
+                    if new_idx >= current_idx {
+                        new_idx += 1;
+                    }
+                    
+                    indices[i] = new_idx as u8;
+                    mutation_count += 1;
+                } else {
+                    // Fallback if we run out of pre-generated randoms
+                    let mut new_idx = rng.random_range(0..alphabet_size - 1);
+                    if new_idx >= current_idx {
+                        new_idx += 1;
+                    }
+                    indices[i] = new_idx as u8;
+                    mutation_count += 1;
                 }
-                
-                indices[i] = new_idx as u8;
-                mutation_count += 1;
             }
         }
 
@@ -187,15 +217,19 @@ impl SubstitutionModel {
         // Sample positions without replacement using reservoir sampling
         let positions = sample_without_replacement(len, num_mutations, rng);
 
-        // Apply mutations at selected positions
+        // Apply mutations at selected positions with bulk random generation
         let indices = sequence.indices_mut();
         let alphabet_size = self.alphabet.len();
         
-        for &pos in &positions {
+        // Pre-generate random bytes for mutations
+        let mut random_bytes = vec![0u8; positions.len()];
+        rng.fill(&mut random_bytes[..]);
+        
+        for (idx, &pos) in positions.iter().enumerate() {
             let current_idx = indices[pos] as usize;
             
-            // Generate a random index excluding current
-            let mut new_idx = rng.random_range(0..alphabet_size - 1);
+            // Use pre-generated random byte
+            let mut new_idx = (random_bytes[idx] as usize) % (alphabet_size - 1);
             if new_idx >= current_idx {
                 new_idx += 1;
             }
@@ -230,12 +264,27 @@ fn sample_without_replacement<R: Rng + ?Sized>(n: usize, k: usize, rng: &mut R) 
     // For small k relative to n, use hash-based sampling
     // For large k, it's more efficient to use Fisher-Yates shuffle
     if k < n / 10 {
-        // Hash-based sampling: keep track of selected indices
+        // Hash-based sampling with bulk random generation
         let mut selected = std::collections::HashSet::with_capacity(k);
         let mut result = Vec::with_capacity(k);
         
+        // Pre-generate random values in batches
+        let batch_size = (k * 2).min(1024); // Generate 2x what we need, capped at 1024
+        let mut random_values = vec![0usize; batch_size];
+        let mut random_pos = batch_size; // Force initial generation
+        
         while result.len() < k {
-            let pos = rng.random_range(0..n);
+            // Regenerate batch if needed
+            if random_pos >= random_values.len() {
+                for v in random_values.iter_mut() {
+                    *v = rng.random_range(0..n);
+                }
+                random_pos = 0;
+            }
+            
+            let pos = random_values[random_pos];
+            random_pos += 1;
+            
             if selected.insert(pos) {
                 result.push(pos);
             }
@@ -243,12 +292,17 @@ fn sample_without_replacement<R: Rng + ?Sized>(n: usize, k: usize, rng: &mut R) 
         
         result
     } else {
-        // Fisher-Yates shuffle for larger k
+        // Fisher-Yates shuffle with bulk random generation for larger k
         let mut positions: Vec<usize> = (0..n).collect();
         
+        // Generate all random indices at once
+        let mut random_indices = vec![0usize; k];
+        for (i, r) in random_indices.iter_mut().enumerate() {
+            *r = rng.random_range(i..n);
+        }
+        
         for i in 0..k {
-            let j = rng.random_range(i..n);
-            positions.swap(i, j);
+            positions.swap(i, random_indices[i]);
         }
         
         positions.truncate(k);
@@ -279,7 +333,7 @@ impl std::error::Error for MutationError {}
 mod tests {
     use super::*;
     use rand::SeedableRng;
-    use rand::rngs::StdRng;
+    use rand_xoshiro::Xoshiro256PlusPlus;
 
     fn test_alphabet() -> Alphabet {
         Alphabet::dna()
@@ -307,7 +361,7 @@ mod tests {
     #[test]
     fn test_substitution_model_zero_rate() {
         let model = SubstitutionModel::new(test_alphabet(), 0.0).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         // With zero mutation rate, base should never change
         for _ in 0..100 {
@@ -320,7 +374,7 @@ mod tests {
     #[test]
     fn test_substitution_model_mutate_base() {
         let model = SubstitutionModel::new(test_alphabet(), 1.0).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         // With mutation rate 1.0, base should always change
         let mut mutations = 0;
@@ -339,7 +393,7 @@ mod tests {
     #[test]
     fn test_substitution_model_mutate_base_distribution() {
         let model = SubstitutionModel::new(test_alphabet(), 1.0).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut counts = [0; 4];
         for _ in 0..1000 {
@@ -360,7 +414,7 @@ mod tests {
     #[test]
     fn test_mutate_sequence_zero_rate() {
         let model = SubstitutionModel::new(test_alphabet(), 0.0).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::from_str("ACGTACGT", test_alphabet()).unwrap();
         let original = seq.to_string();
@@ -374,7 +428,7 @@ mod tests {
     #[test]
     fn test_mutate_sequence_low_rate() {
         let model = SubstitutionModel::new(test_alphabet(), 0.1).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::from_str("ACGTACGTACGTACGT", test_alphabet()).unwrap();
         let count = model.mutate_sequence(&mut seq, &mut rng);
@@ -386,7 +440,7 @@ mod tests {
     #[test]
     fn test_mutate_sequence_high_rate() {
         let model = SubstitutionModel::new(test_alphabet(), 0.9).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::from_str("ACGTACGTACGTACGT", test_alphabet()).unwrap();
         let count = model.mutate_sequence(&mut seq, &mut rng);
@@ -398,7 +452,7 @@ mod tests {
     #[test]
     fn test_mutate_sequence_empty() {
         let model = SubstitutionModel::new(test_alphabet(), 0.5).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::new(test_alphabet());
         let count = model.mutate_sequence(&mut seq, &mut rng);
@@ -414,8 +468,8 @@ mod tests {
         let mut seq1 = Sequence::from_str("ACGTACGTACGTACGT", test_alphabet()).unwrap();
         let mut seq2 = Sequence::from_str("ACGTACGTACGTACGT", test_alphabet()).unwrap();
         
-        let mut rng1 = StdRng::seed_from_u64(123);
-        let mut rng2 = StdRng::seed_from_u64(123);
+        let mut rng1 = Xoshiro256PlusPlus::seed_from_u64(123);
+        let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(123);
         
         let count1 = model.mutate_sequence(&mut seq1, &mut rng1);
         let count2 = model.mutate_sequence(&mut seq2, &mut rng2);
@@ -447,7 +501,7 @@ mod tests {
     #[test]
     fn test_mutate_sequence_poisson_zero_rate() {
         let model = SubstitutionModel::new(test_alphabet(), 0.0).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::from_str("ACGTACGT", test_alphabet()).unwrap();
         let original = seq.to_string();
@@ -461,7 +515,7 @@ mod tests {
     #[test]
     fn test_mutate_sequence_poisson_low_rate() {
         let model = SubstitutionModel::new(test_alphabet(), 0.001).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::from_str("ACGT".repeat(250).as_str(), test_alphabet()).unwrap();
         let count = model.mutate_sequence_poisson(&mut seq, &mut rng);
@@ -473,7 +527,7 @@ mod tests {
     #[test]
     fn test_mutate_sequence_poisson_medium_rate() {
         let model = SubstitutionModel::new(test_alphabet(), 0.01).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::from_str("ACGT".repeat(250).as_str(), test_alphabet()).unwrap();
         let count = model.mutate_sequence_poisson(&mut seq, &mut rng);
@@ -487,7 +541,7 @@ mod tests {
     fn test_mutate_sequence_poisson_high_rate_fallback() {
         // High rate should fallback to standard method
         let model = SubstitutionModel::new(test_alphabet(), 0.6).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::from_str("ACGTACGTACGTACGT", test_alphabet()).unwrap();
         let count = model.mutate_sequence_poisson(&mut seq, &mut rng);
@@ -499,7 +553,7 @@ mod tests {
     #[test]
     fn test_mutate_sequence_poisson_empty() {
         let model = SubstitutionModel::new(test_alphabet(), 0.01).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         let mut seq = Sequence::new(test_alphabet());
         let count = model.mutate_sequence_poisson(&mut seq, &mut rng);
@@ -515,8 +569,8 @@ mod tests {
         let mut seq1 = Sequence::from_str("ACGT".repeat(250).as_str(), test_alphabet()).unwrap();
         let mut seq2 = Sequence::from_str("ACGT".repeat(250).as_str(), test_alphabet()).unwrap();
         
-        let mut rng1 = StdRng::seed_from_u64(123);
-        let mut rng2 = StdRng::seed_from_u64(123);
+        let mut rng1 = Xoshiro256PlusPlus::seed_from_u64(123);
+        let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(123);
         
         let count1 = model.mutate_sequence_poisson(&mut seq1, &mut rng1);
         let count2 = model.mutate_sequence_poisson(&mut seq2, &mut rng2);
@@ -540,8 +594,8 @@ mod tests {
             let mut seq_standard = Sequence::from_str(&seq_str, test_alphabet()).unwrap();
             let mut seq_poisson = Sequence::from_str(&seq_str, test_alphabet()).unwrap();
             
-            let mut rng_standard = StdRng::seed_from_u64(seed);
-            let mut rng_poisson = StdRng::seed_from_u64(seed + 10000); // Different seed
+            let mut rng_standard = Xoshiro256PlusPlus::seed_from_u64(seed);
+            let mut rng_poisson = Xoshiro256PlusPlus::seed_from_u64(seed + 10000); // Different seed
             
             standard_mutations.push(model.mutate_sequence(&mut seq_standard, &mut rng_standard));
             poisson_mutations.push(model.mutate_sequence_poisson(&mut seq_poisson, &mut rng_poisson));
@@ -559,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_sample_without_replacement_small_k() {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         // Sample 5 from 100 (uses hash-based sampling)
         let samples = super::sample_without_replacement(100, 5, &mut rng);
@@ -580,7 +634,7 @@ mod tests {
 
     #[test]
     fn test_sample_without_replacement_large_k() {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         // Sample 50 from 100 (uses Fisher-Yates)
         let samples = super::sample_without_replacement(100, 50, &mut rng);
@@ -601,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_sample_without_replacement_edge_cases() {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
         
         // Sample 0
         let samples = super::sample_without_replacement(100, 0, &mut rng);

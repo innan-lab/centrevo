@@ -32,6 +32,9 @@ anyhow = "1.0"
 # Phase 2: Analysis module dependencies
 nalgebra = "0.33"
 statrs = "0.18"
+# Phase 3: Async compression
+tokio = { version = "1.41", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+zstd = "0.13"
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }
@@ -59,4 +62,8 @@ harness = false
 
 [[bench]]
 name = "analysis_benchmarks"
+harness = false
+
+[[bench]]
+name = "storage_benchmarks"
 harness = false

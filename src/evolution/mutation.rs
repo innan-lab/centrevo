@@ -81,7 +81,6 @@ impl SubstitutionModel {
         let current_idx = base.to_index() as usize;
         
         // Generate a random index in [0, alphabet_size-1) excluding current
-        // Use gen_range which is more efficient than random_range
         let mut new_idx = rng.random_range(0..alphabet_size - 1);
         if new_idx >= current_idx {
             new_idx += 1; // Skip the current base

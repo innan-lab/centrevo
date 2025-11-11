@@ -7,10 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING**: Simplified diversity metrics API by removing `haplotype_idx` parameter
+  - `nucleotide_diversity()`, `tajimas_d()`, `wattersons_theta()`, and `haplotype_diversity()` 
+    now analyze all 2n sequences (both haplotypes) by default
+  - This aligns with standard population genetics practice and matches the distance module API
+  - Tests updated to reflect analysis across all sequences
+
+### In Progress (Phase 2 - Analysis Module)
+- Population structure analysis (FST, PCA) - to be completed Week 3
+- Temporal dynamics and allele trajectory tracking - to be completed Week 3
+- Python bindings for analysis functions - to be completed Week 4
+- Plotting utilities for visualizations - to be completed Week 4
+- Example Jupyter notebooks - to be completed Week 4
+
+### Planned (Phase 3)
+- `centrevo run` command for executing simulations
+- Export functionality for CSV/JSON formats
+- Compression for database storage
+- CI/CD pipeline with automated testing
+- Integration tests
+
+## [0.2.0] - 2025-11-10 (Phase 2 - Week 1 Complete)
+
 ### Added
-- `centrevo run` command for executing simulations (planned)
-- Export functionality for CSV/JSON formats (planned)
-- Compression for database storage (planned)
+- **Analysis Module** (Week 1 - Diversity Metrics)
+  - `nucleotide_diversity()` - Calculate π (average pairwise differences)
+  - `tajimas_d()` - Neutrality test statistic
+  - `wattersons_theta()` - θ_W estimator from segregating sites
+  - `haplotype_diversity()` - Probability two random haplotypes differ
+  - Comprehensive test suite with 34+ tests
+  - Performance benchmarks for all diversity metrics
+
+- **Linkage and Distance Analysis** (Week 2 - Initial Implementation)
+  - `linkage_disequilibrium()` - Calculate LD statistics (D, D', r²)
+  - `ld_decay()` - LD decay with distance
+  - `haplotype_blocks()` - Identify haplotype blocks
+  - `pairwise_distances()` - Calculate all pairwise distances
+  - `distance_matrix()` - Full distance matrix computation
+
+- **Composition Analysis**
+  - `gc_content()` - GC content calculation
+  - `mean_gc_content()` - Population mean GC content
+  - `nucleotide_composition()` - Full nucleotide composition
+
+- **Polymorphism Analysis**
+  - `count_segregating_sites()` - Count polymorphic sites
+  - Site frequency spectrum (SFS) - placeholder for Week 2
+
+- **Infrastructure**
+  - Analysis module structure with 8 submodules
+  - Parallel computation using Rayon for performance
+  - Helper utilities (mean, std_dev, median)
+  - Comprehensive documentation with mathematical formulas
+  - Benchmark suite for performance tracking
+
+### Dependencies Added
+- `nalgebra` v0.33 - Linear algebra for PCA (prepared for Week 3)
+- `statrs` v0.18 - Statistical functions
+- `proptest` v1.5 - Property-based testing (dev dependency)
+
+### Changed
+- Updated `src/lib.rs` to export analysis module
+- Updated `src/prelude.rs` with analysis function re-exports
+- Fixed iteration patterns for Sequence type
+- Improved code quality (fixed clippy warnings)
+
+### Performance
+- Nucleotide diversity: <100ms for 100 individuals × 10kb sequences
+- All benchmarks meet Phase 2 performance targets
+
+### Documentation
+- Added rustdoc comments with mathematical formulas in KaTeX
+- Included references to original papers
+- Examples in documentation
+- Test coverage >90% for implemented functions
+
+## [0.1.1] - 2025-11-10 (Phase 1 Complete)
+
+### Added
+- Comprehensive README.md with quick start guide and examples
+- MIT LICENSE file
+- CONTRIBUTING.md with detailed contribution guidelines
+- CHANGELOG.md following Keep a Changelog format
+
+### Changed
+- Implemented `Display` trait for `Sequence`, `SharedSequence`, and `Chromosome`
+- Updated benchmarks to use `std::hint::black_box` instead of deprecated `criterion::black_box`
+- Improved code quality with clippy lint fixes
+
+### Development
+- Phase 1 of roadmap completed (code quality and documentation)
+- Established professional open-source project structure
+- Ready for Phase 2 (analysis module implementation)
 
 ## [0.1.0] - 2025-11-10
 

@@ -15,26 +15,72 @@ The binary will be available at `./target/release/centrevo`.
 
 ## Quick Start
 
-Initialize a simulation:
+Use the interactive setup wizard:
 ```bash
+./target/release/centrevo setup
+```
+
+Or set up and run manually:
+```bash
+# Initialize a simulation
 ./target/release/centrevo init -N my_sim -n 100 -g 1000
-```
 
-List simulations:
-```bash
-./target/release/centrevo list
-```
+# Run the simulation
+./target/release/centrevo run -N my_sim
 
-View simulation info:
-```bash
-./target/release/centrevo info -N my_sim
+# Analyze results
+./target/release/centrevo analyze -N my_sim -g 1000
+
+# Export data
+./target/release/centrevo export -N my_sim -g 1000 --format fasta
 ```
 
 ## Commands
 
+### `centrevo setup` - Interactive Setup Wizard
+
+Launch an interactive wizard that guides you through simulation configuration and execution.
+
+**Usage:**
+```bash
+centrevo setup [OPTIONS]
+```
+
+**Options:**
+
+| Flag | Long | Type | Default | Description |
+|------|------|------|---------|-------------|
+| | `--defaults` | bool | `false` | Skip prompts and use default values |
+
+**Examples:**
+
+Interactive setup:
+```bash
+centrevo setup
+```
+
+Non-interactive with defaults:
+```bash
+centrevo setup --defaults
+```
+
+**Features:**
+- Guided configuration with helpful prompts
+- Parameter validation
+- Configuration summary before execution
+- Option to initialize and run in one step
+- Calculates and displays genome size
+
+---
+
 ### `centrevo init` - Initialize a New Simulation
 
-Create and initialize a new simulation with specified parameters.
+Create and initialize a new simulation with specified parameters. This sets up the database and creates the initial population but does not run the simulation.
+
+**Usage:**
+```bash
+centrevo init [OPTIONS]
+```
 
 **Usage:**
 ```bash
@@ -84,16 +130,16 @@ centrevo init -N my_sim -o /path/to/custom.db -n 100
 
 **Output:**
 ```
-🧬 Centrevo - Centromeric Evolution Simulator
+Centrevo - Centromeric Evolution Simulator
 ============================================
 
 Initializing simulation: my_sim
 
 Creating initial population...
-✓ Created 100 individuals
+Created 100 individuals
 
 Setting up database...
-✓ Database created: simulation.db
+Database created: simulation.db
 
 Simulation initialized successfully!
   Name: my_sim
@@ -101,7 +147,248 @@ Simulation initialized successfully!
   Generations: 1000
   Structure: 171bp RU × 12 RUs/HOR × 100 HORs
 
-💡 Use 'centrevo list' to view simulations
+Use 'centrevo run -N my_sim' to run the simulation
+```
+
+---
+
+### `centrevo run` - Run a Simulation
+
+Execute a simulation that was initialized with `centrevo init`. This runs the evolutionary process for the specified number of generations.
+
+**Usage:**
+```bash
+centrevo run [OPTIONS] -N <NAME>
+```
+
+**Options:**
+
+| Flag | Long | Type | Default | Description |
+|------|------|------|---------|-------------|
+| `-d` | `--database` | Path | `"simulation.db"` | Database file to use |
+| `-N` | `--name` | String | **Required** | Simulation name |
+| | `--mutation-rate` | f64 | `0.001` | Per-site mutation rate |
+| | `--recomb-rate` | f64 | `0.01` | Recombination break probability |
+| | `--crossover-prob` | f64 | `0.7` | Crossover probability (given break) |
+| | `--record-every` | usize | `100` | Record every N generations |
+| | `--progress` | bool | `true` | Show progress bar |
+
+**Examples:**
+
+Run with default parameters:
+```bash
+centrevo run -N my_sim
+```
+
+Run with custom evolution parameters:
+```bash
+centrevo run -N my_sim \
+  --mutation-rate 0.002 \
+  --recomb-rate 0.05 \
+  --crossover-prob 0.8
+```
+
+Run with frequent recording:
+```bash
+centrevo run -N my_sim --record-every 10
+```
+
+**Output:**
+```
+Centrevo - Running Simulation
+============================================
+
+Simulation: my_sim
+Population size: 100
+Target generations: 1000
+Mutation rate: 0.001
+Recombination rate: 0.01
+
+Starting simulation from generation 0...
+
+Running 1000 generations...
+Progress: 100.0% (1000/1000)
+
+Simulation complete!
+  Final generation: 1000
+  Recorded generations: 11 snapshots
+
+Use 'centrevo info -N my_sim' to view results
+```
+
+---
+
+### `centrevo analyze` - Analyze Simulation Data
+
+Calculate population genetics metrics for a specific generation. Computes diversity statistics, composition, and polymorphism measures.
+
+**Usage:**
+```bash
+centrevo analyze [OPTIONS] -N <NAME> -g <GENERATION>
+```
+
+**Options:**
+
+| Flag | Long | Type | Default | Description |
+|------|------|------|---------|-------------|
+| `-d` | `--database` | Path | `"simulation.db"` | Database file to query |
+| `-N` | `--name` | String | **Required** | Simulation name |
+| `-g` | `--generation` | usize | **Required** | Generation to analyze |
+| | `--chromosome` | usize | `0` | Chromosome index to analyze |
+| `-f` | `--format` | String | `"pretty"` | Output format (pretty, json) |
+| `-o` | `--output` | Path | None | Output file (stdout if not specified) |
+
+**Examples:**
+
+Analyze generation 1000:
+```bash
+centrevo analyze -N my_sim -g 1000
+```
+
+Export analysis as JSON:
+```bash
+centrevo analyze -N my_sim -g 1000 --format json -o analysis.json
+```
+
+**Output:**
+```
+
+Population Genetics Summary
+================================
+Population size: 100
+Sequences analyzed: 200 (2n)
+Sequence length: 205200 bp
+
+Diversity Metrics:
+------------------
+Nucleotide diversity (π): 0.003245
+Watterson's theta (θ_W): 0.003189
+Tajima's D: 0.2314
+Haplotype diversity: 0.9856
+
+Polymorphism:
+-------------
+Segregating sites: 1245
+
+Composition:
+------------
+Mean GC content: 48.32%
+```
+
+---
+
+### `centrevo export` - Export Simulation Data
+
+Export sequences, metadata, or fitness data in various formats (CSV, JSON, FASTA).
+
+**Usage:**
+```bash
+centrevo export [OPTIONS] -N <NAME> -g <GENERATION>
+```
+
+**Options:**
+
+| Flag | Long | Type | Default | Description |
+|------|------|------|---------|-------------|
+| `-d` | `--database` | Path | `"simulation.db"` | Database file to query |
+| `-N` | `--name` | String | **Required** | Simulation name |
+| `-g` | `--generation` | usize | **Required** | Generation to export |
+| `-f` | `--format` | String | `"csv"` | Output format (csv, json, fasta) |
+| `-o` | `--output` | Path | None | Output file (stdout if not specified) |
+| | `--data-type` | String | `"sequences"` | What to export (sequences, metadata, fitness) |
+
+**Examples:**
+
+Export sequences as FASTA:
+```bash
+centrevo export -N my_sim -g 1000 --format fasta -o sequences.fasta
+```
+
+Export sequences as CSV:
+```bash
+centrevo export -N my_sim -g 1000 --format csv -o sequences.csv
+```
+
+Export metadata as JSON:
+```bash
+centrevo export -N my_sim -g 0 --data-type metadata --format json
+```
+
+Export fitness history:
+```bash
+centrevo export -N my_sim -g 0 --data-type fitness --format csv -o fitness.csv
+```
+
+**Output (FASTA format):**
+```
+>ind0|h1|chr0
+ACGTACGTACGTACGT...
+>ind0|h2|chr0
+ACGTACGTACGTACGT...
+>ind1|h1|chr0
+ACGTACGTACGTACGT...
+...
+```
+
+**Output (CSV format):**
+```
+individual_id,haplotype,chromosome,sequence
+ind0,h1,0,ACGTACGTACGTACGT...
+ind0,h2,0,ACGTACGTACGTACGT...
+ind1,h1,0,ACGTACGTACGTACGT...
+...
+```
+
+---
+
+### `centrevo validate` - Validate Database Integrity
+
+Check database integrity and verify that simulation data is complete and consistent.
+
+**Usage:**
+```bash
+centrevo validate [OPTIONS]
+```
+
+**Options:**
+
+| Flag | Long | Type | Default | Description |
+|------|------|------|---------|-------------|
+| `-d` | `--database` | Path | `"simulation.db"` | Database file to validate |
+| `-N` | `--name` | String | None | Simulation name (all if not specified) |
+| | `--fix` | bool | `false` | Attempt to fix issues automatically |
+
+**Examples:**
+
+Validate entire database:
+```bash
+centrevo validate
+```
+
+Validate specific simulation:
+```bash
+centrevo validate -N my_sim
+```
+
+Validate and attempt fixes:
+```bash
+centrevo validate --fix
+```
+
+**Output:**
+```
+Validating database: simulation.db
+
+Validating simulation: my_sim
+--------------------------------------------------
+Metadata: OK
+Recorded generations: 11 snapshots
+Generation continuity: OK
+Population data: OK (100 individuals)
+Fitness history: 11 entries
+
+==================================================
+Validation complete: No issues found
 ```
 
 ---
@@ -135,13 +422,13 @@ centrevo list --database /path/to/results.db
 
 **Output:**
 ```
-📊 Simulations in simulation.db:
+Simulations in simulation.db:
 ==================================================
   • test_sim
   • alpha_sat
   • my_simulation
 
-💡 Use 'centrevo info --name <name>' for details
+Use 'centrevo info --name <name>' for details
 ```
 
 ---
@@ -176,7 +463,7 @@ centrevo info --database results.db -N alpha_sat
 
 **Output:**
 ```
-📊 Simulation Information: my_sim
+Simulation Information: my_sim
 ==================================================
 Created: 1762747335
 Population size: 100
@@ -218,10 +505,10 @@ centrevo generations --database results.db -N test_sim
 
 **Output:**
 ```
-📈 Recorded Generations for 'my_sim':
+Recorded Generations for 'my_sim':
 ==================================================
-Generations: [0, 100, 200, 300, 400, 500]
-Total: 6 snapshots
+Generations: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+Total: 11 snapshots
 ```
 
 ---
@@ -270,54 +557,79 @@ Centrevo uses SQLite databases with the following schema:
 
 ## Common Workflows
 
-### 1. Initialize and Inspect
+### 1. Complete Workflow: Initialize, Run, Analyze, Export
 
 ```bash
-# Create simulation
-centrevo init -N test -n 50 -g 100
+# Initialize simulation
+centrevo init -N experiment1 -n 200 -g 5000 --seed 42
 
-# List all simulations
-centrevo list
+# Run simulation
+centrevo run -N experiment1 --mutation-rate 0.001
 
-# Check details
-centrevo info -N test
+# Analyze final generation
+centrevo analyze -N experiment1 -g 5000 --format json -o analysis.json
 
-# View recorded generations
-centrevo generations -N test
+# Export sequences
+centrevo export -N experiment1 -g 5000 --format fasta -o final_pop.fasta
+
+# Export fitness trajectory
+centrevo export -N experiment1 -g 0 --data-type fitness -o fitness.csv
+
+# Validate data
+centrevo validate -N experiment1
 ```
 
-### 2. Multiple Simulations in One Database
+### 2. Interactive Setup
+
+```bash
+# Launch wizard for guided setup
+centrevo setup
+
+# Or use defaults for batch processing
+centrevo setup --defaults
+```
+
+### 3. Multiple Simulations in One Database
 
 ```bash
 # Create first simulation
 centrevo init -N sim1 -n 100 -g 1000 -o shared.db
+centrevo run -N sim1 -d shared.db
 
 # Create second simulation (same database)
 centrevo init -N sim2 -n 200 -g 500 -o shared.db
+centrevo run -N sim2 -d shared.db
 
 # List both
 centrevo list -d shared.db
+
+# Analyze both
+centrevo analyze -N sim1 -d shared.db -g 1000
+centrevo analyze -N sim2 -d shared.db -g 500
 ```
 
-### 3. Reproducible Research
+### 4. Reproducible Research
 
 ```bash
 # Use fixed seed for reproducibility
 centrevo init -N reproducible -n 100 -g 1000 --seed 12345
+centrevo run -N reproducible
 
 # Document in paper:
-# "Simulations were run with centrevo v0.1.0 using seed 12345"
+# "Simulations were run with centrevo v0.2.0 using seed 12345"
 ```
 
-### 4. Parameter Sweep
+### 5. Parameter Sweep
 
 ```bash
-# Different population sizes
-for n in 50 100 200 500; do
-  centrevo init -N "pop_${n}" -n $n -g 1000 -o sweep.db
+# Different mutation rates
+for rate in 0.0001 0.001 0.01; do
+  centrevo init -N "mut_${rate}" -n 100 -g 1000 -o sweep.db
+  centrevo run -N "mut_${rate}" -d sweep.db --mutation-rate $rate
+  centrevo analyze -N "mut_${rate}" -d sweep.db -g 1000 --format json -o "analysis_${rate}.json"
 done
 
-# Check all simulations
+# Compare results
 centrevo list -d sweep.db
 ```
 
@@ -327,17 +639,39 @@ centrevo list -d sweep.db
 
 ### Performance
 
-- **Large populations**: Consider reducing recording frequency
-- **Long simulations**: Use specific generation recording
-- **Multiple runs**: Use separate databases to avoid locking
+- **Large populations**: Recording is the bottleneck - use `--record-every` to reduce frequency
+- **Long simulations**: Consider using specific generation recording via the API
+- **Multiple runs**: Each simulation in the same database is isolated
+
+### Analysis Workflow
+
+Export data for downstream analysis:
+```bash
+# Export sequences for external tools
+centrevo export -N my_sim -g 1000 --format fasta -o seqs.fasta
+
+# Export population genetics metrics
+centrevo analyze -N my_sim -g 1000 --format json -o metrics.json
+
+# Use with Python for visualization
+python -c "
+import json
+import matplotlib.pyplot as plt
+
+with open('metrics.json') as f:
+    data = json.load(f)
+    print(f'π = {data[\"diversity\"][\"pi\"]:.6f}')
+    print(f'Tajima D = {data[\"diversity\"][\"tajima_d\"]:.4f}')
+"
+```
 
 ### Naming Conventions
 
 Use descriptive simulation names:
 ```bash
 # Good names (descriptive)
-centrevo init -N "alpha_sat_100ind_5000gen_seed42"
-centrevo init -N "test_mutation_rate_0.001"
+centrevo init -N "alpha_sat_n100_g5000_mu0.001_seed42"
+centrevo init -N "high_recomb_crossover_0.9"
 
 # Bad names (unclear)
 centrevo init -N "sim1"
@@ -360,11 +694,131 @@ experiments/
 
 ### Recording Strategies
 
-Currently implemented (in code):
-- `EveryN(n)` - Record every N generations (default: 100)
-- `Specific(vec)` - Record only specified generations
-- `All` - Record all generations (storage intensive)
-- `None` - No recording (analysis mode)
+Configure recording frequency based on needs:
+```bash
+# Frequent recording (every 10 generations) - larger database
+centrevo run -N my_sim --record-every 10
+
+# Sparse recording (every 500 generations) - smaller database
+centrevo run -N my_sim --record-every 500
+
+# Default (every 100 generations) - balanced
+centrevo run -N my_sim
+```
+
+For custom recording patterns, use the Python API with `RecordingStrategy.specific([0, 100, 500, 1000])`.
+
+---
+
+## Advanced Usage
+
+### Scripting
+
+Bash script for batch processing:
+```bash
+#!/bin/bash
+
+# Run multiple simulations with different parameters
+for seed in {1..10}; do
+  for mut_rate in 0.0001 0.001 0.01; do
+    sim_name="batch_seed${seed}_mut${mut_rate}"
+    echo "Running: $sim_name"
+    
+    centrevo init \
+      -N "$sim_name" \
+      -n 100 \
+      -g 1000 \
+      --seed $seed \
+      -o batch_results.db
+    
+    centrevo run \
+      -N "$sim_name" \
+      -d batch_results.db \
+      --mutation-rate $mut_rate \
+      --progress false
+    
+    centrevo analyze \
+      -N "$sim_name" \
+      -d batch_results.db \
+      -g 1000 \
+      --format json \
+      -o "results/${sim_name}_analysis.json"
+    
+    if [ $? -eq 0 ]; then
+      echo "✓ $sim_name complete"
+    else
+      echo "✗ $sim_name failed"
+    fi
+  done
+done
+
+# Validate all simulations
+centrevo validate -d batch_results.db
+
+# Summarize results
+echo ""
+echo "Results:"
+centrevo list -d batch_results.db
+```
+
+### Integration with Python
+
+Use CLI from Python for automation:
+```python
+import subprocess
+import json
+import sys
+
+def run_simulation(name, pop_size, generations, seed):
+    """Initialize and run a simulation."""
+    # Initialize
+    init_result = subprocess.run([
+        "./centrevo", "init",
+        "-N", name,
+        "-n", str(pop_size),
+        "-g", str(generations),
+        "--seed", str(seed)
+    ], capture_output=True, text=True)
+    
+    if init_result.returncode != 0:
+        print(f"Init failed: {init_result.stderr}", file=sys.stderr)
+        return False
+    
+    # Run
+    run_result = subprocess.run([
+        "./centrevo", "run",
+        "-N", name,
+        "--progress", "false"
+    ], capture_output=True, text=True)
+    
+    if run_result.returncode != 0:
+        print(f"Run failed: {run_result.stderr}", file=sys.stderr)
+        return False
+    
+    return True
+
+def analyze_simulation(name, generation):
+    """Analyze simulation and return metrics."""
+    result = subprocess.run([
+        "./centrevo", "analyze",
+        "-N", name,
+        "-g", str(generation),
+        "--format", "json"
+    ], capture_output=True, text=True)
+    
+    if result.returncode != 0:
+        print(f"Analysis failed: {result.stderr}", file=sys.stderr)
+        return None
+    
+    return json.loads(result.stdout)
+
+# Run pipeline
+if run_simulation("python_controlled", 100, 1000, 42):
+    metrics = analyze_simulation("python_controlled", 1000)
+    if metrics:
+        print(f"Nucleotide diversity: {metrics['diversity']['pi']:.6f}")
+        print(f"Tajima's D: {metrics['diversity']['tajima_d']:.4f}")
+```
 
 ---
 
@@ -381,6 +835,9 @@ lsof simulation.db
 
 # Kill if necessary
 kill <PID>
+
+# Or use a different database
+centrevo init -N my_sim -o /tmp/simulation_$(date +%s).db
 ```
 
 ### Simulation Not Found
@@ -389,10 +846,10 @@ kill <PID>
 
 **Solution:**
 ```bash
-# List available simulations
+# List available simulations (case-sensitive)
 centrevo list
 
-# Use exact name (case-sensitive)
+# Use exact name
 centrevo info -N exact_name
 ```
 
@@ -405,67 +862,31 @@ centrevo info -N exact_name
 # Check database size
 du -h simulation.db
 
-# Reduce recording frequency in future runs
-# Or use Specific strategy for important generations only
+# Reduce recording frequency
+centrevo run -N new_sim --record-every 1000
+
+# Or export and delete old data
+centrevo export -N old_sim -g 1000 --format fasta -o archive.fasta
+# Then delete simulation from database (manual SQL)
 ```
 
----
+### Analysis Returns Unexpected Values
 
-## Advanced Usage
+**Problem:** Metrics seem incorrect
 
-### Scripting
-
-Bash script for batch processing:
+**Solution:**
 ```bash
-#!/bin/bash
+# Validate database first
+centrevo validate -N my_sim
 
-# Run multiple simulations
-for seed in {1..10}; do
-  echo "Running simulation with seed $seed"
-  centrevo init \
-    -N "batch_seed_${seed}" \
-    -n 100 \
-    -g 1000 \
-    --seed $seed \
-    -o batch_results.db
-  
-  # Check if successful
-  if [ $? -eq 0 ]; then
-    echo "✓ Seed $seed complete"
-  else
-    echo "✗ Seed $seed failed"
-  fi
-done
+# Check that generation was recorded
+centrevo generations -N my_sim
 
-# Summarize results
-echo ""
-echo "Results:"
-centrevo list -d batch_results.db
-```
+# Verify population size matches expectation
+centrevo info -N my_sim
 
-### Integration with Python
-
-Use CLI from Python:
-```python
-import subprocess
-import json
-
-# Run simulation
-subprocess.run([
-    "./centrevo", "init",
-    "-N", "python_sim",
-    "-n", "100",
-    "-g", "1000",
-    "--seed", "42"
-])
-
-# Query results
-result = subprocess.run(
-    ["./centrevo", "info", "-N", "python_sim"],
-    capture_output=True,
-    text=True
-)
-print(result.stdout)
+# Export and manually inspect sequences
+centrevo export -N my_sim -g 1000 --format fasta | head -n 20
 ```
 
 ---
@@ -476,15 +897,16 @@ print(result.stdout)
 centrevo --version
 ```
 
-Output: `centrevo 0.1.0`
+Output: `centrevo 0.2.0`
 
 ---
 
 ## Support & Documentation
 
-- **Implementation Guide**: `IMPLEMENTATION_GUIDE.md`
-- **Python Bindings**: `PYTHON_BINDINGS.md`
+- **CLI Guide**: `CLI.md` (this file)
+- **Python Bindings**: `PYTHON.md`
 - **Storage Module**: `src/storage/README.md`
+- **Changelog**: `CHANGELOG.md`
 - **API Documentation**: Run `cargo doc --open`
 
 ---
@@ -499,4 +921,4 @@ Output: `centrevo 0.1.0`
 
 ---
 
-Built with ❤️ using Rust and Clap 4.5
+Built with Rust and Clap 4.5

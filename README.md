@@ -5,25 +5,27 @@
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Centrevo is a fast, flexible simulator for studying the evolution of tandemly repeated DNA sequences, with a focus on centromeric arrays. Built in Rust for maximum performance, it provides both command-line and Python interfaces for running population genetic simulations.
+Centrevo is a fast, flexible simulator for studying the evolution of tandemly repeated DNA sequences, with a focus on centromeric arrays. Built in Rust for maximum performance, it provides both command-line and Python interfaces for running population genetic simulations and comprehensive analysis.
 
-## ✨ Key Features
+## Key Features
 
-- **🚀 High Performance**: Written in Rust with parallel computation support
-- **🧬 Realistic Models**: Mutation, recombination, and selection with customizable fitness functions
-- **💾 Persistent Storage**: SQLite-based recording with flexible strategies
-- **🐍 Python Bindings**: Use from Python via PyO3 for analysis workflows
-- **📊 Rich CLI**: Command-line interface for simulation management
-- **🎯 Well-Tested**: 247 unit tests with comprehensive coverage
-- **📈 Benchmarked**: Performance benchmarks included for optimization
+- **High Performance**: Written in Rust with parallel computation support via Rayon
+- **Realistic Models**: Mutation, recombination, and selection with customizable fitness functions
+- **Persistent Storage**: SQLite-based recording with flexible strategies and async compression
+- **Python Bindings**: Full Python API via PyO3 with PyArrow integration for efficient data export
+- **Complete CLI**: Command-line interface for simulation management, execution, analysis, and export
+- **Analysis Module**: Population genetics metrics including diversity, LD, distance, and composition analysis
+- **Visualization**: Built-in plotting utilities with matplotlib for common analysis tasks
+- **Well-Tested**: 309 unit tests with comprehensive coverage
+- **Benchmarked**: Performance benchmarks included for optimization
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
 **From source:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/centrevo.git
+git clone https://github.com/innan-lab/centrevo.git
 cd centrevo
 cargo build --release
 ```
@@ -33,37 +35,45 @@ The binary will be available at `./target/release/centrevo`.
 ### Running Your First Simulation
 
 ```bash
-# Initialize a simulation
+# Use the interactive setup wizard
+./target/release/centrevo setup
+
+# Or initialize manually
 ./target/release/centrevo init \
   -N my_first_sim \
   -n 100 \
   -g 1000 \
   --seed 42
 
-# List all simulations
-./target/release/centrevo list
+# Run the simulation
+./target/release/centrevo run -N my_first_sim
 
-# View simulation details
-./target/release/centrevo info -N my_first_sim
+# Analyze results
+./target/release/centrevo analyze -N my_first_sim -g 1000
 
-# Check recorded generations
-./target/release/centrevo generations -N my_first_sim
+# Export data
+./target/release/centrevo export -N my_first_sim -g 1000 --format csv
 ```
 
-## 📖 Usage
+## Usage
 
 ### Command Line
 
-Centrevo provides a comprehensive CLI:
+Centrevo provides a comprehensive CLI with the following commands:
 
 ```bash
 centrevo <COMMAND>
 
 Commands:
+  setup        Interactive wizard to setup and run a simulation
   init         Initialize a new simulation
+  run          Run an existing simulation
   list         List simulations in database
   info         Show simulation info
   generations  List recorded generations
+  analyze      Analyze simulation data with population genetics metrics
+  export       Export simulation data (sequences, metadata, fitness)
+  validate     Validate database integrity
   help         Print help
 ```
 
@@ -105,11 +115,28 @@ recorder = centrevo.Recorder(
 # Record
 recorder.record_metadata(config)
 recorder.record_generation(population, 0)
+
+# Analyze population
+pi = centrevo.nucleotide_diversity(population, 0)
+tajima_d = centrevo.tajimas_d(population, 0)
+gc = centrevo.gc_content(population, None, None, None)
+
+print(f"Nucleotide diversity: {pi:.6f}")
+print(f"Tajima's D: {tajima_d:.4f}")
+print(f"GC content: {gc:.2%}")
+
+# Export for visualization
+diversity_metrics = centrevo.export_diversity_metrics(population, 0)
+ld_data = centrevo.export_ld_decay(population, 0, 0, 1000, 10)
+
+# Visualize
+import centrevo.plotting as cplt
+fig = cplt.plot_ld_decay(ld_data)
 ```
 
 See [PYTHON.md](PYTHON.md) for complete Python API documentation.
 
-## 🏗️ Architecture
+## Architecture
 
 Centrevo is organized into several modules:
 
@@ -117,16 +144,17 @@ Centrevo is organized into several modules:
 - **`genome`**: Chromosome, Haplotype, and Individual representations
 - **`evolution`**: Mutation, recombination, and fitness models
 - **`simulation`**: Simulation engine and population dynamics
-- **`storage`**: SQLite persistence and query interface
-- **`python`**: Python bindings (optional)
+- **`storage`**: SQLite persistence with async recording and compression
+- **`analysis`**: Population genetics metrics (diversity, LD, distance, composition)
+- **`python`**: Python bindings (optional, requires PyO3)
 
-## 📊 Performance
+## Performance
 
 Centrevo is designed for performance:
 
 - **Parallel computation**: Uses Rayon for multi-core parallelism
 - **Memory efficient**: Arc-based sequence sharing for cheap cloning
-- **Optimized storage**: Binary BLOB storage with optional compression
+- **Optimized storage**: Binary BLOB storage with optional async compression
 - **Benchmarked**: Comprehensive benchmark suite included
 
 Example performance (on a typical laptop):
@@ -135,7 +163,7 @@ Example performance (on a typical laptop):
 
 See [benches/README.md](benches/README.md) for benchmarking details.
 
-## 🧪 Testing
+## Testing
 
 Centrevo has comprehensive test coverage:
 
@@ -150,22 +178,23 @@ cargo tarpaulin
 cargo bench
 ```
 
-All 247 tests pass with 0 failures.
+All 309 tests pass with 0 failures.
 
-## 📚 Documentation
+## Documentation
 
 - **[CLI Guide](CLI.md)**: Complete command-line reference
 - **[Python API](PYTHON.md)**: Python binding documentation  
 - **[Storage Module](src/storage/README.md)**: Database and persistence details
 - **[Benchmarks](benches/README.md)**: Performance benchmarking guide
 - **[Roadmap](ROADMAP.md)**: Development roadmap and future plans
+- **[Changelog](CHANGELOG.md)**: Version history and changes
 
 Generate API documentation:
 ```bash
 cargo doc --open
 ```
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -173,7 +202,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/centrevo.git
+git clone https://github.com/innan-lab/centrevo.git
 cd centrevo
 
 # Build
@@ -187,35 +216,34 @@ cargo clippy
 cargo fmt --check
 ```
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 Built with:
 - [Rust](https://www.rust-lang.org/) - Systems programming language
 - [Rayon](https://github.com/rayon-rs/rayon) - Data parallelism
 - [SQLite](https://www.sqlite.org/) via [rusqlite](https://github.com/rusqlite/rusqlite) - Database
 - [PyO3](https://github.com/PyO3/pyo3) - Python bindings
+- [PyArrow](https://arrow.apache.org/docs/python/) - Efficient data interchange
 - [Criterion](https://github.com/bheisler/criterion.rs) - Benchmarking
 - [Clap](https://github.com/clap-rs/clap) - CLI parsing
+- [nalgebra](https://nalgebra.org/) - Linear algebra
+- [statrs](https://github.com/statrs-dev/statrs) - Statistical functions
 
-## 📧 Contact
+## Contact
 
-- **Issues**: [GitHub Issues](https://github.com/YOUR_USERNAME/centrevo/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/YOUR_USERNAME/centrevo/discussions)
+- **Issues**: [GitHub Issues](https://github.com/innan-lab/centrevo/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/innan-lab/centrevo/discussions)
 
-## 🗺️ Roadmap
+## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for planned features and development phases.
 
-## ⭐ Star History
-
-If you find Centrevo useful, please consider giving it a star on GitHub!
-
 ---
 
-**Version**: 0.1.0  
+**Version**: 0.2.0  
 **Status**: Active development  
 **Rust Version**: 1.70+

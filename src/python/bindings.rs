@@ -9,12 +9,16 @@ use std::path::PathBuf;
 
 use crate::base::{Alphabet, Nucleotide};
 use crate::genome::{Chromosome, Haplotype, Individual};
-use crate::simulation::{Population, RepeatStructure, SimulationConfig};
-use crate::storage::{QueryBuilder, Recorder, RecordingStrategy};
+use crate::simulation::{
+    Population, RepeatStructure, SimulationConfig, Simulation,
+    MutationConfig, RecombinationConfig, FitnessConfig, SequenceInput,
+};
+use crate::storage::{QueryBuilder, Recorder, RecordingStrategy, SimulationSnapshot};
 
 /// Python module for Centrevo.
 #[pymodule]
 fn centrevo(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Core classes
     m.add_class::<PyNucleotide>()?;
     m.add_class::<PyAlphabet>()?;
     m.add_class::<PyChromosome>()?;
@@ -26,7 +30,17 @@ fn centrevo(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRecorder>()?;
     m.add_class::<PyQueryBuilder>()?;
     m.add_class::<PyRecordingStrategy>()?;
+    m.add_class::<PySimulation>()?;
+    m.add_class::<PyMutationConfig>()?;
+    m.add_class::<PyRecombinationConfig>()?;
+    m.add_class::<PyFitnessConfig>()?;
+    
+    // Core functions
     m.add_function(wrap_pyfunction!(create_initial_population, m)?)?;
+    
+    // Analysis functions
+    super::analysis::register_analysis_functions(m)?;
+    
     Ok(())
 }
 
@@ -254,8 +268,8 @@ impl PyIndividual {
 
 /// Population of individuals.
 #[pyclass(name = "Population")]
-struct PyPopulation {
-    inner: Population,
+pub(super) struct PyPopulation {
+    pub(super) inner: Population,
 }
 
 #[pymethods]
@@ -474,12 +488,54 @@ impl PyRecorder {
         Ok(())
     }
 
+    fn record_full_config(
+        &mut self,
+        structure: &PyRepeatStructure,
+        mutation: &PyMutationConfig,
+        recombination: &PyRecombinationConfig,
+        fitness: &PyFitnessConfig,
+        config: &PySimulationConfig,
+    ) -> PyResult<()> {
+        let snapshot = SimulationSnapshot {
+            structure: structure.inner.clone(),
+            mutation: mutation.inner.clone(),
+            recombination: recombination.inner.clone(),
+            fitness: fitness.inner.clone(),
+            config: config.inner.clone(),
+        };
+
+        self.inner
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
+            .record_full_config(&snapshot)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record full config: {}", e)))?;
+
+        Ok(())
+    }
+
     fn record_generation(&mut self, population: &PyPopulation, generation: usize) -> PyResult<()> {
         self.inner
             .as_mut()
             .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
             .record_generation(&population.inner, generation)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to record generation: {}", e)))?;
+
+        Ok(())
+    }
+
+    fn record_checkpoint(&mut self, simulation: &PySimulation, generation: usize) -> PyResult<()> {
+        let sim = simulation
+            .inner
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("Simulation has been consumed"))?;
+
+        let rng_state = sim.rng_state_bytes();
+
+        self.inner
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
+            .record_checkpoint(generation, &rng_state)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record checkpoint: {}", e)))?;
 
         Ok(())
     }
@@ -578,4 +634,241 @@ fn create_initial_population(
     Ok(PyPopulation {
         inner: Population::new("initial_pop", individuals),
     })
+}
+
+/// Mutation configuration for simulations.
+#[pyclass(name = "MutationConfig")]
+#[derive(Clone)]
+struct PyMutationConfig {
+    inner: MutationConfig,
+}
+
+#[pymethods]
+impl PyMutationConfig {
+    #[staticmethod]
+    fn uniform(alphabet: &PyAlphabet, rate: f64) -> PyResult<Self> {
+        let config = MutationConfig::uniform(alphabet.inner.clone(), rate)
+            .map_err(|e| PyValueError::new_err(format!("Failed to create mutation config: {}", e)))?;
+        Ok(Self { inner: config })
+    }
+
+    fn __repr__(&self) -> String {
+        "MutationConfig(...)".to_string()
+    }
+}
+
+/// Recombination configuration for simulations.
+#[pyclass(name = "RecombinationConfig")]
+#[derive(Clone)]
+struct PyRecombinationConfig {
+    inner: RecombinationConfig,
+}
+
+#[pymethods]
+impl PyRecombinationConfig {
+    #[staticmethod]
+    fn standard(break_prob: f64, crossover_prob: f64, gc_extension_prob: f64) -> PyResult<Self> {
+        let config = RecombinationConfig::standard(break_prob, crossover_prob, gc_extension_prob)
+            .map_err(|e| PyValueError::new_err(format!("Failed to create recombination config: {}", e)))?;
+        Ok(Self { inner: config })
+    }
+
+    fn __repr__(&self) -> String {
+        "RecombinationConfig(...)".to_string()
+    }
+}
+
+/// Fitness configuration for simulations.
+#[pyclass(name = "FitnessConfig")]
+#[derive(Clone)]
+struct PyFitnessConfig {
+    inner: FitnessConfig,
+}
+
+#[pymethods]
+impl PyFitnessConfig {
+    #[staticmethod]
+    fn neutral() -> Self {
+        Self {
+            inner: FitnessConfig::neutral(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        if self.inner.is_neutral() {
+            "FitnessConfig.neutral()".to_string()
+        } else {
+            "FitnessConfig(...)".to_string()
+        }
+    }
+}
+
+/// Simulation engine for evolutionary processes.
+#[pyclass(name = "Simulation", unsendable)]
+struct PySimulation {
+    inner: Option<Simulation>,
+}
+
+#[pymethods]
+impl PySimulation {
+    /// Create a new simulation with uniform initial sequences.
+    #[new]
+    #[pyo3(signature = (structure, mutation, recombination, fitness, config))]
+    fn new(
+        structure: &PyRepeatStructure,
+        mutation: &PyMutationConfig,
+        recombination: &PyRecombinationConfig,
+        fitness: &PyFitnessConfig,
+        config: &PySimulationConfig,
+    ) -> PyResult<Self> {
+        let sim = Simulation::new(
+            structure.inner.clone(),
+            mutation.inner.clone(),
+            recombination.inner.clone(),
+            fitness.inner.clone(),
+            config.inner.clone(),
+        )
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create simulation: {}", e)))?;
+
+        Ok(Self { inner: Some(sim) })
+    }
+
+    /// Create a simulation from custom sequences.
+    ///
+    /// Args:
+    ///     source_type: Type of input ("fasta", "json", or "database")
+    ///     source_path: Path to file or JSON string
+    ///     structure: Repeat structure configuration
+    ///     mutation: Mutation configuration
+    ///     recombination: Recombination configuration
+    ///     fitness: Fitness configuration
+    ///     config: Simulation configuration
+    ///     sim_id: Simulation ID (required for "database" source)
+    ///     generation: Generation to load (optional for "database" source)
+    #[staticmethod]
+    #[pyo3(signature = (source_type, source_path, structure, mutation, recombination, fitness, config, sim_id=None, generation=None))]
+    fn from_sequences(
+        source_type: &str,
+        source_path: String,
+        structure: &PyRepeatStructure,
+        mutation: &PyMutationConfig,
+        recombination: &PyRecombinationConfig,
+        fitness: &PyFitnessConfig,
+        config: &PySimulationConfig,
+        sim_id: Option<String>,
+        generation: Option<usize>,
+    ) -> PyResult<Self> {
+        let source = match source_type {
+            "fasta" => SequenceInput::Fasta(source_path),
+            "json" => SequenceInput::Json(source_path),
+            "database" => {
+                let id = sim_id.ok_or_else(|| {
+                    PyValueError::new_err("sim_id required for database source")
+                })?;
+                SequenceInput::Database {
+                    path: source_path,
+                    sim_id: id,
+                    generation,
+                }
+            }
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "Invalid source_type '{}'. Use 'fasta', 'json', or 'database'",
+                    source_type
+                )));
+            }
+        };
+
+        let sim = Simulation::from_sequences(
+            source,
+            structure.inner.clone(),
+            mutation.inner.clone(),
+            recombination.inner.clone(),
+            fitness.inner.clone(),
+            config.inner.clone(),
+        )
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create simulation: {}", e)))?;
+
+        Ok(Self { inner: Some(sim) })
+    }
+
+    /// Resume a simulation from a checkpoint in the database.
+    ///
+    /// Args:
+    ///     db_path: Path to the database file
+    ///     sim_id: Simulation ID to resume
+    #[staticmethod]
+    fn from_checkpoint(db_path: String, sim_id: String) -> PyResult<Self> {
+        let sim = Simulation::from_checkpoint(db_path, &sim_id)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to resume simulation: {}", e)))?;
+
+        Ok(Self { inner: Some(sim) })
+    }
+
+    /// Get the current population.
+    fn population(&self) -> PyResult<PyPopulation> {
+        let sim = self
+            .inner
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("Simulation has been consumed"))?;
+
+        Ok(PyPopulation {
+            inner: sim.population().clone(),
+        })
+    }
+
+    /// Get the current generation number.
+    fn generation(&self) -> PyResult<usize> {
+        let sim = self
+            .inner
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("Simulation has been consumed"))?;
+
+        Ok(sim.generation())
+    }
+
+    /// Advance simulation by one generation.
+    fn step(&mut self) -> PyResult<()> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("Simulation has been consumed"))?
+            .step()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to step simulation: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Run simulation for a specific number of generations.
+    fn run_for(&mut self, generations: usize) -> PyResult<()> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("Simulation has been consumed"))?
+            .run_for(generations)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to run simulation: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Run simulation for the configured number of generations.
+    fn run(&mut self) -> PyResult<()> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("Simulation has been consumed"))?
+            .run()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to run simulation: {}", e)))?;
+
+        Ok(())
+    }
+
+    fn __repr__(&self) -> String {
+        if let Some(sim) = &self.inner {
+            format!(
+                "Simulation(generation={}, population_size={})",
+                sim.generation(),
+                sim.population().size()
+            )
+        } else {
+            "Simulation(consumed)".to_string()
+        }
+    }
 }

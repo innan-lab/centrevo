@@ -6,7 +6,9 @@
 mod database;
 mod recorder;
 mod query;
+mod async_recorder;
 
 pub use database::{Database, DatabaseError};
-pub use recorder::{Recorder, RecordingStrategy, IndividualSnapshot, FitnessStats};
-pub use query::QueryBuilder;
+pub use recorder::{Recorder, RecordingStrategy, IndividualSnapshot, FitnessStats, SimulationSnapshot};
+pub use query::{QueryBuilder, CheckpointInfo};
+pub use async_recorder::{AsyncRecorder, BufferConfig, RecorderStats};

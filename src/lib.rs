@@ -8,6 +8,7 @@ pub mod genome;
 pub mod evolution;
 pub mod simulation;
 pub mod storage;
+pub mod analysis;
 
 // Python bindings module (conditionally compiled)
 // Use `maturin develop` or `maturin build` to build as Python extension

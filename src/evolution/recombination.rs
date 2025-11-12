@@ -91,8 +91,8 @@ impl RecombinationParams {
             return RecombinationType::None;
         }
 
-        // Check if a break occurs
-        if !rng.random_bool(self.break_prob) {
+        // Check if a break occurs using gen::<f64>() which is faster than random_bool
+        if rng.random::<f64>() >= self.break_prob {
             return RecombinationType::None;
         }
 
@@ -100,12 +100,12 @@ impl RecombinationParams {
         let position = rng.random_range(0..length);
 
         // Determine if crossover or gene conversion
-        if rng.random_bool(self.crossover_prob) {
+        if rng.random::<f64>() < self.crossover_prob {
             RecombinationType::Crossover { position }
         } else {
             // Gene conversion: sample tract length
             let mut tract_length = 1;
-            while tract_length < (length - position) && rng.random_bool(self.gc_extension_prob) {
+            while tract_length < (length - position) && rng.random::<f64>() < self.gc_extension_prob {
                 tract_length += 1;
             }
             
@@ -267,7 +267,7 @@ mod tests {
     use super::*;
     use crate::base::Alphabet;
     use rand::SeedableRng;
-    use rand::rngs::StdRng;
+    use rand_xoshiro::Xoshiro256PlusPlus;
 
     fn test_alphabet() -> Alphabet {
         Alphabet::dna()
@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn test_sample_event_zero_break_prob() {
         let params = RecombinationParams::new(0.0, 0.5, 0.1).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         for _ in 0..100 {
             let event = params.sample_event(100, &mut rng);
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn test_sample_event_empty_sequence() {
         let params = RecombinationParams::new(0.5, 0.5, 0.1).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         let event = params.sample_event(0, &mut rng);
         assert_eq!(event, RecombinationType::None);
@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn test_sample_event_types() {
         let params = RecombinationParams::new(1.0, 1.0, 0.0).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         // With break_prob=1.0 and crossover_prob=1.0, should always get crossover
         for _ in 0..10 {
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn test_sample_event_gene_conversion() {
         let params = RecombinationParams::new(1.0, 0.0, 0.0).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         // With break_prob=1.0, crossover_prob=0.0, should get gene conversion
         for _ in 0..10 {

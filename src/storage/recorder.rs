@@ -1,11 +1,21 @@
 //! High-level recording of simulation state.
 
 use crate::genome::Individual;
-use crate::simulation::{Population, SimulationConfig};
+use crate::simulation::{Population, SimulationConfig, RepeatStructure, MutationConfig, RecombinationConfig, FitnessConfig};
 use crate::storage::{Database, DatabaseError};
 use rusqlite::params;
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};
+
+/// Complete simulation configuration for resumability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationSnapshot {
+    pub structure: RepeatStructure,
+    pub mutation: MutationConfig,
+    pub recombination: RecombinationConfig,
+    pub fitness: FitnessConfig,
+    pub config: SimulationConfig,
+}
 
 /// Recording strategy for when to persist simulation state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +85,53 @@ impl IndividualSnapshot {
             haplotype2_seq: h2_seq,
             fitness: ind.fitness(),
         }
+    }
+
+    /// Reconstruct an Individual from a snapshot.
+    /// Requires the RepeatStructure to rebuild the proper chromosome structure.
+    pub fn to_individual(
+        &self,
+        structure: &crate::simulation::RepeatStructure,
+    ) -> Result<Individual, String> {
+        use crate::base::Sequence;
+        use crate::genome::{Chromosome, Haplotype};
+        
+        // Reconstruct sequence from indices
+        let seq1 = Sequence::from_indices(
+            self.haplotype1_seq.clone(),
+            structure.alphabet.clone(),
+        );
+        let seq2 = Sequence::from_indices(
+            self.haplotype2_seq.clone(),
+            structure.alphabet.clone(),
+        );
+        
+        // Create chromosomes
+        let chr1 = Chromosome::new(
+            self.haplotype1_chr_id.clone(),
+            seq1,
+            structure.ru_length,
+            structure.rus_per_hor,
+        );
+        let chr2 = Chromosome::new(
+            self.haplotype2_chr_id.clone(),
+            seq2,
+            structure.ru_length,
+            structure.rus_per_hor,
+        );
+        
+        // Create haplotypes
+        let mut hap1 = Haplotype::new();
+        hap1.push(chr1);
+        
+        let mut hap2 = Haplotype::new();
+        hap2.push(chr2);
+        
+        // Create individual
+        let mut individual = Individual::new(self.individual_id.as_str(), hap1, hap2);
+        individual.set_fitness(self.fitness);
+        
+        Ok(individual)
     }
 }
 
@@ -201,6 +258,38 @@ impl Recorder {
         Ok(())
     }
 
+    /// Record complete simulation configuration for resumability.
+    pub fn record_full_config(&mut self, snapshot: &SimulationSnapshot) -> Result<(), DatabaseError> {
+        let config_json = serde_json::to_string(snapshot)
+            .map_err(|e| DatabaseError::Insert(format!("Failed to serialize config: {}", e)))?;
+        
+        let start_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        self.db
+            .connection()
+            .execute(
+                "INSERT OR REPLACE INTO simulations 
+                (sim_id, start_time, pop_size, num_generations, mutation_rate, recombination_rate, parameters_json, config_json)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    self.sim_id.as_ref(),
+                    start_time,
+                    snapshot.config.population_size,
+                    snapshot.config.total_generations,
+                    0.0,  // Can extract from mutation config if needed
+                    0.0,  // Can extract from recombination config if needed
+                    serde_json::to_string(&snapshot.config).unwrap_or_else(|_| "{}".to_string()),
+                    config_json,
+                ],
+            )
+            .map_err(|e| DatabaseError::Insert(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Update simulation end time.
     pub fn finalize_metadata(&mut self) -> Result<(), DatabaseError> {
         let end_time = std::time::SystemTime::now()
@@ -304,6 +393,36 @@ impl Recorder {
             .map_err(|e| DatabaseError::Transaction(e.to_string()))?;
 
         self.generations_recorded += 1;
+        Ok(())
+    }
+
+    /// Record a checkpoint with RNG state for resumability.
+    /// This should be called alongside record_generation to enable resume functionality.
+    pub fn record_checkpoint(
+        &mut self,
+        generation: usize,
+        rng_state: &[u8],
+    ) -> Result<(), DatabaseError> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        self.db
+            .connection()
+            .execute(
+                "INSERT OR REPLACE INTO checkpoints 
+                (sim_id, generation, rng_state, timestamp)
+                VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    self.sim_id.as_ref(),
+                    generation as i64,
+                    rng_state,
+                    timestamp,
+                ],
+            )
+            .map_err(|e| DatabaseError::Insert(e.to_string()))?;
+
         Ok(())
     }
 

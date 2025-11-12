@@ -9,7 +9,7 @@ use centrevo::evolution::{
     HaplotypeFitness, IndividualFitness,
 };
 use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand_xoshiro::Xoshiro256PlusPlus;
 
 fn create_test_sequence(size: usize, alphabet: Alphabet) -> Sequence {
     let mut seq = Sequence::with_capacity(size, alphabet);
@@ -42,7 +42,7 @@ fn create_test_individual(size: usize) -> Individual {
 fn bench_mutation(c: &mut Criterion) {
     let mut group = c.benchmark_group("mutation");
     let alphabet = Alphabet::dna();
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let rates = [0.001, 0.01, 0.1];
     let sizes = [1_000, 10_000, 100_000];
     
@@ -53,13 +53,27 @@ fn bench_mutation(c: &mut Criterion) {
             let label = format!("rate_{}_size_{}", rate, size);
             group.throughput(Throughput::Elements(size as u64));
             
+            // Standard mutation
             group.bench_with_input(
-                BenchmarkId::new("mutate_sequence", &label),
+                BenchmarkId::new("standard", &label),
                 &size,
                 |b, &s| {
                     b.iter(|| {
                         let mut seq = create_test_sequence(s, alphabet.clone());
                         model.mutate_sequence(&mut seq, &mut rng);
+                        black_box(seq)
+                    });
+                }
+            );
+            
+            // Poisson mutation
+            group.bench_with_input(
+                BenchmarkId::new("poisson", &label),
+                &size,
+                |b, &s| {
+                    b.iter(|| {
+                        let mut seq = create_test_sequence(s, alphabet.clone());
+                        model.mutate_sequence_poisson(&mut seq, &mut rng);
                         black_box(seq)
                     });
                 }
@@ -74,7 +88,7 @@ fn bench_mutation(c: &mut Criterion) {
 fn bench_mutate_base(c: &mut Criterion) {
     let mut group = c.benchmark_group("mutate_base");
     let alphabet = Alphabet::dna();
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let rates = [0.001, 0.01, 0.1];
     
     for rate in rates {
@@ -98,7 +112,7 @@ fn bench_mutate_base(c: &mut Criterion) {
 fn bench_recombination(c: &mut Criterion) {
     let mut group = c.benchmark_group("recombination");
     let alphabet = Alphabet::dna();
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let sizes = [1_000, 10_000, 100_000];
     
     let params = RecombinationParams::new(0.01, 0.7, 0.1).unwrap();
@@ -216,7 +230,7 @@ fn bench_fitness(c: &mut Criterion) {
 fn bench_combined_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("combined_operations");
     let alphabet = Alphabet::dna();
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let size = 10_000;
     
     let mutation_model = SubstitutionModel::uniform(alphabet.clone(), 0.001).unwrap();

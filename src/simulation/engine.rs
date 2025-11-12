@@ -7,8 +7,9 @@ use crate::genome::{Chromosome, Haplotype, Individual};
 use crate::simulation::{Population, RepeatStructure, MutationConfig, RecombinationConfig, FitnessConfig, SimulationConfig};
 use crate::base::Sequence;
 use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
+use rand_xoshiro::Xoshiro256PlusPlus;
 use std::sync::Arc;
+use rayon::prelude::*;
 
 /// Main simulation engine.
 #[derive(Debug)]
@@ -26,8 +27,8 @@ pub struct Simulation {
     fitness: FitnessConfig,
     /// Simulation configuration
     config: SimulationConfig,
-    /// Random number generator
-    rng: StdRng,
+    /// Random number generator (using Xoshiro256++ for better performance)
+    rng: Xoshiro256PlusPlus,
 }
 
 impl Simulation {
@@ -40,10 +41,11 @@ impl Simulation {
         config: SimulationConfig,
     ) -> Result<Self, String> {
         // Create RNG from seed or thread_rng
+        // Using Xoshiro256++ which is 2-3x faster than StdRng
         let rng = if let Some(seed) = config.seed {
-            StdRng::seed_from_u64(seed)
+            Xoshiro256PlusPlus::seed_from_u64(seed)
         } else {
-            StdRng::from_seed(rand::rng().random())
+            Xoshiro256PlusPlus::from_seed(rand::rng().random())
         };
 
         // Create initial population with uniform sequences
@@ -60,6 +62,156 @@ impl Simulation {
             rng,
         })
     }
+
+    /// Create a new simulation from custom sequences.
+    /// 
+    /// This allows initializing a simulation with sequences from FASTA files,
+    /// JSON data, or a previous simulation database. The sequences are validated
+    /// to ensure they match the expected parameters.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `source` - Source of initial sequences (FASTA, JSON, or Database)
+    /// * `structure` - Repeat structure parameters
+    /// * `mutation` - Mutation configuration
+    /// * `recombination` - Recombination configuration
+    /// * `fitness` - Fitness configuration
+    /// * `config` - Simulation configuration
+    /// 
+    /// # Returns
+    /// 
+    /// A `Simulation` instance initialized with the provided sequences, or an error
+    /// if the sequences are invalid or don't match the parameters.
+    pub fn from_sequences(
+        source: crate::simulation::initialization::SequenceInput,
+        structure: RepeatStructure,
+        mutation: MutationConfig,
+        recombination: RecombinationConfig,
+        fitness: FitnessConfig,
+        config: SimulationConfig,
+    ) -> Result<Self, String> {
+        // Create RNG from seed or thread_rng
+        let rng = if let Some(seed) = config.seed {
+            Xoshiro256PlusPlus::seed_from_u64(seed)
+        } else {
+            Xoshiro256PlusPlus::from_seed(rand::rng().random())
+        };
+
+        // Initialize individuals from source
+        let individuals = crate::simulation::initialization::initialize_from_source(
+            source,
+            &structure,
+            config.population_size,
+        ).map_err(|e| format!("Failed to initialize from sequences: {}", e))?;
+
+        let population = Population::new("pop0", individuals);
+
+        Ok(Self {
+            population,
+            structure,
+            mutation,
+            recombination,
+            fitness,
+            config,
+            rng,
+        })
+    }
+
+    /// Resume a simulation from a checkpoint in the database.
+    /// 
+    /// This loads the complete simulation state from the last recorded checkpoint,
+    /// including population state, RNG state, and all configuration parameters.
+    /// The simulation can then continue exactly as if it had never stopped.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `db_path` - Path to the SQLite database containing the checkpoint
+    /// * `sim_id` - Simulation ID to resume
+    /// 
+    /// # Returns
+    /// 
+    /// A `Simulation` instance ready to continue from the checkpoint, or an error
+    /// if the checkpoint is invalid or configuration cannot be loaded.
+    pub fn from_checkpoint(
+        db_path: impl AsRef<std::path::Path>,
+        sim_id: &str,
+    ) -> Result<Self, String> {
+        use crate::storage::QueryBuilder;
+        
+        // Open database for querying
+        let query = QueryBuilder::new(db_path)
+            .map_err(|e| format!("Failed to open database: {}", e))?;
+        
+        // Get the latest checkpoint
+        let checkpoint = query.get_latest_checkpoint(sim_id)
+            .map_err(|e| format!("Failed to load checkpoint: {}", e))?;
+        
+        // Verify sim_id matches
+        if checkpoint.sim_id != sim_id {
+            return Err(format!(
+                "Checkpoint sim_id mismatch: expected '{}', found '{}'",
+                sim_id, checkpoint.sim_id
+            ));
+        }
+        
+        // Load complete configuration
+        let snapshot = query.get_full_config(sim_id)
+            .map_err(|e| format!("Failed to load configuration: {}", e))?;
+        
+        // Load population state at checkpoint generation
+        let snapshots = query.get_generation(sim_id, checkpoint.generation)
+            .map_err(|e| format!("Failed to load population: {}", e))?;
+        
+        if snapshots.is_empty() {
+            return Err(format!(
+                "No population data found for generation {}",
+                checkpoint.generation
+            ));
+        }
+        
+        // Reconstruct individuals from snapshots
+        let individuals: Result<Vec<_>, String> = snapshots
+            .iter()
+            .map(|snap| snap.to_individual(&snapshot.structure))
+            .collect();
+        let individuals = individuals?;
+        
+        // Validate population size matches configuration
+        if individuals.len() != snapshot.config.population_size {
+            return Err(format!(
+                "Population size mismatch: config expects {}, checkpoint has {}",
+                snapshot.config.population_size,
+                individuals.len()
+            ));
+        }
+        
+        // Create population with correct generation number
+        let mut population = Population::new(format!("pop_{}", checkpoint.generation), individuals);
+        
+        // Set generation counter to checkpoint generation
+        for _ in 0..checkpoint.generation {
+            population.increment_generation();
+        }
+        
+        // Restore RNG state
+        let rng = bincode::deserialize(&checkpoint.rng_state)
+            .map_err(|e| format!("Failed to restore RNG state: {}", e))?;
+        
+        // Close query builder
+        query.close().map_err(|e| format!("Failed to close database: {}", e))?;
+        
+        Ok(Self {
+            population,
+            structure: snapshot.structure,
+            mutation: snapshot.mutation,
+            recombination: snapshot.recombination,
+            fitness: snapshot.fitness,
+            config: snapshot.config,
+            rng,
+        })
+    }
+
+
 
     /// Create initial population with uniform sequences.
     fn create_initial_population(
@@ -133,70 +285,140 @@ impl Simulation {
         self.population.generation()
     }
 
+    /// Get reference to simulation configuration.
+    pub fn config(&self) -> &SimulationConfig {
+        &self.config
+    }
+
+    /// Get reference to repeat structure.
+    pub fn structure(&self) -> &RepeatStructure {
+        &self.structure
+    }
+
+    /// Get reference to mutation configuration.
+    pub fn mutation(&self) -> &MutationConfig {
+        &self.mutation
+    }
+
+    /// Get reference to recombination configuration.
+    pub fn recombination(&self) -> &RecombinationConfig {
+        &self.recombination
+    }
+
+    /// Get reference to fitness configuration.
+    pub fn fitness(&self) -> &FitnessConfig {
+        &self.fitness
+    }
+
+    /// Get the current RNG state for checkpointing.
+    /// Returns the internal state as bytes.
+    pub fn rng_state_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self.rng)
+            .expect("Failed to serialize RNG state")
+    }
+
+    /// Set the RNG state from a checkpoint.
+    /// Takes a byte array representing the serialized RNG state.
+    pub fn set_rng_from_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.rng = bincode::deserialize(bytes)
+            .map_err(|e| format!("Failed to deserialize RNG state: {}", e))?;
+        Ok(())
+    }
+
     /// Apply mutation to all individuals in the population.
     fn apply_mutation(&mut self) -> Result<(), String> {
-        for individual in self.population.individuals_mut() {
-            // Mutate first haplotype
-            for chr in individual.haplotype1_mut().chromosomes_mut() {
-                let seq = chr.sequence_mut();
-                self.mutation.model.mutate_sequence(seq, &mut self.rng);
-            }
+        let pop_size = self.population.size();
+        
+        // Generate seeds for each individual (using faster RNG)
+        let seeds: Vec<u64> = (0..pop_size)
+            .map(|_| self.rng.random())
+            .collect();
+        
+        // Parallel mutation with independent RNGs per individual
+        self.population
+            .individuals_mut()
+            .par_iter_mut()
+            .zip(seeds.par_iter())
+            .for_each(|(individual, &seed)| {
+                // Use Xoshiro256++ for thread-local RNG (faster than StdRng)
+                let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
+                
+                // Mutate first haplotype using Poisson pre-sampling
+                for chr in individual.haplotype1_mut().chromosomes_mut() {
+                    let seq = chr.sequence_mut();
+                    self.mutation.model.mutate_sequence_poisson(seq, &mut local_rng);
+                }
 
-            // Mutate second haplotype
-            for chr in individual.haplotype2_mut().chromosomes_mut() {
-                let seq = chr.sequence_mut();
-                self.mutation.model.mutate_sequence(seq, &mut self.rng);
-            }
-        }
+                // Mutate second haplotype using Poisson pre-sampling
+                for chr in individual.haplotype2_mut().chromosomes_mut() {
+                    let seq = chr.sequence_mut();
+                    self.mutation.model.mutate_sequence_poisson(seq, &mut local_rng);
+                }
+            });
 
         Ok(())
     }
 
     /// Apply recombination to all individuals in the population.
     fn apply_recombination(&mut self) -> Result<(), String> {
-        for individual in self.population.individuals_mut() {
-            let (hap1, hap2) = individual.haplotypes_mut();
+        let pop_size = self.population.size();
+        
+        // Generate seeds for each individual
+        let seeds: Vec<u64> = (0..pop_size)
+            .map(|_| self.rng.random())
+            .collect();
+        
+        // Parallel recombination with independent RNGs per individual
+        self.population
+            .individuals_mut()
+            .par_iter_mut()
+            .zip(seeds.par_iter())
+            .try_for_each(|(individual, &seed)| -> Result<(), String> {
+                let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
+                let (hap1, hap2) = individual.haplotypes_mut();
 
-            // Recombine corresponding chromosomes
-            for chr_idx in 0..hap1.len().min(hap2.len()) {
-                if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx)) {
-                    // Sample recombination event
-                    let event = self.recombination.params.sample_event(
-                        chr1.len(),
-                        &mut self.rng,
-                    );
+                // Recombine corresponding chromosomes
+                for chr_idx in 0..hap1.len().min(hap2.len()) {
+                    if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx)) {
+                        // Sample recombination event
+                        let event = self.recombination.params.sample_event(
+                            chr1.len(),
+                            &mut local_rng,
+                        );
 
-                    // Apply the recombination event
-                    match event {
-                        crate::evolution::RecombinationType::None => {
-                            // No recombination
-                        }
-                        crate::evolution::RecombinationType::Crossover { position } => {
-                            // Perform crossover
-                            let (new1, new2) = self.recombination.params.crossover(
-                                chr1.sequence(),
-                                chr2.sequence(),
-                                position,
-                            ).map_err(|e| format!("Crossover failed: {}", e))?;
-                            
-                            *chr1.sequence_mut() = new1;
-                            *chr2.sequence_mut() = new2;
-                        }
-                        crate::evolution::RecombinationType::GeneConversion { start, end } => {
-                            // Perform gene conversion (chr1 -> chr2)
-                            let new2 = self.recombination.params.gene_conversion(
-                                chr2.sequence(),
-                                chr1.sequence(),
-                                start,
-                                end,
-                            ).map_err(|e| format!("Gene conversion failed: {}", e))?;
-                            
-                            *chr2.sequence_mut() = new2;
+                        // Apply the recombination event
+                        match event {
+                            crate::evolution::RecombinationType::None => {
+                                // No recombination
+                            }
+                            crate::evolution::RecombinationType::Crossover { position } => {
+                                // Perform crossover
+                                let (new1, new2) = self.recombination.params.crossover(
+                                    chr1.sequence(),
+                                    chr2.sequence(),
+                                    position,
+                                ).map_err(|e| format!("Crossover failed: {}", e))?;
+                                
+                                *chr1.sequence_mut() = new1;
+                                *chr2.sequence_mut() = new2;
+                            }
+                            crate::evolution::RecombinationType::GeneConversion { start, end } => {
+                                // Perform gene conversion (chr1 -> chr2)
+                                let new2 = self.recombination.params.gene_conversion(
+                                    chr2.sequence(),
+                                    chr1.sequence(),
+                                    start,
+                                    end,
+                                ).map_err(|e| format!("Gene conversion failed: {}", e))?;
+                                
+                                *chr2.sequence_mut() = new2;
+                            }
                         }
                     }
                 }
-            }
-        }
+                
+                Ok(())
+            })?;
 
         Ok(())
     }
@@ -213,30 +435,48 @@ impl Simulation {
             self.config.population_size,
         );
 
-        // Generate offspring from parent pairs
-        let mut offspring = Vec::with_capacity(self.config.population_size);
+        // Pre-allocate generation string to avoid repeated allocations
+        let gen_str = format!("ind_gen{}_", self.generation() + 1);
         
-        for (i, (parent1_idx, parent2_idx)) in pairs.iter().enumerate() {
-            let parent1 = self.population.get(*parent1_idx).unwrap();
-            let parent2 = self.population.get(*parent2_idx).unwrap();
+        // Generate seeds for each offspring
+        let seeds: Vec<u64> = (0..self.config.population_size)
+            .map(|_| self.rng.random())
+            .collect();
+        
+        // Get immutable reference to population for parallel access
+        let population = &self.population;
+        
+        // Generate offspring from parent pairs in parallel
+        let offspring: Vec<Individual> = pairs
+            .par_iter()
+            .zip(seeds.par_iter())
+            .enumerate()
+            .map(|(i, ((parent1_idx, parent2_idx), &seed))| {
+                let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
+                
+                let parent1 = population.get(*parent1_idx).unwrap();
+                let parent2 = population.get(*parent2_idx).unwrap();
 
-            // Each parent contributes one gamete (haplotype)
-            // For simplicity, randomly pick one haplotype from each parent
-            let hap1 = if self.rng.random_bool(0.5) {
-                parent1.haplotype1().clone()
-            } else {
-                parent1.haplotype2().clone()
-            };
+                // Each parent contributes one gamete (haplotype)
+                // Randomly pick one haplotype from each parent
+                // Use gen::<f64>() which is faster than random_bool
+                let hap1 = if local_rng.random::<f64>() < 0.5 {
+                    parent1.haplotype1().clone()
+                } else {
+                    parent1.haplotype2().clone()
+                };
 
-            let hap2 = if self.rng.random_bool(0.5) {
-                parent2.haplotype1().clone()
-            } else {
-                parent2.haplotype2().clone()
-            };
+                let hap2 = if local_rng.random::<f64>() < 0.5 {
+                    parent2.haplotype1().clone()
+                } else {
+                    parent2.haplotype2().clone()
+                };
 
-            let child = Individual::new(format!("ind_gen{}_{}", self.generation() + 1, i), hap1, hap2);
-            offspring.push(child);
-        }
+                // More efficient ID construction
+                let id = format!("{}{}", gen_str, i);
+                Individual::new(id, hap1, hap2)
+            })
+            .collect();
 
         Ok(offspring)
     }

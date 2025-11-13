@@ -36,8 +36,14 @@ use crate::simulation::initialization::SequenceInput;
 ///     .seed(42)
 ///     .build()
 ///     .unwrap();
+/// ```
 ///
-/// // From imported sequences
+/// # From imported sequences
+///
+/// ```no_run
+/// use centrevo::simulation::SimulationBuilder;
+///
+/// // From imported sequences (requires sequences.fasta to exist)
 /// let sim = SimulationBuilder::new()
 ///     .population_size(50)
 ///     .generations(100)

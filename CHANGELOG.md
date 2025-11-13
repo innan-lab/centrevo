@@ -7,47 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-#### SimulationBuilder - Fluent API for Creating Simulations
-- **Builder Pattern** - Ergonomic API for simulation creation (`src/simulation/builder.rs`)
-  - Fluent method chaining for configuration
-  - Sensible defaults: no mutation, no recombination, neutral fitness, DNA alphabet
-  - Required parameters: `population_size()`, `generations()`
-  - Optional parameters with defaults for all evolutionary processes
-  - Comprehensive validation at `build()` time with clear error messages
-
-- **Multiple Initialization Modes**
-  - `init_uniform(base)` - Initialize with uniform sequence (default: Nucleotide::A)
-  - `init_random()` - Initialize with random bases from alphabet
-  - `init_from_fasta(path)` - Load sequences from FASTA file
-  - `init_from_json(input)` - Load sequences from JSON file or string
-  - `init_from_checkpoint(db_path, sim_id, generation)` - Load sequences from checkpoint
-  - `resume_from_checkpoint()` - Separate API for complete state restoration
-
-- **Random Sequence Initialization**
-  - `Simulation::new_random()` - Create simulation with random initial sequences
-  - Each position gets random base from alphabet
-  - Reproducible with seed parameter
-  - Helper functions: `create_random_population()`, `create_random_individual()`
-
-- **Python Bindings** - SimulationBuilder exposed to Python (planned)
-  - Builder pattern available in Python API
-  - Type stubs for IDE support
-  - Examples and documentation updated
-
-### Changed
-- **Documentation Updates**
-  - PYTHON.md: Complete rewrite with builder pattern examples
-  - README.md: Quick start updated to show builder pattern
-  - Added sections on initialization modes, default values, and validation
-  - Comprehensive examples for all initialization types
-
 ### Planned (Phase 3 - Next Release)
 - CI/CD pipeline with automated testing and code coverage tracking
 - Plotting utilities module with matplotlib integration
 - Example Jupyter notebooks demonstrating analysis workflows
 - Documentation improvements and analysis guide
+
+## [0.2.1] - 2025-11-13
+
+### Added
+
+#### Clippy Linting Improvements
+- Fixed 81+ clippy warnings for improved code quality
+- Updated all format strings to use inline variable syntax (`format!("{variable}")`)
+- Improved loop patterns using iterators instead of range-based indexing
+
+### Fixed
+- **Code Quality**: Eliminated all clippy warnings via automatic fixes and manual refactoring
+  - Replaced needless range loops with iterator-based patterns
+  - Optimized format strings with inline variables (81 fixes in bin and lib)
+  - Applied `#[allow(clippy::too_many_arguments)]` to complex functions requiring many parameters
+  - `src/evolution/mutation.rs`: Fixed loop variable indexing pattern
+  - `src/storage/async_recorder.rs`: Allowed too_many_arguments for database operations
+  - `src/bin/centrevo.rs`: Fixed format string inlining and function signatures
+
+### Changed
+- Enhanced code maintainability through consistent formatting practices
+- Improved compiler warnings hygiene (now passes `cargo clippy` with no warnings)
+
+### Documentation
+- All documentation remains consistent with v0.2.0 feature set
+- Changelog updated to reflect release preparation
+
+### Testing
+- All existing tests pass without modification
+- Code quality improvements do not affect functionality
 
 ## [0.2.0] - 2025-11-12
 
@@ -375,5 +369,8 @@ None (initial release)
 
 ---
 
-[Unreleased]: https://github.com/YOUR_USERNAME/centrevo/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/YOUR_USERNAME/centrevo/releases/tag/v0.1.0
+[Unreleased]: https://github.com/innan-lab/centrevo/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/innan-lab/centrevo/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/innan-lab/centrevo/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/innan-lab/centrevo/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/innan-lab/centrevo/releases/tag/v0.1.0

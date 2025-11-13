@@ -4,7 +4,7 @@ Centrevo Python Package
 High-performance simulator for centromeric sequence evolution.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 # Import the compiled Rust module
 # The binary module is named 'centrevo' via PyO3's #[pymodule]

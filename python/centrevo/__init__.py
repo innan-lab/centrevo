@@ -26,32 +26,32 @@ try:
         Recorder,
         QueryBuilder,
         RecordingStrategy,
-        
+
         # Core functions
         create_initial_population,
-        
+
         # Analysis functions - Diversity metrics
         nucleotide_diversity,
         tajimas_d,
         wattersons_theta,
         haplotype_diversity,
-        
+
         # Analysis functions - Linkage
         linkage_disequilibrium,
         ld_decay,
         haplotype_blocks,
-        
+
         # Analysis functions - Distance
         pairwise_distances,
         distance_matrix,
-        
+
         # Analysis functions - Composition
         gc_content,
         nucleotide_composition,
-        
+
         # Analysis functions - Polymorphism
         count_segregating_sites,
-        
+
         # Export functions for PyArrow integration
         export_diversity_metrics,
         export_distance_matrix,
@@ -83,37 +83,37 @@ __all__ = [
     'Recorder',
     'QueryBuilder',
     'RecordingStrategy',
-    
+
     # Core functions
     'create_initial_population',
-    
+
     # Analysis functions - Diversity metrics
     'nucleotide_diversity',
     'tajimas_d',
     'wattersons_theta',
     'haplotype_diversity',
-    
+
     # Analysis functions - Linkage
     'linkage_disequilibrium',
     'ld_decay',
     'haplotype_blocks',
-    
+
     # Analysis functions - Distance
     'pairwise_distances',
     'distance_matrix',
-    
+
     # Analysis functions - Composition
     'gc_content',
     'nucleotide_composition',
-    
+
     # Analysis functions - Polymorphism
     'count_segregating_sites',
-    
+
     # Export functions for PyArrow integration
     'export_diversity_metrics',
     'export_distance_matrix',
     'export_ld_decay',
-    
+
     # Submodules
     'plotting',
 ]

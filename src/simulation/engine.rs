@@ -63,6 +63,52 @@ impl Simulation {
         })
     }
 
+    /// Create a new simulation with random initial sequences.
+    /// 
+    /// Each position in each sequence will be initialized with a random base
+    /// from the alphabet. This is useful for starting simulations from a
+    /// completely random state.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `structure` - Repeat structure parameters
+    /// * `mutation` - Mutation configuration
+    /// * `recombination` - Recombination configuration
+    /// * `fitness` - Fitness configuration
+    /// * `config` - Simulation configuration
+    /// 
+    /// # Returns
+    /// 
+    /// A `Simulation` instance initialized with random sequences.
+    pub fn new_random(
+        structure: RepeatStructure,
+        mutation: MutationConfig,
+        recombination: RecombinationConfig,
+        fitness: FitnessConfig,
+        config: SimulationConfig,
+    ) -> Result<Self, String> {
+        // Create RNG from seed or thread_rng
+        let mut rng = if let Some(seed) = config.seed {
+            Xoshiro256PlusPlus::seed_from_u64(seed)
+        } else {
+            Xoshiro256PlusPlus::from_seed(rand::rng().random())
+        };
+
+        // Create initial population with random sequences
+        let individuals = Self::create_random_population(&structure, config.population_size, &mut rng)?;
+        let population = Population::new("pop0", individuals);
+
+        Ok(Self {
+            population,
+            structure,
+            mutation,
+            recombination,
+            fitness,
+            config,
+            rng,
+        })
+    }
+
     /// Create a new simulation from custom sequences.
     /// 
     /// This allows initializing a simulation with sequences from FASTA files,
@@ -231,6 +277,26 @@ impl Simulation {
         Ok(individuals)
     }
 
+    /// Create initial population with random sequences.
+    fn create_random_population(
+        structure: &RepeatStructure,
+        pop_size: usize,
+        rng: &mut impl Rng,
+    ) -> Result<Vec<Individual>, String> {
+        let mut individuals = Vec::with_capacity(pop_size);
+
+        for i in 0..pop_size {
+            let ind = Self::create_random_individual(
+                format!("ind_{}", i),
+                structure,
+                rng,
+            )?;
+            individuals.push(ind);
+        }
+
+        Ok(individuals)
+    }
+
     /// Create a single individual with uniform sequences.
     fn create_uniform_individual(
         id: impl Into<Arc<str>>,
@@ -259,6 +325,65 @@ impl Simulation {
             let chr2 = Chromosome::new(
                 format!("chr{}", chr_idx),
                 seq,
+                structure.ru_length,
+                structure.rus_per_hor,
+            );
+
+            hap1.push(chr1);
+            hap2.push(chr2);
+        }
+
+        Ok(Individual::new(id, hap1, hap2))
+    }
+
+    /// Create a single individual with random sequences.
+    fn create_random_individual(
+        id: impl Into<Arc<str>>,
+        structure: &RepeatStructure,
+        rng: &mut impl Rng,
+    ) -> Result<Individual, String> {
+        use crate::base::Nucleotide;
+        
+        let chr_length = structure.chr_length();
+        let alphabet_size = structure.alphabet.len();
+
+        // Create haplotypes with random chromosomes
+        let mut hap1 = Haplotype::with_capacity(structure.chrs_per_hap);
+        let mut hap2 = Haplotype::with_capacity(structure.chrs_per_hap);
+
+        for chr_idx in 0..structure.chrs_per_hap {
+            // Create random sequence for haplotype 1
+            let mut seq1 = Sequence::with_capacity(chr_length, structure.alphabet.clone());
+            for _ in 0..chr_length {
+                let idx = rng.random_range(0..alphabet_size);
+                let ch = structure.alphabet.get_char(idx as u8)
+                    .ok_or_else(|| format!("Invalid alphabet index: {}", idx))?;
+                let base = Nucleotide::from_ascii(ch as u8)
+                    .ok_or_else(|| format!("Invalid nucleotide character: {}", ch))?;
+                seq1.push(base);
+            }
+
+            // Create random sequence for haplotype 2
+            let mut seq2 = Sequence::with_capacity(chr_length, structure.alphabet.clone());
+            for _ in 0..chr_length {
+                let idx = rng.random_range(0..alphabet_size);
+                let ch = structure.alphabet.get_char(idx as u8)
+                    .ok_or_else(|| format!("Invalid alphabet index: {}", idx))?;
+                let base = Nucleotide::from_ascii(ch as u8)
+                    .ok_or_else(|| format!("Invalid nucleotide character: {}", ch))?;
+                seq2.push(base);
+            }
+
+            // Create chromosomes
+            let chr1 = Chromosome::new(
+                format!("chr{}", chr_idx),
+                seq1,
+                structure.ru_length,
+                structure.rus_per_hor,
+            );
+            let chr2 = Chromosome::new(
+                format!("chr{}", chr_idx),
+                seq2,
                 structure.ru_length,
                 structure.rus_per_hor,
             );

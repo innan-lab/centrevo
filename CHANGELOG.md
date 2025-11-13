@@ -7,9 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### SimulationBuilder - Fluent API for Creating Simulations
+- **Builder Pattern** - Ergonomic API for simulation creation (`src/simulation/builder.rs`)
+  - Fluent method chaining for configuration
+  - Sensible defaults: no mutation, no recombination, neutral fitness, DNA alphabet
+  - Required parameters: `population_size()`, `generations()`
+  - Optional parameters with defaults for all evolutionary processes
+  - Comprehensive validation at `build()` time with clear error messages
+
+- **Multiple Initialization Modes**
+  - `init_uniform(base)` - Initialize with uniform sequence (default: Nucleotide::A)
+  - `init_random()` - Initialize with random bases from alphabet
+  - `init_from_fasta(path)` - Load sequences from FASTA file
+  - `init_from_json(input)` - Load sequences from JSON file or string
+  - `init_from_checkpoint(db_path, sim_id, generation)` - Load sequences from checkpoint
+  - `resume_from_checkpoint()` - Separate API for complete state restoration
+
+- **Random Sequence Initialization**
+  - `Simulation::new_random()` - Create simulation with random initial sequences
+  - Each position gets random base from alphabet
+  - Reproducible with seed parameter
+  - Helper functions: `create_random_population()`, `create_random_individual()`
+
+- **Python Bindings** - SimulationBuilder exposed to Python (planned)
+  - Builder pattern available in Python API
+  - Type stubs for IDE support
+  - Examples and documentation updated
+
+### Changed
+- **Documentation Updates**
+  - PYTHON.md: Complete rewrite with builder pattern examples
+  - README.md: Quick start updated to show builder pattern
+  - Added sections on initialization modes, default values, and validation
+  - Comprehensive examples for all initialization types
+
 ### Planned (Phase 3 - Next Release)
 - CI/CD pipeline with automated testing and code coverage tracking
-- Python bindings for all analysis functions with PyO3
 - Plotting utilities module with matplotlib integration
 - Example Jupyter notebooks demonstrating analysis workflows
 - Documentation improvements and analysis guide

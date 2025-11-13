@@ -103,23 +103,23 @@ See [CLI.md](CLI.md) for complete CLI documentation.
 ### Python API
 
 ```python
-import centrevo
+import centrevo as cv
 
-# Create simulation
-alphabet = centrevo.Alphabet.dna()
-structure = centrevo.RepeatStructure(
-    alphabet=alphabet,
-    init_base=centrevo.Nucleotide.A(),
-    ru_length=171,
-    rus_per_hor=12,
-    hors_per_chr=100,
-    chrs_per_hap=1
-)
+# Create simulation with builder pattern (recommended)
+sim = (cv.SimulationBuilder()
+    .population_size(100)
+    .generations(1000)
+    .repeat_structure(ru_length=171, rus_per_hor=12, hors_per_chr=100)
+    .mutation_rate(0.0001)
+    .seed(42)
+    .build())
 
-population = centrevo.create_initial_population(100, structure)
+# Run simulation
+sim.run()
 
 # Analyze
-pi = centrevo.nucleotide_diversity(population, 0)
+population = sim.population()
+pi = cv.nucleotide_diversity(population, 0)
 print(f"Nucleotide diversity: {pi:.6f}")
 ```
 

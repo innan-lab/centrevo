@@ -4,7 +4,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::PyList;
+use pyo3::types::{PyList, PyDict};
 use std::path::PathBuf;
 
 use crate::base::{Alphabet, Nucleotide};
@@ -40,6 +40,9 @@ fn centrevo(m: &Bound<'_, PyModule>) -> PyResult<()> {
     
     // Analysis functions
     super::analysis::register_analysis_functions(m)?;
+    
+    // Export functions
+    super::export::register_export_functions(m)?;
     
     Ok(())
 }
@@ -540,6 +543,25 @@ impl PyRecorder {
         Ok(())
     }
 
+    fn finalize_metadata(&mut self) -> PyResult<()> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
+            .finalize_metadata()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to finalize metadata: {}", e)))?;
+
+        Ok(())
+    }
+
+    fn close(&mut self) -> PyResult<()> {
+        if let Some(recorder) = self.inner.take() {
+            recorder
+                .close()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to close recorder: {}", e)))?;
+        }
+        Ok(())
+    }
+
     fn __repr__(&self) -> String {
         if self.inner.is_some() {
             "Recorder(active)".to_string()
@@ -587,6 +609,97 @@ impl PyQueryBuilder {
 
         let list = PyList::new(py, generations)?;
         Ok(list.into())
+    }
+
+    fn get_simulation_info(&self, sim_id: String, py: Python) -> PyResult<Py<PyDict>> {
+        let info = self
+            .inner
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("QueryBuilder has been closed"))?
+            .get_simulation_info(&sim_id)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get simulation info: {}", e)))?;
+
+        let dict = PyDict::new(py);
+        dict.set_item("sim_id", info.sim_id)?;
+        dict.set_item("start_time", info.start_time)?;
+        dict.set_item("end_time", info.end_time)?;
+        dict.set_item("pop_size", info.pop_size)?;
+        dict.set_item("num_generations", info.num_generations)?;
+        dict.set_item("mutation_rate", info.mutation_rate)?;
+        dict.set_item("recombination_rate", info.recombination_rate)?;
+        dict.set_item("parameters_json", info.parameters_json)?;
+
+        Ok(dict.into())
+    }
+
+    fn get_generation(&self, sim_id: String, generation: usize) -> PyResult<PyPopulation> {
+        let snapshots = self
+            .inner
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("QueryBuilder has been closed"))?
+            .get_generation(&sim_id, generation)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to load generation: {}", e)))?;
+
+        if snapshots.is_empty() {
+            return Err(PyRuntimeError::new_err(format!(
+                "No data found for generation {}",
+                generation
+            )));
+        }
+
+        // Convert snapshots to individuals
+        let alphabet = Alphabet::dna();
+        let mut individuals = Vec::new();
+
+        for snap in snapshots {
+            let seq1 = crate::base::Sequence::from_indices(snap.haplotype1_seq, alphabet.clone());
+            let seq2 = crate::base::Sequence::from_indices(snap.haplotype2_seq, alphabet.clone());
+
+            let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, 171, 12);
+            let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, 171, 12);
+
+            let h1 = Haplotype::from_chromosomes(vec![chr1]);
+            let h2 = Haplotype::from_chromosomes(vec![chr2]);
+
+            let mut ind = Individual::new(snap.individual_id, h1, h2);
+            ind.set_fitness(snap.fitness);
+            individuals.push(ind);
+        }
+
+        Ok(PyPopulation {
+            inner: Population::new(format!("{}_gen{}", sim_id, generation), individuals),
+        })
+    }
+
+    fn get_fitness_history(&self, sim_id: String, py: Python) -> PyResult<Py<PyList>> {
+        let history = self
+            .inner
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("QueryBuilder has been closed"))?
+            .get_fitness_history(&sim_id)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get fitness history: {}", e)))?;
+
+        let mut records: Vec<Py<PyDict>> = Vec::new();
+        for (generation, stats) in history {
+            let dict = PyDict::new(py);
+            dict.set_item("generation", generation)?;
+            dict.set_item("mean", stats.mean)?;
+            dict.set_item("std", stats.std)?;
+            dict.set_item("min", stats.min)?;
+            dict.set_item("max", stats.max)?;
+            records.push(dict.into());
+        }
+
+        Ok(PyList::new(py, records)?.into())
+    }
+
+    fn close(&mut self) -> PyResult<()> {
+        if let Some(query) = self.inner.take() {
+            query
+                .close()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to close database: {}", e)))?;
+        }
+        Ok(())
     }
 
     fn __repr__(&self) -> String {

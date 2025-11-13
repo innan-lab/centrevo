@@ -983,9 +983,6 @@ rustup target add x86_64-apple-darwin
 ```bash
 # Build for Linux x86_64 with Python 3.12
 docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.12
-
-# Build for multiple Python versions
-docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.10 -i python3.11 -i python3.12
 ```
 
 First add the Linux target:
@@ -1000,7 +997,7 @@ rustup target add x86_64-unknown-linux-gnu
 maturin build --release --target universal2-apple-darwin
 
 # Linux x86_64 (via Docker)
-docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.10 -i python3.11 -i python3.12
+docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.12
 ```
 
 All wheels will be created in `target/wheels/`.
@@ -1015,8 +1012,8 @@ All wheels will be created in `target/wheels/`.
 
 ## Requirements
 
-- Python 3.8+
-- Rust toolchain (for building from source)
+- Python 3.12+
+- Rust toolchain 1.88+ (for building from source)
 - maturin (for building Python packages)
 
 ## Python Dependencies

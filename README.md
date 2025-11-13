@@ -227,6 +227,6 @@ Built with:
 
 ---
 
-**Version**: 0.2.0  
-**Status**: Active development  
+**Version**: 0.2.0
+**Status**: Active development
 **Rust Version**: 1.70+

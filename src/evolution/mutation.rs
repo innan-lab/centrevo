@@ -300,8 +300,8 @@ fn sample_without_replacement<R: Rng + ?Sized>(n: usize, k: usize, rng: &mut R) 
             *r = rng.random_range(i..n);
         }
         
-        for i in 0..k {
-            positions.swap(i, random_indices[i]);
+        for (i, &random_index) in random_indices.iter().enumerate() {
+            positions.swap(i, random_index);
         }
         
         positions.truncate(k);
@@ -320,7 +320,7 @@ impl std::fmt::Display for MutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MutationError::InvalidMutationRate(mu) => {
-                write!(f, "Invalid mutation rate: {} (must be between 0.0 and 1.0)", mu)
+                write!(f, "Invalid mutation rate: {mu} (must be between 0.0 and 1.0)")
             }
         }
     }
@@ -404,9 +404,9 @@ mod tests {
         assert_eq!(counts[0], 0);
         
         // C, G, T should be roughly equally distributed
-        for i in 1..4 {
-            assert!(counts[i] > 250);
-            assert!(counts[i] < 450);
+        for &count in &counts[1..4] {
+            assert!(count > 250);
+            assert!(count < 450);
         }
     }
 

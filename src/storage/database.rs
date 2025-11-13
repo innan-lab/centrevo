@@ -131,7 +131,7 @@ impl Database {
             "PRAGMA wal_checkpoint(TRUNCATE); 
              PRAGMA journal_mode = DELETE;"
         ) {
-            eprintln!("Warning: failed to checkpoint/truncate WAL: {}", e);
+            eprintln!("Warning: failed to checkpoint/truncate WAL: {e}");
         }
 
         // Close connection
@@ -146,7 +146,7 @@ impl Database {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     // File doesn't exist, that's fine
                 } else {
-                    eprintln!("Warning: failed to remove {}: {}", fname, e);
+                    eprintln!("Warning: failed to remove {fname}: {e}");
                 }
             }
         }
@@ -222,13 +222,13 @@ pub enum DatabaseError {
 impl std::fmt::Display for DatabaseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Connection(e) => write!(f, "Database connection error: {}", e),
-            Self::Initialization(e) => write!(f, "Database initialization error: {}", e),
-            Self::Transaction(e) => write!(f, "Transaction error: {}", e),
-            Self::Query(e) => write!(f, "Query error: {}", e),
-            Self::Insert(e) => write!(f, "Insert error: {}", e),
-            Self::Close(e) => write!(f, "Close error: {}", e),
-            Self::Vacuum(e) => write!(f, "Vacuum error: {}", e),
+            Self::Connection(e) => write!(f, "Database connection error: {e}"),
+            Self::Initialization(e) => write!(f, "Database initialization error: {e}"),
+            Self::Transaction(e) => write!(f, "Transaction error: {e}"),
+            Self::Query(e) => write!(f, "Query error: {e}"),
+            Self::Insert(e) => write!(f, "Insert error: {e}"),
+            Self::Close(e) => write!(f, "Close error: {e}"),
+            Self::Vacuum(e) => write!(f, "Vacuum error: {e}"),
         }
     }
 }

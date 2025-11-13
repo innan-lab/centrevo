@@ -73,8 +73,7 @@ impl SequenceEntryWithIndices {
                 None
             })
             .ok_or_else(|| InitializationError::Parse(format!(
-                "Could not find individual index in '{}'. Expected format: ind<N>_hap<M>_chr<K>",
-                id
+                "Could not find individual index in '{id}'. Expected format: ind<N>_hap<M>_chr<K>"
             )))?;
         
         // Find haplotype index - try "hap" first, then "_h<N>" pattern
@@ -95,8 +94,7 @@ impl SequenceEntryWithIndices {
                 None
             })
             .ok_or_else(|| InitializationError::Parse(format!(
-                "Could not find haplotype index in '{}'. Expected format: ind<N>_hap<M>_chr<K>",
-                id
+                "Could not find haplotype index in '{id}'. Expected format: ind<N>_hap<M>_chr<K>"
             )))?;
         
         // Find chromosome index - try "chr" first, then "_c<N>" pattern
@@ -117,8 +115,7 @@ impl SequenceEntryWithIndices {
                 None
             })
             .ok_or_else(|| InitializationError::Parse(format!(
-                "Could not find chromosome index in '{}'. Expected format: ind<N>_hap<M>_chr<K>",
-                id
+                "Could not find chromosome index in '{id}'. Expected format: ind<N>_hap<M>_chr<K>"
             )))?;
         
         Ok(Self {
@@ -182,10 +179,10 @@ pub enum InitializationError {
 impl std::fmt::Display for InitializationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Io(e) => write!(f, "IO error: {}", e),
-            Self::Parse(msg) => write!(f, "Parse error: {}", msg),
-            Self::Validation(msg) => write!(f, "Validation error: {}", msg),
-            Self::Database(msg) => write!(f, "Database error: {}", msg),
+            Self::Io(e) => write!(f, "IO error: {e}"),
+            Self::Parse(msg) => write!(f, "Parse error: {msg}"),
+            Self::Validation(msg) => write!(f, "Validation error: {msg}"),
+            Self::Database(msg) => write!(f, "Database error: {msg}"),
         }
     }
 }
@@ -200,7 +197,7 @@ impl From<std::io::Error> for InitializationError {
 
 impl From<serde_json::Error> for InitializationError {
     fn from(e: serde_json::Error) -> Self {
-        Self::Parse(format!("JSON error: {}", e))
+        Self::Parse(format!("JSON error: {e}"))
     }
 }
 
@@ -210,7 +207,7 @@ fn indices_to_string(indices: &[u8], alphabet: &Alphabet) -> Result<String, Init
     for &idx in indices {
         let ch = alphabet.get_char(idx)
             .ok_or_else(|| InitializationError::Parse(
-                format!("Invalid base index {} in sequence", idx)
+                format!("Invalid base index {idx} in sequence")
             ))?;
         result.push(ch);
     }
@@ -249,7 +246,7 @@ pub fn parse_fasta(path: impl AsRef<Path>) -> Result<Vec<SequenceEntryWithIndice
             continue;
         }
         
-        if line.starts_with('>') {
+        if let Some(header) = line.strip_prefix('>') {
             // Save previous entry if exists
             if let Some(id) = current_id.take() {
                 if !current_seq.is_empty() {
@@ -260,7 +257,7 @@ pub fn parse_fasta(path: impl AsRef<Path>) -> Result<Vec<SequenceEntryWithIndice
             }
             
             // Parse new header
-            let header = &line[1..]; // Remove '>'
+            // Remove '>'
             let id = header.split_whitespace().next()
                 .ok_or_else(|| InitializationError::Parse("Empty FASTA header".to_string()))?;
             current_id = Some(id.to_string());
@@ -368,7 +365,7 @@ pub fn load_from_database(
     use crate::storage::QueryBuilder;
     
     let query = QueryBuilder::new(db_path.as_ref())
-        .map_err(|e| InitializationError::Database(format!("Failed to open database: {}", e)))?;
+        .map_err(|e| InitializationError::Database(format!("Failed to open database: {e}")))?;
     
     // Determine which generation to load
     let target_gen = match generation {
@@ -376,7 +373,7 @@ pub fn load_from_database(
         None => {
             // Get the last recorded generation
             let recorded_gens = query.get_recorded_generations(sim_id)
-                .map_err(|e| InitializationError::Database(format!("Failed to get generations: {}", e)))?;
+                .map_err(|e| InitializationError::Database(format!("Failed to get generations: {e}")))?;
             
             *recorded_gens.last()
                 .ok_or_else(|| InitializationError::Database("No generations found".to_string()))?
@@ -385,14 +382,14 @@ pub fn load_from_database(
     
     // Load population at that generation
     let snapshots = query.get_generation(sim_id, target_gen)
-        .map_err(|e| InitializationError::Database(format!("Failed to load generation: {}", e)))?;
+        .map_err(|e| InitializationError::Database(format!("Failed to load generation: {e}")))?;
     
     // Get config to convert indices to strings
     let config = query.get_full_config(sim_id)
-        .map_err(|e| InitializationError::Database(format!("Failed to load config: {}", e)))?;
+        .map_err(|e| InitializationError::Database(format!("Failed to load config: {e}")))?;
     
     query.close()
-        .map_err(|e| InitializationError::Database(format!("Failed to close database: {}", e)))?;
+        .map_err(|e| InitializationError::Database(format!("Failed to close database: {e}")))?;
     
     // Convert snapshots to sequence entries with indices
     let mut entries = Vec::new();
@@ -519,8 +516,7 @@ pub fn validate_sequences(
                 let key = (ind_idx, hap_idx, chr_idx);
                 if !seen.contains(&key) {
                     return Err(InitializationError::Validation(format!(
-                        "Missing sequence for ind_idx={}, hap_idx={}, chr_idx={}",
-                        ind_idx, hap_idx, chr_idx
+                        "Missing sequence for ind_idx={ind_idx}, hap_idx={hap_idx}, chr_idx={chr_idx}"
                     )));
                 }
             }
@@ -558,15 +554,14 @@ pub fn create_individuals_from_sequences(
             let key = (ind_idx, 0, chr_idx);
             let seq_str = seq_map.get(&key)
                 .ok_or_else(|| InitializationError::Validation(format!(
-                    "Missing sequence for ind_idx={}, hap_idx=0, chr_idx={}",
-                    ind_idx, chr_idx
+                    "Missing sequence for ind_idx={ind_idx}, hap_idx=0, chr_idx={chr_idx}"
                 )))?;
             
             let seq = Sequence::from_str(seq_str, structure.alphabet.clone())
-                .map_err(|e| InitializationError::Parse(format!("Invalid sequence: {}", e)))?;
+                .map_err(|e| InitializationError::Parse(format!("Invalid sequence: {e}")))?;
             
             let chr = Chromosome::new(
-                format!("ind_{}_h0_chr{}", ind_idx, chr_idx),
+                format!("ind_{ind_idx}_h0_chr{chr_idx}"),
                 seq,
                 structure.ru_length,
                 structure.rus_per_hor,
@@ -580,15 +575,14 @@ pub fn create_individuals_from_sequences(
             let key = (ind_idx, 1, chr_idx);
             let seq_str = seq_map.get(&key)
                 .ok_or_else(|| InitializationError::Validation(format!(
-                    "Missing sequence for ind_idx={}, hap_idx=1, chr_idx={}",
-                    ind_idx, chr_idx
+                    "Missing sequence for ind_idx={ind_idx}, hap_idx=1, chr_idx={chr_idx}"
                 )))?;
             
             let seq = Sequence::from_str(seq_str, structure.alphabet.clone())
-                .map_err(|e| InitializationError::Parse(format!("Invalid sequence: {}", e)))?;
+                .map_err(|e| InitializationError::Parse(format!("Invalid sequence: {e}")))?;
             
             let chr = Chromosome::new(
-                format!("ind_{}_h1_chr{}", ind_idx, chr_idx),
+                format!("ind_{ind_idx}_h1_chr{chr_idx}"),
                 seq,
                 structure.ru_length,
                 structure.rus_per_hor,
@@ -597,7 +591,7 @@ pub fn create_individuals_from_sequences(
         }
         
         // Create individual
-        let individual = Individual::new(format!("ind_{}", ind_idx), hap0, hap1);
+        let individual = Individual::new(format!("ind_{ind_idx}"), hap0, hap1);
         individuals.push(individual);
     }
     

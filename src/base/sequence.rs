@@ -144,7 +144,7 @@ impl fmt::Display for Sequence {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &idx in &self.data {
             if let Some(ch) = self.alphabet.get_char(idx) {
-                write!(f, "{}", ch)?;
+                write!(f, "{ch}")?;
             }
         }
         Ok(())
@@ -224,7 +224,7 @@ impl fmt::Display for SharedSequence {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for &idx in self.data.iter() {
             if let Some(ch) = self.alphabet.get_char(idx) {
-                write!(f, "{}", ch)?;
+                write!(f, "{ch}")?;
             }
         }
         Ok(())
@@ -241,7 +241,7 @@ pub enum InvalidSequence {
 impl std::fmt::Display for InvalidSequence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidChar(c) => write!(f, "Invalid character in sequence: '{}'", c),
+            Self::InvalidChar(c) => write!(f, "Invalid character in sequence: '{c}'"),
             Self::EmptySequence => write!(f, "Empty sequence not allowed"),
         }
     }

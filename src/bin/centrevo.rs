@@ -289,6 +289,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn init_simulation(
     name: &str,
     output: &PathBuf,
@@ -301,7 +302,7 @@ fn init_simulation(
 ) -> Result<()> {
     println!("🧬 Centrevo - Centromeric Evolution Simulator");
     println!("============================================\n");
-    println!("Initializing simulation: {}", name);
+    println!("Initializing simulation: {name}");
 
     // Create configurations
     let alphabet = Alphabet::dna();
@@ -337,16 +338,16 @@ fn init_simulation(
 
     println!("✓ Database created: {}", output.display());
     println!("\nSimulation initialized successfully!");
-    println!("  Name: {}", name);
-    println!("  Population size: {}", population_size);
-    println!("  Generations: {}", generations);
-    println!("  Structure: {}bp RU × {} RUs/HOR × {} HORs", 
-             ru_length, rus_per_hor, hors_per_chr);
-    println!("\n💡 Use 'centrevo run -N {}' to run the simulation", name);
+    println!("  Name: {name}");
+    println!("  Population size: {population_size}");
+    println!("  Generations: {generations}");
+    println!("  Structure: {ru_length}bp RU × {rus_per_hor} RUs/HOR × {hors_per_chr} HORs");
+    println!("\n💡 Use 'centrevo run -N {name}' to run the simulation");
 
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_simulation(
     database: &PathBuf,
     name: &str,
@@ -366,14 +367,14 @@ fn run_simulation(
         
         // Load simulation from checkpoint
         let mut sim = Simulation::from_checkpoint(database, name)
-            .map_err(|e| anyhow::anyhow!("Failed to resume: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to resume: {e}"))?;
         
         let start_generation = sim.generation();
         let total_generations = sim.config().total_generations;
         
-        println!("✓ Loaded checkpoint from generation {}", start_generation);
+        println!("✓ Loaded checkpoint from generation {start_generation}");
         println!("  Population size: {}", sim.config().population_size);
-        println!("  Target generations: {}", total_generations);
+        println!("  Target generations: {total_generations}");
         println!();
         
         if start_generation >= total_generations {
@@ -403,25 +404,25 @@ fn run_simulation(
         
         // Run simulation from checkpoint
         let remaining_generations = total_generations - start_generation;
-        println!("Running {} remaining generations...", remaining_generations);
+        println!("Running {remaining_generations} remaining generations...");
         
         for i in 1..=remaining_generations {
             let generation = start_generation + i;
-            sim.step().map_err(|e| anyhow::anyhow!("Generation {}: {}", generation, e))?;
+            sim.step().map_err(|e| anyhow::anyhow!("Generation {generation}: {e}"))?;
             
             // Record if needed (with RNG state for checkpoint)
             if recorder.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder.record_generation(sim.population(), generation)
-                    .with_context(|| format!("Failed to record generation {}", generation))?;
+                    .with_context(|| format!("Failed to record generation {generation}"))?;
                 recorder.record_checkpoint(generation, &rng_state)
-                    .with_context(|| format!("Failed to record checkpoint {}", generation))?;
+                    .with_context(|| format!("Failed to record checkpoint {generation}"))?;
             }
             
             // Show progress
             if show_progress && (i % 10 == 0 || generation == total_generations) {
                 let progress = generation as f64 / total_generations as f64 * 100.0;
-                print!("\rProgress: {:.1}% ({}/{})", progress, generation, total_generations);
+                print!("\rProgress: {progress:.1}% ({generation}/{total_generations})");
                 io::stdout().flush().ok();
             }
         }
@@ -435,7 +436,7 @@ fn run_simulation(
             .context("Failed to finalize metadata")?;
         
         println!("\n✓ Simulation complete!");
-        println!("  Final generation: {}", total_generations);
+        println!("  Final generation: {total_generations}");
         
     } else {
         // Original run logic (from generation 0)
@@ -446,11 +447,11 @@ fn run_simulation(
             .get_simulation_info(name)
             .context("Failed to get simulation info")?;
         
-        println!("Simulation: {}", name);
+        println!("Simulation: {name}");
         println!("Population size: {}", info.pop_size);
         println!("Target generations: {}", info.num_generations);
-        println!("Mutation rate: {}", mutation_rate);
-        println!("Recombination rate: {}", recomb_rate);
+        println!("Mutation rate: {mutation_rate}");
+        println!("Recombination rate: {recomb_rate}");
         println!();
         
         // Check if simulation already has data
@@ -522,15 +523,15 @@ fn run_simulation(
         println!("Running {} generations...", info.num_generations);
         
         for generation in 1..=info.num_generations {
-            sim.step().map_err(|e| anyhow::anyhow!("Generation {}: {}", generation, e))?;
+            sim.step().map_err(|e| anyhow::anyhow!("Generation {generation}: {e}"))?;
             
             // Record if needed (with RNG state for checkpoint)
             if recorder.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder.record_generation(sim.population(), generation)
-                    .with_context(|| format!("Failed to record generation {}", generation))?;
+                    .with_context(|| format!("Failed to record generation {generation}"))?;
                 recorder.record_checkpoint(generation, &rng_state)
-                    .with_context(|| format!("Failed to record checkpoint {}", generation))?;
+                    .with_context(|| format!("Failed to record checkpoint {generation}"))?;
             }
             
             // Show progress
@@ -555,7 +556,7 @@ fn run_simulation(
                  (info.num_generations / record_every) + 1);
     }
     
-    println!("\n💡 Use 'centrevo info -N {}' to view results", name);
+    println!("\n💡 Use 'centrevo info -N {name}' to view results");
     
     Ok(())
 }
@@ -573,7 +574,7 @@ fn list_simulations(database: &PathBuf) -> Result<()> {
     println!("{}", "=".repeat(50));
 
     for name in simulations {
-        println!("  • {}", name);
+        println!("  • {name}");
     }
 
     println!("\n💡 Use 'centrevo info --name <name>' for details");
@@ -587,7 +588,7 @@ fn show_info(database: &PathBuf, name: &str) -> Result<()> {
         .get_simulation_info(name)
         .context("Failed to get simulation info")?;
 
-    println!("\n📊 Simulation Information: {}", name);
+    println!("\n📊 Simulation Information: {name}");
     println!("{}", "=".repeat(50));
     println!("Created: {}", info.start_time);
     println!("Population size: {}", info.pop_size);
@@ -605,13 +606,13 @@ fn show_generations(database: &PathBuf, name: &str) -> Result<()> {
         .context("Failed to get generations")?;
 
     if generations.is_empty() {
-        println!("No recorded generations found for '{}'.", name);
+        println!("No recorded generations found for '{name}'.");
         return Ok(());
     }
 
-    println!("\n📈 Recorded Generations for '{}':", name);
+    println!("\n📈 Recorded Generations for '{name}':");
     println!("{}", "=".repeat(50));
-    println!("Generations: {:?}", generations);
+    println!("Generations: {generations:?}");
     println!("Total: {} snapshots", generations.len());
 
     Ok(())
@@ -622,7 +623,7 @@ fn create_initial_population(size: usize, structure: &RepeatStructure) -> Popula
 
     for i in 0..size {
         let chr1 = Chromosome::uniform(
-            format!("ind{}_h1_chr1", i),
+            format!("ind{i}_h1_chr1"),
             structure.init_base,
             structure.chr_length(),
             structure.ru_length,
@@ -631,7 +632,7 @@ fn create_initial_population(size: usize, structure: &RepeatStructure) -> Popula
         );
 
         let chr2 = Chromosome::uniform(
-            format!("ind{}_h2_chr1", i),
+            format!("ind{i}_h2_chr1"),
             structure.init_base,
             structure.chr_length(),
             structure.ru_length,
@@ -642,7 +643,7 @@ fn create_initial_population(size: usize, structure: &RepeatStructure) -> Popula
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);
 
-        individuals.push(Individual::new(format!("ind{}", i), h1, h2));
+        individuals.push(Individual::new(format!("ind{i}"), h1, h2));
     }
 
     Population::new("initial_pop", individuals)
@@ -656,8 +657,8 @@ fn export_data(
     output: Option<&PathBuf>,
     data_type: &str,
 ) -> Result<()> {
-    println!("📤 Exporting data from simulation '{}'", name);
-    println!("Generation: {}, Format: {}, Type: {}", generation, format, data_type);
+    println!("📤 Exporting data from simulation '{name}'");
+    println!("Generation: {generation}, Format: {format}, Type: {data_type}");
     
     let query = QueryBuilder::new(database).context("Failed to open database")?;
     
@@ -665,7 +666,7 @@ fn export_data(
         "sequences" => export_sequences(&query, name, generation, format, output)?,
         "metadata" => export_metadata(&query, name, format, output)?,
         "fitness" => export_fitness(&query, name, format, output)?,
-        _ => anyhow::bail!("Unknown data type '{}'. Use: sequences, metadata, or fitness", data_type),
+        _ => anyhow::bail!("Unknown data type '{data_type}'. Use: sequences, metadata, or fitness"),
     }
     
     if let Some(path) = output {
@@ -688,7 +689,7 @@ fn export_sequences(
         .context("Failed to load generation")?;
     
     if snapshots.is_empty() {
-        anyhow::bail!("No data found for generation {}", generation);
+        anyhow::bail!("No data found for generation {generation}");
     }
     
     let alphabet = Alphabet::dna();
@@ -732,13 +733,13 @@ fn export_sequences(
             }).collect();
             content = serde_json::to_string_pretty(&data)?;
         }
-        _ => anyhow::bail!("Unknown format '{}'. Use: csv, fasta, or json", format),
+        _ => anyhow::bail!("Unknown format '{format}'. Use: csv, fasta, or json"),
     }
     
     if let Some(path) = output {
         std::fs::write(path, content)?;
     } else {
-        println!("{}", content);
+        println!("{content}");
     }
     
     Ok(())
@@ -767,13 +768,13 @@ fn export_metadata(
             format!("key,value\nname,{}\npopulation_size,{}\ngenerations,{}\nstart_time,{}\n",
                 name, info.pop_size, info.num_generations, info.start_time)
         }
-        _ => anyhow::bail!("Format '{}' not supported for metadata. Use: json or csv", format),
+        _ => anyhow::bail!("Format '{format}' not supported for metadata. Use: json or csv"),
     };
     
     if let Some(path) = output {
         std::fs::write(path, content)?;
     } else {
-        println!("{}", content);
+        println!("{content}");
     }
     
     Ok(())
@@ -813,13 +814,13 @@ fn export_fitness(
             }).collect();
             serde_json::to_string_pretty(&data)?
         }
-        _ => anyhow::bail!("Format '{}' not supported for fitness. Use: csv or json", format),
+        _ => anyhow::bail!("Format '{format}' not supported for fitness. Use: csv or json"),
     };
     
     if let Some(path) = output {
         std::fs::write(path, content)?;
     } else {
-        println!("{}", content);
+        println!("{content}");
     }
     
     Ok(())
@@ -838,15 +839,15 @@ fn analyze_data(
         composition::gc_content, polymorphism::count_segregating_sites,
     };
     
-    println!("🔬 Analyzing simulation '{}'", name);
-    println!("Generation: {}, Chromosome: {}", generation, chromosome);
+    println!("🔬 Analyzing simulation '{name}'");
+    println!("Generation: {generation}, Chromosome: {chromosome}");
     
     let query = QueryBuilder::new(database).context("Failed to open database")?;
     let snapshots = query.get_generation(name, generation)
         .context("Failed to load generation")?;
     
     if snapshots.is_empty() {
-        anyhow::bail!("No data found for generation {}", generation);
+        anyhow::bail!("No data found for generation {generation}");
     }
     
     // Convert snapshots to individuals for analysis
@@ -868,7 +869,7 @@ fn analyze_data(
         individuals.push(ind);
     }
     
-    let population = Population::new(format!("{}_gen{}", name, generation), individuals);
+    let population = Population::new(format!("{name}_gen{generation}"), individuals);
     let seq_len = population.individuals()[0].haplotype1().get(chromosome)
         .map(|chr| chr.sequence().len())
         .unwrap_or(0);
@@ -941,13 +942,13 @@ fn analyze_data(
                 }
             }))?
         }
-        _ => anyhow::bail!("Unknown format '{}'. Use: pretty or json", format),
+        _ => anyhow::bail!("Unknown format '{format}'. Use: pretty or json"),
     };
     
     if let Some(path) = output {
         std::fs::write(path, content)?;
     } else {
-        println!("{}", content);
+        println!("{content}");
     }
     
     Ok(())
@@ -980,7 +981,7 @@ fn validate_database(
     let mut total_issues = 0;
     
     for sim_name in &simulations {
-        println!("\nValidating simulation: {}", sim_name);
+        println!("\nValidating simulation: {sim_name}");
         println!("{}", "-".repeat(50));
         
         // Check metadata
@@ -990,7 +991,7 @@ fn validate_database(
                 info
             }
             Err(e) => {
-                println!("✗ Metadata: FAILED - {}", e);
+                println!("✗ Metadata: FAILED - {e}");
                 total_issues += 1;
                 continue;
             }
@@ -1003,7 +1004,7 @@ fn validate_database(
                 gens
             }
             Err(e) => {
-                println!("✗ Failed to query generations: {}", e);
+                println!("✗ Failed to query generations: {e}");
                 total_issues += 1;
                 continue;
             }
@@ -1027,7 +1028,7 @@ fn validate_database(
                 if missing.len() > 10 {
                     format!("{} generations missing", missing.len())
                 } else {
-                    format!("{:?}", missing)
+                    format!("{missing:?}")
                 });
             total_issues += 1;
         } else {
@@ -1039,7 +1040,7 @@ fn validate_database(
             match query.get_generation(sim_name, generation_num) {
                 Ok(snapshots) => {
                     if snapshots.is_empty() {
-                        println!("⚠️  Generation {} has no individuals", generation_num);
+                        println!("⚠️  Generation {generation_num} has no individuals");
                         total_issues += 1;
                     } else if snapshots.len() != info.pop_size {
                         println!("⚠️  Generation {} has {} individuals (expected {})", 
@@ -1050,7 +1051,7 @@ fn validate_database(
                     }
                 }
                 Err(e) => {
-                    println!("✗ Failed to load generation {}: {}", generation_num, e);
+                    println!("✗ Failed to load generation {generation_num}: {e}");
                     total_issues += 1;
                 }
             }
@@ -1066,7 +1067,7 @@ fn validate_database(
                 }
             }
             Err(e) => {
-                println!("⚠️  Fitness history query failed: {}", e);
+                println!("⚠️  Fitness history query failed: {e}");
             }
         }
     }
@@ -1075,7 +1076,7 @@ fn validate_database(
     if total_issues == 0 {
         println!("✓ Validation complete: No issues found");
     } else {
-        println!("⚠️  Validation complete: {} issue(s) found", total_issues);
+        println!("⚠️  Validation complete: {total_issues} issue(s) found");
         if !fix {
             println!("💡 Use --fix flag to attempt automatic repairs");
         }
@@ -1187,29 +1188,29 @@ fn setup_wizard(use_defaults: bool) -> Result<()> {
     
     println!("\n📋 Configuration Summary");
     println!("========================");
-    println!("Simulation name: {}", name);
+    println!("Simulation name: {name}");
     println!("Database: {}", database.display());
     println!();
     println!("Population:");
-    println!("  Size: {} individuals", population_size);
-    println!("  Generations: {}", generations);
+    println!("  Size: {population_size} individuals");
+    println!("  Generations: {generations}");
     println!();
     println!("Genome:");
-    println!("  RU length: {} bp", ru_length);
-    println!("  RUs per HOR: {}", rus_per_hor);
-    println!("  HORs per chromosome: {}", hors_per_chr);
+    println!("  RU length: {ru_length} bp");
+    println!("  RUs per HOR: {rus_per_hor}");
+    println!("  HORs per chromosome: {hors_per_chr}");
     println!("  Total chromosome length: {} bp ({:.1} kb)", total_bp, total_bp as f64 / 1000.0);
     println!();
     println!("Evolution:");
-    println!("  Mutation rate: {}", mutation_rate);
-    println!("  Recombination rate: {}", recomb_rate);
-    println!("  Crossover probability: {}", crossover_prob);
+    println!("  Mutation rate: {mutation_rate}");
+    println!("  Recombination rate: {recomb_rate}");
+    println!("  Crossover probability: {crossover_prob}");
     println!();
     println!("Recording:");
-    println!("  Every {} generations", record_every);
+    println!("  Every {record_every} generations");
     println!("  Total snapshots: ~{}", (generations / record_every) + 1);
     if let Some(s) = seed {
-        println!("  Seed: {}", s);
+        println!("  Seed: {s}");
     } else {
         println!("  Seed: random");
     }
@@ -1258,16 +1259,16 @@ fn setup_wizard(use_defaults: bool) -> Result<()> {
             true, // show progress
         )?;
     } else {
-        println!("\n💡 To run later, use: centrevo run -N {}", name);
+        println!("\n💡 To run later, use: centrevo run -N {name}");
     }
 
     Ok(())
 }
 
 fn prompt_string(prompt: &str, default: Option<&str>) -> Result<String> {
-    print!("{}", prompt);
+    print!("{prompt}");
     if let Some(def) = default {
-        print!(" [{}]", def);
+        print!(" [{def}]");
     }
     print!(": ");
     io::stdout().flush()?;
@@ -1288,9 +1289,9 @@ fn prompt_string(prompt: &str, default: Option<&str>) -> Result<String> {
 }
 
 fn prompt_usize(prompt: &str, default: Option<usize>) -> Result<usize> {
-    print!("{}", prompt);
+    print!("{prompt}");
     if let Some(def) = default {
-        print!(" [{}]", def);
+        print!(" [{def}]");
     }
     print!(": ");
     io::stdout().flush()?;
@@ -1303,14 +1304,14 @@ fn prompt_usize(prompt: &str, default: Option<usize>) -> Result<usize> {
         default.ok_or_else(|| anyhow::anyhow!("Input required"))
     } else {
         input.parse::<usize>()
-            .with_context(|| format!("Invalid number: {}", input))
+            .with_context(|| format!("Invalid number: {input}"))
     }
 }
 
 fn prompt_f64(prompt: &str, default: Option<f64>) -> Result<f64> {
-    print!("{}", prompt);
+    print!("{prompt}");
     if let Some(def) = default {
-        print!(" [{}]", def);
+        print!(" [{def}]");
     }
     print!(": ");
     io::stdout().flush()?;
@@ -1323,13 +1324,13 @@ fn prompt_f64(prompt: &str, default: Option<f64>) -> Result<f64> {
         default.ok_or_else(|| anyhow::anyhow!("Input required"))
     } else {
         input.parse::<f64>()
-            .with_context(|| format!("Invalid number: {}", input))
+            .with_context(|| format!("Invalid number: {input}"))
     }
 }
 
 fn prompt_confirm(prompt: &str, default: bool) -> Result<bool> {
     let default_str = if default { "Y/n" } else { "y/N" };
-    print!("{} [{}]: ", prompt, default_str);
+    print!("{prompt} [{default_str}]: ");
     io::stdout().flush()?;
 
     let mut input = String::new();

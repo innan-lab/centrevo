@@ -68,7 +68,7 @@ impl MutationConfig {
     /// Create with uniform mutation rate.
     pub fn uniform(alphabet: Alphabet, rate: f64) -> Result<Self, String> {
         let model = SubstitutionModel::uniform(alphabet, rate)
-            .map_err(|e| format!("{}", e))?;
+            .map_err(|e| format!("{e}"))?;
         Ok(Self { model })
     }
 }
@@ -93,7 +93,7 @@ impl RecombinationConfig {
         gc_extension_prob: f64,
     ) -> Result<Self, String> {
         let params = RecombinationParams::new(break_prob, crossover_prob, gc_extension_prob)
-            .map_err(|e| format!("{}", e))?;
+            .map_err(|e| format!("{e}"))?;
         Ok(Self { params })
     }
 }

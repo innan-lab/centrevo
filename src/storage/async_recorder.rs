@@ -291,14 +291,14 @@ impl AsyncRecorder {
     pub async fn close(mut self) -> Result<RecorderStats, DatabaseError> {
         // Send shutdown message
         if let Err(e) = self.tx.send(RecorderMessage::Shutdown).await {
-            eprintln!("Warning: Failed to send shutdown message: {}", e);
+            eprintln!("Warning: Failed to send shutdown message: {e}");
         }
         
         // Wait for background task to finish
         if let Some(handle) = self.handle.take() {
             handle
                 .await
-                .map_err(|e| DatabaseError::Close(format!("Background task panicked: {}", e)))?
+                .map_err(|e| DatabaseError::Close(format!("Background task panicked: {e}")))?
         } else {
             Ok(RecorderStats::default())
         }
@@ -482,9 +482,9 @@ fn compress_snapshots(
         .par_iter()
         .map(|snapshot| {
             let h1_compressed = zstd::bulk::compress(&snapshot.haplotype1_seq, level)
-                .map_err(|e| DatabaseError::Insert(format!("Compression failed: {}", e)))?;
+                .map_err(|e| DatabaseError::Insert(format!("Compression failed: {e}")))?;
             let h2_compressed = zstd::bulk::compress(&snapshot.haplotype2_seq, level)
-                .map_err(|e| DatabaseError::Insert(format!("Compression failed: {}", e)))?;
+                .map_err(|e| DatabaseError::Insert(format!("Compression failed: {e}")))?;
             
             Ok(CompressedSnapshot {
                 individual_id: snapshot.individual_id.clone(),
@@ -499,6 +499,7 @@ fn compress_snapshots(
 }
 
 /// Write compressed snapshots to database.
+#[allow(clippy::too_many_arguments)]
 fn write_compressed_snapshots(
     conn: &mut Connection,
     sim_id: &str,

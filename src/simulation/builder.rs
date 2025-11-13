@@ -248,18 +248,18 @@ impl SimulationBuilder {
 
         // Create mutation config
         let mutation = MutationConfig::uniform(self.alphabet.clone(), self.mutation_rate)
-            .map_err(|e| BuilderError::InvalidParameter(format!("mutation_rate: {}", e)))?;
+            .map_err(|e| BuilderError::InvalidParameter(format!("mutation_rate: {e}")))?;
 
         // Create recombination config
         let recombination = if let Some((break_prob, crossover_prob, gc_extension_prob)) =
             self.recombination_rates
         {
             RecombinationConfig::standard(break_prob, crossover_prob, gc_extension_prob)
-                .map_err(|e| BuilderError::InvalidParameter(format!("recombination: {}", e)))?
+                .map_err(|e| BuilderError::InvalidParameter(format!("recombination: {e}")))?
         } else {
             // No recombination (all rates = 0.0)
             RecombinationConfig::standard(0.0, 0.0, 0.0)
-                .map_err(|e| BuilderError::InvalidParameter(format!("recombination: {}", e)))?
+                .map_err(|e| BuilderError::InvalidParameter(format!("recombination: {e}")))?
         };
 
         // Build simulation based on initialization mode
@@ -286,7 +286,7 @@ impl SimulationBuilder {
                 );
 
                 Simulation::new(structure, mutation, recombination, self.fitness, config)
-                    .map_err(|e| BuilderError::InvalidParameter(e))
+                    .map_err(BuilderError::InvalidParameter)
             }
 
             InitMode::Random => {
@@ -311,7 +311,7 @@ impl SimulationBuilder {
                 );
 
                 Simulation::new_random(structure, mutation, recombination, self.fitness, config)
-                    .map_err(|e| BuilderError::InvalidParameter(e))
+                    .map_err(BuilderError::InvalidParameter)
             }
 
             InitMode::FromFasta(path) => {
@@ -397,13 +397,13 @@ impl std::fmt::Display for BuilderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingRequired(param) => {
-                write!(f, "Missing required parameter: {}", param)
+                write!(f, "Missing required parameter: {param}")
             }
             Self::InvalidParameter(msg) => {
-                write!(f, "Invalid parameter: {}", msg)
+                write!(f, "Invalid parameter: {msg}")
             }
             Self::SequenceImport(msg) => {
-                write!(f, "Failed to import sequences: {}", msg)
+                write!(f, "Failed to import sequences: {msg}")
             }
         }
     }

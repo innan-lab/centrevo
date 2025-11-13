@@ -354,7 +354,7 @@ impl QueryBuilder {
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let snapshot: crate::storage::SimulationSnapshot = serde_json::from_str(&config_json)
-            .map_err(|e| DatabaseError::Query(format!("Failed to parse config: {}", e)))?;
+            .map_err(|e| DatabaseError::Query(format!("Failed to parse config: {e}")))?;
 
         Ok(snapshot)
     }

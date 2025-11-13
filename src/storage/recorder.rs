@@ -261,7 +261,7 @@ impl Recorder {
     /// Record complete simulation configuration for resumability.
     pub fn record_full_config(&mut self, snapshot: &SimulationSnapshot) -> Result<(), DatabaseError> {
         let config_json = serde_json::to_string(snapshot)
-            .map_err(|e| DatabaseError::Insert(format!("Failed to serialize config: {}", e)))?;
+            .map_err(|e| DatabaseError::Insert(format!("Failed to serialize config: {e}")))?;
         
         let start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

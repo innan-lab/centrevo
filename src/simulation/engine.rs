@@ -148,7 +148,7 @@ impl Simulation {
             source,
             &structure,
             config.population_size,
-        ).map_err(|e| format!("Failed to initialize from sequences: {}", e))?;
+        ).map_err(|e| format!("Failed to initialize from sequences: {e}"))?;
 
         let population = Population::new("pop0", individuals);
 
@@ -186,11 +186,11 @@ impl Simulation {
         
         // Open database for querying
         let query = QueryBuilder::new(db_path)
-            .map_err(|e| format!("Failed to open database: {}", e))?;
+            .map_err(|e| format!("Failed to open database: {e}"))?;
         
         // Get the latest checkpoint
         let checkpoint = query.get_latest_checkpoint(sim_id)
-            .map_err(|e| format!("Failed to load checkpoint: {}", e))?;
+            .map_err(|e| format!("Failed to load checkpoint: {e}"))?;
         
         // Verify sim_id matches
         if checkpoint.sim_id != sim_id {
@@ -202,11 +202,11 @@ impl Simulation {
         
         // Load complete configuration
         let snapshot = query.get_full_config(sim_id)
-            .map_err(|e| format!("Failed to load configuration: {}", e))?;
+            .map_err(|e| format!("Failed to load configuration: {e}"))?;
         
         // Load population state at checkpoint generation
         let snapshots = query.get_generation(sim_id, checkpoint.generation)
-            .map_err(|e| format!("Failed to load population: {}", e))?;
+            .map_err(|e| format!("Failed to load population: {e}"))?;
         
         if snapshots.is_empty() {
             return Err(format!(
@@ -241,10 +241,10 @@ impl Simulation {
         
         // Restore RNG state
         let rng = bincode::deserialize(&checkpoint.rng_state)
-            .map_err(|e| format!("Failed to restore RNG state: {}", e))?;
+            .map_err(|e| format!("Failed to restore RNG state: {e}"))?;
         
         // Close query builder
-        query.close().map_err(|e| format!("Failed to close database: {}", e))?;
+        query.close().map_err(|e| format!("Failed to close database: {e}"))?;
         
         Ok(Self {
             population,
@@ -268,7 +268,7 @@ impl Simulation {
 
         for i in 0..pop_size {
             let ind = Self::create_uniform_individual(
-                format!("ind_{}", i),
+                format!("ind_{i}"),
                 structure,
             )?;
             individuals.push(ind);
@@ -287,7 +287,7 @@ impl Simulation {
 
         for i in 0..pop_size {
             let ind = Self::create_random_individual(
-                format!("ind_{}", i),
+                format!("ind_{i}"),
                 structure,
                 rng,
             )?;
@@ -317,13 +317,13 @@ impl Simulation {
 
             // Create chromosomes
             let chr1 = Chromosome::new(
-                format!("chr{}", chr_idx),
+                format!("chr{chr_idx}"),
                 seq.clone(),
                 structure.ru_length,
                 structure.rus_per_hor,
             );
             let chr2 = Chromosome::new(
-                format!("chr{}", chr_idx),
+                format!("chr{chr_idx}"),
                 seq,
                 structure.ru_length,
                 structure.rus_per_hor,
@@ -357,9 +357,9 @@ impl Simulation {
             for _ in 0..chr_length {
                 let idx = rng.random_range(0..alphabet_size);
                 let ch = structure.alphabet.get_char(idx as u8)
-                    .ok_or_else(|| format!("Invalid alphabet index: {}", idx))?;
+                    .ok_or_else(|| format!("Invalid alphabet index: {idx}"))?;
                 let base = Nucleotide::from_ascii(ch as u8)
-                    .ok_or_else(|| format!("Invalid nucleotide character: {}", ch))?;
+                    .ok_or_else(|| format!("Invalid nucleotide character: {ch}"))?;
                 seq1.push(base);
             }
 
@@ -368,21 +368,21 @@ impl Simulation {
             for _ in 0..chr_length {
                 let idx = rng.random_range(0..alphabet_size);
                 let ch = structure.alphabet.get_char(idx as u8)
-                    .ok_or_else(|| format!("Invalid alphabet index: {}", idx))?;
+                    .ok_or_else(|| format!("Invalid alphabet index: {idx}"))?;
                 let base = Nucleotide::from_ascii(ch as u8)
-                    .ok_or_else(|| format!("Invalid nucleotide character: {}", ch))?;
+                    .ok_or_else(|| format!("Invalid nucleotide character: {ch}"))?;
                 seq2.push(base);
             }
 
             // Create chromosomes
             let chr1 = Chromosome::new(
-                format!("chr{}", chr_idx),
+                format!("chr{chr_idx}"),
                 seq1,
                 structure.ru_length,
                 structure.rus_per_hor,
             );
             let chr2 = Chromosome::new(
-                format!("chr{}", chr_idx),
+                format!("chr{chr_idx}"),
                 seq2,
                 structure.ru_length,
                 structure.rus_per_hor,
@@ -446,7 +446,7 @@ impl Simulation {
     /// Takes a byte array representing the serialized RNG state.
     pub fn set_rng_from_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
         self.rng = bincode::deserialize(bytes)
-            .map_err(|e| format!("Failed to deserialize RNG state: {}", e))?;
+            .map_err(|e| format!("Failed to deserialize RNG state: {e}"))?;
         Ok(())
     }
 
@@ -522,7 +522,7 @@ impl Simulation {
                                     chr1.sequence(),
                                     chr2.sequence(),
                                     position,
-                                ).map_err(|e| format!("Crossover failed: {}", e))?;
+                                ).map_err(|e| format!("Crossover failed: {e}"))?;
                                 
                                 *chr1.sequence_mut() = new1;
                                 *chr2.sequence_mut() = new2;
@@ -534,7 +534,7 @@ impl Simulation {
                                     chr1.sequence(),
                                     start,
                                     end,
-                                ).map_err(|e| format!("Gene conversion failed: {}", e))?;
+                                ).map_err(|e| format!("Gene conversion failed: {e}"))?;
                                 
                                 *chr2.sequence_mut() = new2;
                             }
@@ -598,7 +598,7 @@ impl Simulation {
                 };
 
                 // More efficient ID construction
-                let id = format!("{}{}", gen_str, i);
+                let id = format!("{gen_str}{i}");
                 Individual::new(id, hap1, hap2)
             })
             .collect();

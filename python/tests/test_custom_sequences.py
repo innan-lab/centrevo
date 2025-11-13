@@ -40,13 +40,13 @@ def test_uniform_simulation():
 def test_fasta_initialization():
     """Test initializing simulation from FASTA file."""
     fasta_content = """
->ind0_h1_chr0
+>ind0_hap0_chr0
 ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT
->ind0_h2_chr0
+>ind0_hap1_chr0
 TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCA
->ind1_h1_chr0
+>ind1_hap0_chr0
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
->ind1_h2_chr0
+>ind1_hap1_chr0
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 """.strip()
 
@@ -93,10 +93,10 @@ CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 def test_json_initialization():
     """Test initializing simulation from JSON."""
     sequences = [
-        {"id": "ind0_h1", "seq": "ACGT" * 25},
-        {"id": "ind0_h2", "seq": "TGCA" * 25},
-        {"id": "ind1_h1", "seq": "AAAA" * 25},
-        {"id": "ind1_h2", "seq": "CCCC" * 25},
+        {"id": "ind0_hap0_chr0", "seq": "ACGT" * 25},
+        {"id": "ind0_hap1_chr0", "seq": "TGCA" * 25},
+        {"id": "ind1_hap0_chr0", "seq": "AAAA" * 25},
+        {"id": "ind1_hap1_chr0", "seq": "CCCC" * 25},
     ]
     json_str = json.dumps(sequences)
 

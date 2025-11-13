@@ -191,7 +191,7 @@ fn test_fitness_tracking_over_generations() {
 
     use centrevo::evolution::GCContentFitness;
     let gc_fitness = GCContentFitness::new(0.5, 3.0).unwrap();
-    let fitness = FitnessConfig::new(Some(gc_fitness), None, None);
+    let fitness = FitnessConfig::new(Some(gc_fitness), None, None, None);
 
     let config = SimulationConfig::new(25, 20, Some(456));
 

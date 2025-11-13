@@ -3,7 +3,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::base::Alphabet;
 use super::bindings::PyPopulation;
 
 /// Export population sequences to FASTA format.
@@ -16,7 +15,6 @@ use super::bindings::PyPopulation;
 #[pyfunction]
 #[pyo3(name = "export_fasta")]
 fn export_fasta_py(population: &PyPopulation) -> PyResult<String> {
-    let alphabet = Alphabet::dna();
     let mut fasta = String::new();
 
     for (i, ind) in population.inner.individuals().iter().enumerate() {

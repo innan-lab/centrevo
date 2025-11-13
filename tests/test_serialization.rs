@@ -52,6 +52,7 @@ fn test_fitness_config_with_components_serialization() {
         Some(GCContentFitness::new(0.5, 1.0).unwrap()),
         Some(LengthFitness::new(1000, 1.0).unwrap()),
         None,
+        None,
     );
     let json = serde_json::to_string(&config).unwrap();
     let _deserialized: FitnessConfig = serde_json::from_str(&json).unwrap();
@@ -76,6 +77,7 @@ fn test_complete_simulation_config_roundtrip() {
     let recombination_config = RecombinationConfig::standard(0.02, 0.6, 0.15).unwrap();
     let fitness_config = FitnessConfig::new(
         Some(GCContentFitness::new(0.45, 2.0).unwrap()),
+        None,
         None,
         None,
     );

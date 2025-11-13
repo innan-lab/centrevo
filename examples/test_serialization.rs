@@ -35,6 +35,7 @@ fn main() {
         Some(GCContentFitness::new(0.5, 1.0).unwrap()),
         Some(LengthFitness::new(1000, 1.0).unwrap()),
         None,
+        None,
     );
     let json = serde_json::to_string_pretty(&fitness_config).unwrap();
     println!("{}", json);

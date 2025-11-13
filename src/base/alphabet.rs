@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::collections::HashMap;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 /// Shared, immutable alphabet.
@@ -8,11 +9,11 @@ pub struct Alphabet {
     /// Character representation of bases
     chars: Arc<[char]>,
     /// Mapping from char to index for fast lookup
-    char_to_index: Arc<std::collections::HashMap<char, u8>>,
+    char_to_index: Arc<HashMap<char, u8>>,
 }
 
 impl Alphabet {
-    /// Create a new alphabet from characters.
+    /// Create a new case-sensitive alphabet from characters.
     /// The order determines the index mapping.
     pub fn new(chars: impl Into<Vec<char>>) -> Self {
         let chars: Vec<char> = chars.into();
@@ -31,6 +32,11 @@ impl Alphabet {
     /// Standard DNA alphabet (A, C, G, T)
     pub fn dna() -> Self {
         Self::new(vec!['A', 'C', 'G', 'T'])
+    }
+
+    // Standard RNA alphabet (A, C, G, U)
+    pub fn rna() -> Self {
+        Self::new(vec!['A', 'C', 'G', 'U'])
     }
 
     /// Get the number of bases in this alphabet
@@ -124,6 +130,13 @@ mod tests {
         let alphabet = Alphabet::dna();
         assert_eq!(alphabet.len(), 4);
         assert_eq!(alphabet.chars(), &['A', 'C', 'G', 'T']);
+    }
+
+    #[test]
+    fn test_alphabet_rna() {
+        let alphabet = Alphabet::rna();
+        assert_eq!(alphabet.len(), 4);
+        assert_eq!(alphabet.chars(), &['A', 'C', 'G', 'U']);
     }
 
     #[test]

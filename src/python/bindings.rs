@@ -11,7 +11,8 @@ use crate::base::{Alphabet, Nucleotide};
 use crate::genome::{Chromosome, Haplotype, Individual};
 use crate::simulation::{
     Population, RepeatStructure, SimulationConfig, Simulation,
-    MutationConfig, RecombinationConfig, FitnessConfig, SequenceInput,
+    MutationConfig, RecombinationConfig, FitnessConfig, FitnessConfigBuilder, 
+    BuilderEmpty, BuilderInitialized, SequenceInput, SimulationBuilder,
 };
 use crate::storage::{QueryBuilder, Recorder, RecordingStrategy, SimulationSnapshot};
 
@@ -34,6 +35,8 @@ fn centrevo(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMutationConfig>()?;
     m.add_class::<PyRecombinationConfig>()?;
     m.add_class::<PyFitnessConfig>()?;
+    m.add_class::<PyFitnessConfigBuilder>()?;
+    m.add_class::<PySimulationBuilder>()?;
     
     // Core functions
     m.add_function(wrap_pyfunction!(create_initial_population, m)?)?;
@@ -807,12 +810,87 @@ impl PyFitnessConfig {
         }
     }
 
+    #[staticmethod]
+    fn with_gc_content(optimum: f64, concentration: f64) -> PyResult<PyFitnessConfigBuilder> {
+        let builder = FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(optimum, concentration)
+            .map_err(|e| PyValueError::new_err(format!("Failed to create GC content fitness: {}", e)))?;
+        Ok(PyFitnessConfigBuilder { inner: builder })
+    }
+
+    #[staticmethod]
+    fn with_length(optimum: usize, std_dev: f64) -> PyResult<PyFitnessConfigBuilder> {
+        let builder = FitnessConfigBuilder::<BuilderEmpty>::with_length(optimum, std_dev)
+            .map_err(|e| PyValueError::new_err(format!("Failed to create length fitness: {}", e)))?;
+        Ok(PyFitnessConfigBuilder { inner: builder })
+    }
+
+    #[staticmethod]
+    fn with_similarity(shape: f64) -> PyResult<PyFitnessConfigBuilder> {
+        let builder = FitnessConfigBuilder::<BuilderEmpty>::with_similarity(shape)
+            .map_err(|e| PyValueError::new_err(format!("Failed to create similarity fitness: {}", e)))?;
+        Ok(PyFitnessConfigBuilder { inner: builder })
+    }
+
     fn __repr__(&self) -> String {
         if self.inner.is_neutral() {
             "FitnessConfig.neutral()".to_string()
         } else {
-            "FitnessConfig(...)".to_string()
+            let mut parts = Vec::new();
+            if self.inner.gc_content.is_some() {
+                parts.push("gc_content");
+            }
+            if self.inner.length.is_some() {
+                parts.push("length");
+            }
+            if self.inner.seq_similarity.is_some() {
+                parts.push("seq_similarity");
+            }
+            if self.inner.length_similarity.is_some() {
+                parts.push("length_similarity");
+            }
+            format!("FitnessConfig({})", parts.join(", "))
         }
+    }
+}
+
+/// Builder for fitness configurations.
+#[pyclass(name = "FitnessConfigBuilder")]
+#[derive(Clone)]
+struct PyFitnessConfigBuilder {
+    inner: FitnessConfigBuilder<BuilderInitialized>,
+}
+
+#[pymethods]
+impl PyFitnessConfigBuilder {
+    fn with_gc_content(&self, optimum: f64, concentration: f64) -> PyResult<Self> {
+        let builder = self.inner.clone()
+            .with_gc_content(optimum, concentration)
+            .map_err(|e| PyValueError::new_err(format!("Failed to add GC content fitness: {}", e)))?;
+        Ok(Self { inner: builder })
+    }
+
+    fn with_length(&self, optimum: usize, std_dev: f64) -> PyResult<Self> {
+        let builder = self.inner.clone()
+            .with_length(optimum, std_dev)
+            .map_err(|e| PyValueError::new_err(format!("Failed to add length fitness: {}", e)))?;
+        Ok(Self { inner: builder })
+    }
+
+    fn with_similarity(&self, shape: f64) -> PyResult<Self> {
+        let builder = self.inner.clone()
+            .with_similarity(shape)
+            .map_err(|e| PyValueError::new_err(format!("Failed to add similarity fitness: {}", e)))?;
+        Ok(Self { inner: builder })
+    }
+
+    fn build(&self) -> PyFitnessConfig {
+        PyFitnessConfig {
+            inner: self.inner.clone().build(),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        "FitnessConfigBuilder(...)".to_string()
     }
 }
 
@@ -985,3 +1063,168 @@ impl PySimulation {
         }
     }
 }
+
+/// Builder for constructing simulations with a fluent API.
+#[pyclass(name = "SimulationBuilder")]
+#[derive(Clone)]
+struct PySimulationBuilder {
+    inner: SimulationBuilder,
+}
+
+#[pymethods]
+impl PySimulationBuilder {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: SimulationBuilder::new(),
+        }
+    }
+
+    /// Set the population size (required).
+    fn population_size(mut slf: PyRefMut<'_, Self>, size: usize) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().population_size(size);
+        slf
+    }
+
+    /// Set the number of generations to run (required).
+    fn generations(mut slf: PyRefMut<'_, Self>, generations: usize) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().generations(generations);
+        slf
+    }
+
+    /// Set the repeat structure parameters (required for uniform/random initialization).
+    ///
+    /// # Arguments
+    /// * `ru_length` - Repeat unit length
+    /// * `rus_per_hor` - Repeat units per higher-order repeat
+    /// * `hors_per_chr` - Higher-order repeats per chromosome
+    fn repeat_structure(
+        mut slf: PyRefMut<'_, Self>,
+        ru_length: usize,
+        rus_per_hor: usize,
+        hors_per_chr: usize,
+    ) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().repeat_structure(ru_length, rus_per_hor, hors_per_chr);
+        slf
+    }
+
+    /// Set the number of chromosomes per haplotype (default: 1).
+    fn chromosomes_per_haplotype(mut slf: PyRefMut<'_, Self>, chrs_per_hap: usize) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().chromosomes_per_haplotype(chrs_per_hap);
+        slf
+    }
+
+    /// Initialize with uniform sequences using the specified base.
+    fn init_uniform<'a>(mut slf: PyRefMut<'a, Self>, base: &PyNucleotide) -> PyRefMut<'a, Self> {
+        slf.inner = slf.inner.clone().init_uniform(base.inner);
+        slf
+    }
+
+    /// Initialize with random sequences.
+    fn init_random(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().init_random();
+        slf
+    }
+
+    /// Initialize from a FASTA file.
+    fn init_from_fasta(mut slf: PyRefMut<'_, Self>, path: String) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().init_from_fasta(path);
+        slf
+    }
+
+    /// Initialize from JSON (file path or JSON string).
+    fn init_from_json(mut slf: PyRefMut<'_, Self>, input: String) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().init_from_json(input);
+        slf
+    }
+
+    /// Initialize from a checkpoint database.
+    ///
+    /// # Arguments
+    /// * `db_path` - Path to the checkpoint database
+    /// * `sim_id` - Simulation ID to load
+    /// * `generation` - Optional generation to load (defaults to last)
+    #[pyo3(signature = (db_path, sim_id, generation=None))]
+    fn init_from_checkpoint(
+        mut slf: PyRefMut<'_, Self>,
+        db_path: String,
+        sim_id: String,
+        generation: Option<usize>,
+    ) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().init_from_checkpoint(db_path, sim_id, generation);
+        slf
+    }
+
+    /// Set the alphabet (default: DNA).
+    fn alphabet<'a>(mut slf: PyRefMut<'a, Self>, alphabet: &PyAlphabet) -> PyRefMut<'a, Self> {
+        slf.inner = slf.inner.clone().alphabet(alphabet.inner.clone());
+        slf
+    }
+
+    /// Set the mutation rate (default: 0.0).
+    fn mutation_rate(mut slf: PyRefMut<'_, Self>, rate: f64) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().mutation_rate(rate);
+        slf
+    }
+
+    /// Set recombination parameters.
+    ///
+    /// # Arguments
+    /// * `break_prob` - Probability of DNA strand break
+    /// * `crossover_prob` - Probability of crossover
+    /// * `gc_extension_prob` - Probability of gene conversion extension
+    fn recombination(
+        mut slf: PyRefMut<'_, Self>,
+        break_prob: f64,
+        crossover_prob: f64,
+        gc_extension_prob: f64,
+    ) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().recombination(break_prob, crossover_prob, gc_extension_prob);
+        slf
+    }
+
+    /// Set the fitness configuration (default: neutral).
+    ///
+    /// # Arguments
+    /// * `fitness` - FitnessConfig to use for selection
+    ///
+    /// # Example
+    /// ```python
+    /// fitness = cv.FitnessConfig.with_gc_content(0.5, 2.0).build()
+    /// sim = cv.SimulationBuilder() \\
+    ///     .population_size(100) \\
+    ///     .generations(50) \\
+    ///     .repeat_structure(171, 12, 10) \\
+    ///     .fitness(fitness) \\
+    ///     .build()
+    /// ```
+    fn fitness<'a>(mut slf: PyRefMut<'a, Self>, fitness: &PyFitnessConfig) -> PyRefMut<'a, Self> {
+        slf.inner = slf.inner.clone().fitness(fitness.inner.clone());
+        slf
+    }
+
+    /// Set the random seed for reproducibility (default: None = random).
+    fn seed(mut slf: PyRefMut<'_, Self>, seed: u64) -> PyRefMut<'_, Self> {
+        slf.inner = slf.inner.clone().seed(seed);
+        slf
+    }
+
+    /// Build and validate the simulation.
+    ///
+    /// Returns a Simulation ready to run.
+    ///
+    /// # Raises
+    /// * `ValueError` - If required parameters are missing or invalid
+    /// * `RuntimeError` - If simulation creation fails
+    fn build(&self) -> PyResult<PySimulation> {
+        let sim = self.inner.clone().build()
+            .map_err(|e| PyValueError::new_err(format!("Failed to build simulation: {}", e)))?;
+
+        Ok(PySimulation { inner: Some(sim) })
+    }
+
+    fn __repr__(&self) -> String {
+        "SimulationBuilder(...)".to_string()
+    }
+}
+

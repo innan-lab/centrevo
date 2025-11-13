@@ -13,7 +13,8 @@ pub use engine::Simulation;
 pub use population::Population;
 pub use parameters::{
     RepeatStructure, MutationConfig, RecombinationConfig,
-    FitnessConfig, SimulationConfig,
+    FitnessConfig, FitnessConfigBuilder, BuilderEmpty, BuilderInitialized,
+    SimulationConfig,
 };
 pub use initialization::{
     SequenceInput, SequenceEntry, InitializationError,

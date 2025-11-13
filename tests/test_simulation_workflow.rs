@@ -83,7 +83,7 @@ fn test_simulation_with_gc_content_selection() {
 
     // Select for 50% GC content
     let gc_fitness = GCContentFitness::new(0.5, 5.0).unwrap();
-    let fitness = FitnessConfig::new(Some(gc_fitness), None, None);
+    let fitness = FitnessConfig::new(Some(gc_fitness), None, None, None);
     let config = SimulationConfig::new(30, 100, Some(456));
 
     let mut sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
@@ -123,7 +123,7 @@ fn test_simulation_with_length_selection() {
 
     // Select for specific length
     let length_fitness = LengthFitness::new(target_length, 2.0).unwrap();
-    let fitness = FitnessConfig::new(None, Some(length_fitness), None);
+    let fitness = FitnessConfig::new(None, Some(length_fitness), None, None);
     let config = SimulationConfig::new(20, 20, Some(789));
 
     let mut sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
@@ -291,7 +291,7 @@ fn test_combined_fitness_components() {
     // Select for both GC content and length
     let gc_fitness = GCContentFitness::new(0.4, 2.0).unwrap();
     let length_fitness = LengthFitness::new(500, 1.5).unwrap();
-    let fitness = FitnessConfig::new(Some(gc_fitness), Some(length_fitness), None);
+    let fitness = FitnessConfig::new(Some(gc_fitness), Some(length_fitness), None, None);
 
     let config = SimulationConfig::new(20, 30, Some(303));
 

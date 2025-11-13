@@ -108,6 +108,7 @@ sim.run()
 - `alphabet(alphabet)` - Set alphabet (default: Alphabet.dna())
 - `mutation_rate(rate)` - Set mutation rate (default: 0.0)
 - `recombination(break_prob, crossover_prob, gc_extension_prob)` - Set recombination rates (default: no recombination)
+- `fitness(fitness_config)` - Set fitness/selection configuration (default: neutral, see Fitness Configuration below)
 - `seed(seed)` - Set random seed (default: None = random)
 
 **Build:**
@@ -215,6 +216,109 @@ sim = (cv.SimulationBuilder()
     .recombination(0.01, 0.7, 0.1)  # Now with both
     .build())
 ```
+
+### Fitness Configuration
+
+Centrevo supports various fitness functions for natural selection. By default, fitness is **neutral** (no selection), but you can specify selection pressures using the `FitnessConfig` builder.
+
+#### Available Fitness Functions
+
+**Neutral Fitness (default)**
+```python
+# Explicitly set neutral fitness (though this is the default)
+fitness = cv.FitnessConfig.neutral()
+sim = (cv.SimulationBuilder()
+    .population_size(100)
+    .generations(50)
+    .repeat_structure(171, 12, 10)
+    .fitness(fitness)  # Optional - neutral is default
+    .build())
+```
+
+**GC Content Fitness**
+```python
+# Selection for optimal GC content
+fitness = cv.FitnessConfig.with_gc_content(
+    optimum=0.5,        # Optimal GC content (50%)
+    concentration=2.0   # Selection strength (higher = stronger)
+).build()
+
+sim = (cv.SimulationBuilder()
+    .population_size(100)
+    .generations(50)
+    .repeat_structure(171, 12, 10)
+    .mutation_rate(0.0001)
+    .fitness(fitness)
+    .build())
+```
+
+**Length-Based Fitness**
+```python
+# Selection for optimal sequence length
+fitness = cv.FitnessConfig.with_length(
+    optimum=20000,  # Optimal length in bases
+    std_dev=0.5     # Standard deviation (lower = stronger selection)
+).build()
+```
+
+**Sequence Similarity Fitness**
+```python
+# Selection favoring similarity between haplotypes
+fitness = cv.FitnessConfig.with_similarity(
+    shape=2.0  # Shape parameter (controls decline rate)
+).build()
+```
+
+**Combined Fitness Functions**
+```python
+# Multiple selection pressures (fitness values are multiplied)
+fitness = (cv.FitnessConfig.with_gc_content(0.5, 2.0)
+    .with_length(20000, 0.5)
+    .with_similarity(2.0)
+    .build())
+
+sim = (cv.SimulationBuilder()
+    .population_size(100)
+    .generations(100)
+    .repeat_structure(171, 12, 10)
+    .mutation_rate(0.0001)
+    .recombination(0.01, 0.7, 0.1)
+    .fitness(fitness)  # Combined selection
+    .build())
+```
+
+#### Complete Example with Selection
+
+```python
+import centrevo as cv
+
+# Create fitness configuration
+fitness = cv.FitnessConfig.with_gc_content(0.5, 2.0).build()
+
+# Build simulation with selection
+sim = (cv.SimulationBuilder()
+    .population_size(100)
+    .generations(50)
+    .repeat_structure(171, 12, 10)
+    .mutation_rate(0.0001)
+    .recombination(0.01, 0.7, 0.1)
+    .fitness(fitness)
+    .seed(42)
+    .build())
+
+# Track GC content over time
+print(f"{'Gen':>4} {'Mean GC':>10}")
+for gen in range(0, 51, 10):
+    if gen > 0:
+        sim.run_for(10)
+    population = sim.population()
+    gc = cv.gc_content(population, None, None, 0)
+    print(f"{gen:4d} {gc:10.4f}")
+
+# With selection, GC content approaches the optimum (0.5)
+```
+
+For more examples, see `examples/python_fitness_example.py` and `examples/python_builder_example.py`.
 
 ### Simulation Class
 

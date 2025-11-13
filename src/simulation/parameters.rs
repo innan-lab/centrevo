@@ -161,18 +161,18 @@ pub struct BuilderInitialized;
 /// # Examples
 ///
 /// ```
-/// use centrevo::simulation::FitnessConfigBuilder;
+/// use centrevo::simulation::{FitnessConfigBuilder, BuilderEmpty};
 ///
 /// // Neutral fitness (no selection)
 /// let fitness = FitnessConfigBuilder::neutral();
 ///
 /// // Single fitness component
-/// let fitness = FitnessConfigBuilder::with_gc_content(0.5, 2.0)
+/// let fitness = FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(0.5, 2.0)
 ///     .unwrap()
 ///     .build();
 ///
 /// // Multiple fitness components
-/// let fitness = FitnessConfigBuilder::with_gc_content(0.5, 2.0)
+/// let fitness = FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(0.5, 2.0)
 ///     .unwrap()
 ///     .with_length(20000, 0.5)
 ///     .unwrap()
@@ -267,6 +267,7 @@ impl FitnessConfigBuilder<BuilderEmpty> {
 }
 
 impl FitnessConfigBuilder<BuilderInitialized> {
+    //TODO: Change name prefix to "and_" to indicate chaining and avoid multiple implementations confusion.
     /// Add GC content fitness to the configuration.
     ///
     /// # Arguments

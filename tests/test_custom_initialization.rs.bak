@@ -85,10 +85,10 @@ fn test_initialization_from_json() {
     // Create JSON with sequences
     let json = format!(
         r#"[
-            {{"id": "ind0_hap0_chr0", "seq": "{}"}},
-            {{"id": "ind0_hap1_chr0", "seq": "{}"}},
-            {{"id": "ind1_hap0_chr0", "seq": "{}"}},
-            {{"id": "ind1_hap1_chr0", "seq": "{}"}}
+            {{"id": "ind0_h1", "seq": "{}"}},
+            {{"id": "ind0_h2", "seq": "{}"}},
+            {{"id": "ind1_h1", "seq": "{}"}},
+            {{"id": "ind1_h2", "seq": "{}"}}
         ]"#,
         "ACGT".repeat(chr_len / 4),
         "TGCA".repeat(chr_len / 4),
@@ -183,8 +183,8 @@ fn test_validation_wrong_sequence_count() {
     // Only 2 sequences instead of 4
     let json = format!(
         r#"[
-            {{"id": "ind0_hap0_chr0", "seq": "{}"}},
-            {{"id": "ind0_hap1_chr0", "seq": "{}"}}
+            {{"id": "ind0_h1", "seq": "{}"}},
+            {{"id": "ind0_h2", "seq": "{}"}}
         ]"#,
         "ACGT".repeat(chr_len / 4),
         "TGCA".repeat(chr_len / 4),
@@ -213,10 +213,10 @@ fn test_validation_wrong_sequence_length() {
     
     // Wrong length sequences
     let json = r#"[
-        {"id": "ind0_hap0_chr0", "seq": "ACGT"},
-        {"id": "ind0_hap1_chr0", "seq": "TGCA"},
-        {"id": "ind1_hap0_chr0", "seq": "AAAA"},
-        {"id": "ind1_hap1_chr0", "seq": "CCCC"}
+        {"id": "ind0_h1", "seq": "ACGT"},
+        {"id": "ind0_h2", "seq": "TGCA"},
+        {"id": "ind1_h1", "seq": "AAAA"},
+        {"id": "ind1_h2", "seq": "CCCC"}
     ]"#;
     
     let (mutation, recombination, fitness, config) = create_test_configs();
@@ -251,10 +251,10 @@ fn test_validation_invalid_base() {
     
     let json = format!(
         r#"[
-            {{"id": "ind0_hap0_chr0", "seq": "{}"}},
-            {{"id": "ind0_hap1_chr0", "seq": "{}"}},
-            {{"id": "ind1_hap0_chr0", "seq": "{}"}},
-            {{"id": "ind1_hap1_chr0", "seq": "{}"}}
+            {{"id": "ind0_h1", "seq": "{}"}},
+            {{"id": "ind0_h2", "seq": "{}"}},
+            {{"id": "ind1_h1", "seq": "{}"}},
+            {{"id": "ind1_h2", "seq": "{}"}}
         ]"#,
         seq,
         "TGCA".repeat(chr_len / 4),
@@ -290,7 +290,7 @@ fn test_fasta_parse_multiline_sequences() {
     // Split first sequence into 4 lines of 25 bases each
     let seq_line = "ACGT".repeat(25 / 4); // 24 bases - repeats "ACGT" 6 times
     
-    writeln!(fasta, ">ind0_hap0_chr0").unwrap();
+    writeln!(fasta, ">ind0_h1_chr0").unwrap();
     // Write 4 lines to get close to 100 (96 bases)
     for _ in 0..4 {
         writeln!(fasta, "{}", seq_line).unwrap();
@@ -298,11 +298,11 @@ fn test_fasta_parse_multiline_sequences() {
     // Add remaining 4 bases to get exactly 100
     writeln!(fasta, "ACGT").unwrap();
     
-    writeln!(fasta, ">ind0_hap1_chr0").unwrap();
+    writeln!(fasta, ">ind0_h2_chr0").unwrap();
     writeln!(fasta, "{}", "TGCA".repeat(chr_len / 4)).unwrap();
-    writeln!(fasta, ">ind1_hap0_chr0").unwrap();
+    writeln!(fasta, ">ind1_h1_chr0").unwrap();
     writeln!(fasta, "{}", "AAAA".repeat(chr_len / 4)).unwrap();
-    writeln!(fasta, ">ind1_hap1_chr0").unwrap();
+    writeln!(fasta, ">ind1_h2_chr0").unwrap();
     writeln!(fasta, "{}", "CCCC".repeat(chr_len / 4)).unwrap();
     fasta.flush().unwrap();
     
@@ -320,10 +320,10 @@ fn test_simulation_runs_with_custom_sequences() {
     // Create JSON with sequences
     let json = format!(
         r#"[
-            {{"id": "ind0_hap0_chr0", "seq": "{}"}},
-            {{"id": "ind0_hap1_chr0", "seq": "{}"}},
-            {{"id": "ind1_hap0_chr0", "seq": "{}"}},
-            {{"id": "ind1_hap1_chr0", "seq": "{}"}}
+            {{"id": "ind0_h1", "seq": "{}"}},
+            {{"id": "ind0_h2", "seq": "{}"}},
+            {{"id": "ind1_h1", "seq": "{}"}},
+            {{"id": "ind1_h2", "seq": "{}"}}
         ]"#,
         "ACGT".repeat(chr_len / 4),
         "TGCA".repeat(chr_len / 4),

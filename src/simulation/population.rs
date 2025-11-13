@@ -99,7 +99,7 @@ impl Population {
                 }
 
                 // Apply sequence similarity fitness if configured
-                if let Some(sim_fitness) = &config.similarity {
+                if let Some(sim_fitness) = &config.seq_similarity {
                     fitness *= sim_fitness.individual_fitness(ind);
                 }
 

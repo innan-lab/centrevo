@@ -42,6 +42,10 @@ fn create_test_population(size: usize, chr_length: usize) -> Population {
     Population::new("test_pop", individuals)
 }
 
+fn dummy_rng_state() -> Vec<u8> {
+    vec![0u8; 32]  // Dummy RNG state for benchmarking
+}
+
 fn bench_sync_recording(c: &mut Criterion) {
     let mut group = c.benchmark_group("sync_recording");
 
@@ -101,7 +105,7 @@ fn bench_async_recording(c: &mut Criterion) {
                         let pop = create_test_population(size, 1000);
 
                         recorder
-                            .record_generation(&pop, 0)
+                            .record_generation(&pop, 0, dummy_rng_state())
                             .await
                             .expect("Failed to record");
 
@@ -144,7 +148,7 @@ fn bench_compression_levels(c: &mut Criterion) {
                             .expect("Failed to create recorder");
 
                         recorder
-                            .record_generation(&pop, 0)
+                            .record_generation(&pop, 0, dummy_rng_state())
                             .await
                             .expect("Failed to record");
 
@@ -191,7 +195,7 @@ fn bench_population_sizes(c: &mut Criterion) {
                         let pop = create_test_population(size, length);
 
                         recorder
-                            .record_generation(&pop, 0)
+                            .record_generation(&pop, 0, dummy_rng_state())
                             .await
                             .expect("Failed to record");
 
@@ -233,7 +237,7 @@ fn bench_multiple_generations(c: &mut Criterion) {
 
                         for generation in 0..gens {
                             recorder
-                                .record_generation(&pop, generation)
+                                .record_generation(&pop, generation, dummy_rng_state())
                                 .await
                                 .expect("Failed to record");
                         }
@@ -273,7 +277,7 @@ fn bench_buffer_configurations(c: &mut Criterion) {
 
                     for generation in 0..5 {
                         recorder
-                            .record_generation(&pop, generation)
+                            .record_generation(&pop, generation, dummy_rng_state())
                             .await
                             .expect("Failed to record");
                     }

@@ -9,10 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned (Phase 3 - Next Release)
 - CI/CD pipeline with automated testing and code coverage tracking
-- Python bindings for all analysis functions with PyO3
 - Plotting utilities module with matplotlib integration
 - Example Jupyter notebooks demonstrating analysis workflows
 - Documentation improvements and analysis guide
+
+## [0.2.1] - 2025-11-13
+
+### Added
+
+#### Clippy Linting Improvements
+- Fixed 81+ clippy warnings for improved code quality
+- Updated all format strings to use inline variable syntax (`format!("{variable}")`)
+- Improved loop patterns using iterators instead of range-based indexing
+
+### Fixed
+- **Code Quality**: Eliminated all clippy warnings via automatic fixes and manual refactoring
+  - Replaced needless range loops with iterator-based patterns
+  - Optimized format strings with inline variables (81 fixes in bin and lib)
+  - Applied `#[allow(clippy::too_many_arguments)]` to complex functions requiring many parameters
+  - `src/evolution/mutation.rs`: Fixed loop variable indexing pattern
+  - `src/storage/async_recorder.rs`: Allowed too_many_arguments for database operations
+  - `src/bin/centrevo.rs`: Fixed format string inlining and function signatures
+
+### Changed
+- Enhanced code maintainability through consistent formatting practices
+- Improved compiler warnings hygiene (now passes `cargo clippy` with no warnings)
+
+### Documentation
+- All documentation remains consistent with v0.2.0 feature set
+- Changelog updated to reflect release preparation
+
+### Testing
+- All existing tests pass without modification
+- Code quality improvements do not affect functionality
 
 ## [0.2.0] - 2025-11-12
 
@@ -340,5 +369,8 @@ None (initial release)
 
 ---
 
-[Unreleased]: https://github.com/YOUR_USERNAME/centrevo/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/YOUR_USERNAME/centrevo/releases/tag/v0.1.0
+[Unreleased]: https://github.com/innan-lab/centrevo/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/innan-lab/centrevo/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/innan-lab/centrevo/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/innan-lab/centrevo/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/innan-lab/centrevo/releases/tag/v0.1.0

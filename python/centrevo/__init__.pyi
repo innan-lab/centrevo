@@ -180,6 +180,127 @@ class FitnessConfig:
     def neutral() -> FitnessConfig:
         """Create a neutral fitness configuration (no selection)."""
         ...
+    
+    @staticmethod
+    def with_gc_content(optimum: float, concentration: float) -> FitnessConfigBuilder:
+        """Start building with GC content fitness.
+        
+        Args:
+            optimum: Optimal GC content (0.0 to 1.0)
+            concentration: Concentration parameter (> 0.0), controls sharpness
+            
+        Returns:
+            FitnessConfigBuilder for chaining
+            
+        Example:
+            >>> # Single fitness component
+            >>> fitness = cv.FitnessConfig.with_gc_content(0.5, 2.0).build()
+            >>> 
+            >>> # Multiple components
+            >>> fitness = cv.FitnessConfig.with_gc_content(0.5, 2.0) \\
+            ...     .with_length(20000, 0.5) \\
+            ...     .build()
+        """
+        ...
+    
+    @staticmethod
+    def with_length(optimum: int, std_dev: float) -> FitnessConfigBuilder:
+        """Start building with length-based fitness.
+        
+        Args:
+            optimum: Optimal sequence length in bases (> 0)
+            std_dev: Standard deviation (> 0.0)
+            
+        Returns:
+            FitnessConfigBuilder for chaining
+            
+        Example:
+            >>> fitness = cv.FitnessConfig.with_length(20000, 0.5).build()
+        """
+        ...
+    
+    @staticmethod
+    def with_similarity(shape: float) -> FitnessConfigBuilder:
+        """Start building with sequence similarity fitness.
+        
+        Args:
+            shape: Shape parameter (> 0.0), controls decline rate
+            
+        Returns:
+            FitnessConfigBuilder for chaining
+            
+        Example:
+            >>> fitness = cv.FitnessConfig.with_similarity(2.0).build()
+        """
+        ...
+    
+    def __repr__(self) -> str: ...
+
+class FitnessConfigBuilder:
+    """Builder for constructing fitness configurations with multiple components.
+    
+    Use static methods on FitnessConfig to create a builder, then chain
+    additional fitness components with .with_*() methods.
+    
+    Example:
+        >>> fitness = cv.FitnessConfig.with_gc_content(0.5, 2.0) \\
+        ...     .with_length(20000, 0.5) \\
+        ...     .with_similarity(2.0) \\
+        ...     .build()
+    """
+    
+    def with_gc_content(self, optimum: float, concentration: float) -> FitnessConfigBuilder:
+        """Add GC content fitness to the configuration.
+        
+        Args:
+            optimum: Optimal GC content (0.0 to 1.0)
+            concentration: Concentration parameter (> 0.0)
+            
+        Returns:
+            Self for chaining
+            
+        Raises:
+            ValueError: If GC content fitness is already set
+        """
+        ...
+    
+    def with_length(self, optimum: int, std_dev: float) -> FitnessConfigBuilder:
+        """Add length-based fitness to the configuration.
+        
+        Args:
+            optimum: Optimal sequence length in bases (> 0)
+            std_dev: Standard deviation (> 0.0)
+            
+        Returns:
+            Self for chaining
+            
+        Raises:
+            ValueError: If length fitness is already set
+        """
+        ...
+    
+    def with_similarity(self, shape: float) -> FitnessConfigBuilder:
+        """Add sequence similarity fitness to the configuration.
+        
+        Args:
+            shape: Shape parameter (> 0.0)
+            
+        Returns:
+            Self for chaining
+            
+        Raises:
+            ValueError: If similarity fitness is already set
+        """
+        ...
+    
+    def build(self) -> FitnessConfig:
+        """Build the final fitness configuration.
+        
+        Returns:
+            FitnessConfig with all specified components
+        """
+        ...
+    
     def __repr__(self) -> str: ...
 
 class Simulation:
@@ -281,6 +402,251 @@ class Simulation:
     
     def run(self) -> None:
         """Run simulation for the configured number of generations."""
+        ...
+    
+    def __repr__(self) -> str: ...
+
+class SimulationBuilder:
+    """Builder for constructing simulations with a fluent API.
+    
+    Provides an ergonomic way to configure and create simulations with
+    sensible defaults and comprehensive validation.
+    
+    Examples:
+        >>> # Simple simulation with defaults
+        >>> sim = cv.SimulationBuilder() \\
+        ...     .population_size(100) \\
+        ...     .generations(50) \\
+        ...     .repeat_structure(171, 12, 10) \\
+        ...     .build()
+        
+        >>> # With mutation and recombination
+        >>> sim = cv.SimulationBuilder() \\
+        ...     .population_size(100) \\
+        ...     .generations(50) \\
+        ...     .repeat_structure(171, 12, 10) \\
+        ...     .mutation_rate(0.0001) \\
+        ...     .recombination(0.01, 0.7, 0.1) \\
+        ...     .seed(42) \\
+        ...     .build()
+        
+        >>> # With fitness/selection
+        >>> fitness = cv.FitnessConfig.with_gc_content(0.5, 2.0).build()
+        >>> sim = cv.SimulationBuilder() \\
+        ...     .population_size(100) \\
+        ...     .generations(50) \\
+        ...     .repeat_structure(171, 12, 10) \\
+        ...     .fitness(fitness) \\
+        ...     .build()
+        
+        >>> # From FASTA file
+        >>> sim = cv.SimulationBuilder() \\
+        ...     .population_size(100) \\
+        ...     .generations(50) \\
+        ...     .init_from_fasta("sequences.fasta") \\
+        ...     .mutation_rate(0.0001) \\
+        ...     .build()
+    """
+    
+    def __init__(self) -> None:
+        """Create a new simulation builder with default values."""
+        ...
+    
+    def population_size(self, size: int) -> SimulationBuilder:
+        """Set the population size (required).
+        
+        Args:
+            size: Number of diploid individuals in the population
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def generations(self, generations: int) -> SimulationBuilder:
+        """Set the number of generations to run (required).
+        
+        Args:
+            generations: Total number of generations to simulate
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def repeat_structure(
+        self,
+        ru_length: int,
+        rus_per_hor: int,
+        hors_per_chr: int,
+    ) -> SimulationBuilder:
+        """Set the repeat structure parameters (required for uniform/random init).
+        
+        Args:
+            ru_length: Repeat unit length in bases
+            rus_per_hor: Repeat units per higher-order repeat
+            hors_per_chr: Higher-order repeats per chromosome
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def chromosomes_per_haplotype(self, chrs_per_hap: int) -> SimulationBuilder:
+        """Set the number of chromosomes per haplotype (default: 1).
+        
+        Args:
+            chrs_per_hap: Number of chromosomes in each haplotype
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def init_uniform(self, base: Nucleotide) -> SimulationBuilder:
+        """Initialize with uniform sequences using the specified base.
+        
+        Args:
+            base: Nucleotide to fill all positions (e.g., Nucleotide.A())
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def init_random(self) -> SimulationBuilder:
+        """Initialize with random sequences.
+        
+        Each position gets a random base from the alphabet.
+        
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def init_from_fasta(self, path: str) -> SimulationBuilder:
+        """Initialize from a FASTA file.
+        
+        Args:
+            path: Path to FASTA file containing sequences
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def init_from_json(self, input: str) -> SimulationBuilder:
+        """Initialize from JSON (file path or JSON string).
+        
+        Args:
+            input: Path to JSON file or JSON string
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def init_from_checkpoint(
+        self,
+        db_path: str,
+        sim_id: str,
+        generation: Optional[int] = None,
+    ) -> SimulationBuilder:
+        """Initialize from a checkpoint database.
+        
+        Args:
+            db_path: Path to the checkpoint database
+            sim_id: Simulation ID to load
+            generation: Optional generation to load (defaults to last)
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def alphabet(self, alphabet: Alphabet) -> SimulationBuilder:
+        """Set the alphabet (default: DNA).
+        
+        Args:
+            alphabet: Alphabet to use for sequences
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def mutation_rate(self, rate: float) -> SimulationBuilder:
+        """Set the mutation rate (default: 0.0).
+        
+        Args:
+            rate: Per-base mutation rate (0.0 to 1.0)
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def recombination(
+        self,
+        break_prob: float,
+        crossover_prob: float,
+        gc_extension_prob: float,
+    ) -> SimulationBuilder:
+        """Set recombination parameters.
+        
+        Args:
+            break_prob: Probability of DNA strand break
+            crossover_prob: Probability of crossover
+            gc_extension_prob: Probability of gene conversion extension
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def fitness(self, fitness: FitnessConfig) -> SimulationBuilder:
+        """Set the fitness configuration (default: neutral).
+        
+        If not specified, neutral fitness (no selection) is used.
+        
+        Args:
+            fitness: FitnessConfig to use for selection
+            
+        Returns:
+            Self for method chaining
+            
+        Example:
+            >>> fitness = cv.FitnessConfig.with_gc_content(0.5, 2.0).build()
+            >>> sim = cv.SimulationBuilder() \\
+            ...     .population_size(100) \\
+            ...     .generations(50) \\
+            ...     .repeat_structure(171, 12, 10) \\
+            ...     .fitness(fitness) \\
+            ...     .build()
+        """
+        ...
+    
+    def seed(self, seed: int) -> SimulationBuilder:
+        """Set the random seed for reproducibility (default: random).
+        
+        Args:
+            seed: Random seed value
+            
+        Returns:
+            Self for method chaining
+        """
+        ...
+    
+    def build(self) -> Simulation:
+        """Build and validate the simulation.
+        
+        Returns:
+            Simulation ready to run
+            
+        Raises:
+            ValueError: If required parameters are missing or invalid
+            RuntimeError: If simulation creation fails
+        """
         ...
     
     def __repr__(self) -> str: ...

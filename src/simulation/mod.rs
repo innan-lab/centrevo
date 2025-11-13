@@ -7,12 +7,14 @@ pub mod engine;
 pub mod population;
 pub mod parameters;
 pub mod initialization;
+pub mod builder;
 
 pub use engine::Simulation;
 pub use population::Population;
 pub use parameters::{
     RepeatStructure, MutationConfig, RecombinationConfig,
-    FitnessConfig, SimulationConfig,
+    FitnessConfig, FitnessConfigBuilder, BuilderEmpty, BuilderInitialized,
+    SimulationConfig,
 };
 pub use initialization::{
     SequenceInput, SequenceEntry, InitializationError,
@@ -20,3 +22,4 @@ pub use initialization::{
     validate_sequences, create_individuals_from_sequences,
     initialize_from_source,
 };
+pub use builder::{SimulationBuilder, BuilderError};

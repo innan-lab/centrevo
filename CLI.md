@@ -1,6 +1,13 @@
 # Centrevo CLI Guide
 
-Complete command-line interface reference for the Centrevo centromeric evolution simulator.
+## Complete command-line interface reference for the Centrevo centromeric evolution simulator.
+
+**Note:** For programmatic control and advanced workflows, see the [Python Bindings Guide](PYTHON.md), which provides additional features including:
+- Direct simulation control (`step()`, `run_for()` methods)
+- Custom sequence initialization from FASTA/JSON/database
+- Programmatic data loading and querying
+- Integration with PyArrow, pandas, and polars
+- Flexible export to multiple formats
 
 ## Installation
 

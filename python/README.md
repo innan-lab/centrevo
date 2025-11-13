@@ -27,8 +27,8 @@ python/
 
 ### Prerequisites
 
-- Python >= 3.8
-- Rust toolchain (for compiling the extension)
+- Python >= 3.12
+- Rust toolchain >= 1.88 (for compiling the extension)
 - maturin (Python build tool)
 
 ### Build Process

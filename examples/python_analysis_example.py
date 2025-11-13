@@ -26,11 +26,11 @@ def example_diversity_analysis():
     print("=" * 60)
     print("Diversity Analysis Example")
     print("=" * 60)
-    
+
     # Create a simple population
     alphabet = centrevo.Alphabet.dna()
     base_a = centrevo.Nucleotide.A()
-    
+
     structure = centrevo.RepeatStructure(
         alphabet=alphabet,
         init_base=base_a,
@@ -39,15 +39,15 @@ def example_diversity_analysis():
         hors_per_chr=50,
         chrs_per_hap=1,
     )
-    
+
     pop = centrevo.create_initial_population(size=20, structure=structure)
-    
+
     # Calculate diversity metrics
     pi = centrevo.nucleotide_diversity(pop, chromosome_idx=0)
     tajima_d = centrevo.tajimas_d(pop, chromosome_idx=0)
     theta_w = centrevo.wattersons_theta(pop, chromosome_idx=0)
     hap_div = centrevo.haplotype_diversity(pop, chromosome_idx=0)
-    
+
     print("\nDiversity Metrics:")
     print(f"  Nucleotide diversity (π): {pi:.6f}")
     print(f"  Tajima's D: {tajima_d:.6f}")
@@ -60,7 +60,7 @@ def example_export_to_pyarrow():
     print("\n" + "=" * 60)
     print("PyArrow Export Example")
     print("=" * 60)
-    
+
     # Create population
     alphabet = centrevo.Alphabet.dna()
     base_a = centrevo.Nucleotide.A()
@@ -72,26 +72,26 @@ def example_export_to_pyarrow():
         hors_per_chr=50,
         chrs_per_hap=1,
     )
-    
+
     pop = centrevo.create_initial_population(size=10, structure=structure)
-    
+
     # Export diversity metrics
     metrics = centrevo.export_diversity_metrics(pop, chromosome_idx=0)
     print(f"\nExported metrics: {metrics}")
-    
+
     # Convert to PyArrow Table
     # In a real scenario, you'd collect metrics over multiple generations
     diversity_data = [metrics]  # List of dicts
     table = export_to_pyarrow_table(diversity_data)
-    
+
     print("\nPyArrow Table Schema:")
     print(table.schema)
-    
+
     # Convert to pandas
     df_pandas = table.to_pandas()
     print("\nPandas DataFrame:")
     print(df_pandas)
-    
+
     # Convert to polars
     df_polars = pl.from_arrow(table)
     print("\nPolars DataFrame:")
@@ -103,7 +103,7 @@ def example_ld_analysis():
     print("\n" + "=" * 60)
     print("LD Analysis Example")
     print("=" * 60)
-    
+
     # Create population
     alphabet = centrevo.Alphabet.dna()
     base_a = centrevo.Nucleotide.A()
@@ -115,9 +115,9 @@ def example_ld_analysis():
         hors_per_chr=50,
         chrs_per_hap=1,
     )
-    
+
     pop = centrevo.create_initial_population(size=20, structure=structure)
-    
+
     # Calculate LD between two positions
     ld_stats = centrevo.linkage_disequilibrium(
         pop,
@@ -126,7 +126,7 @@ def example_ld_analysis():
         chromosome_idx=0,
         haplotype_idx=0,
     )
-    
+
     print("\nLD Statistics (pos 100 vs 500):")
     if ld_stats is not None:
         print(f"  D: {ld_stats['D']:.6f}")
@@ -134,7 +134,7 @@ def example_ld_analysis():
         print(f"  r²: {ld_stats['r_squared']:.6f}")
     else:
         print("  LD calculation returned None (not enough variation)")
-    
+
     # Export LD decay data
     ld_decay_data = centrevo.export_ld_decay(
         pop,
@@ -143,9 +143,9 @@ def example_ld_analysis():
         max_distance=1000,
         bin_size=50,
     )
-    
+
     print(f"\nLD Decay data points: {len(ld_decay_data)}")
-    
+
     # Convert to PyArrow and then polars
     table = export_ld_decay_to_pyarrow(ld_decay_data)
     df = pl.from_arrow(table)
@@ -158,7 +158,7 @@ def example_composition_analysis():
     print("\n" + "=" * 60)
     print("Composition Analysis Example")
     print("=" * 60)
-    
+
     # Create population
     alphabet = centrevo.Alphabet.dna()
     base_a = centrevo.Nucleotide.A()
@@ -170,17 +170,17 @@ def example_composition_analysis():
         hors_per_chr=50,
         chrs_per_hap=1,
     )
-    
+
     pop = centrevo.create_initial_population(size=10, structure=structure)
-    
+
     # Population-level GC content
     gc_pop = centrevo.gc_content(pop, None, None, None)
     print(f"\nPopulation GC content: {gc_pop:.4f}")
-    
+
     # Individual-level GC content
     gc_ind = centrevo.gc_content(pop, individual_idx=0, haplotype_idx=None, chromosome_idx=None)
     print(f"Individual 0 GC content: {gc_ind:.4f}")
-    
+
     # Nucleotide composition
     comp = centrevo.nucleotide_composition(pop, None, None, None)
     print("\nNucleotide composition:")
@@ -193,7 +193,7 @@ def example_distance_analysis():
     print("\n" + "=" * 60)
     print("Distance Analysis Example")
     print("=" * 60)
-    
+
     # Create population
     alphabet = centrevo.Alphabet.dna()
     base_a = centrevo.Nucleotide.A()
@@ -205,19 +205,19 @@ def example_distance_analysis():
         hors_per_chr=50,
         chrs_per_hap=1,
     )
-    
+
     pop = centrevo.create_initial_population(size=5, structure=structure)
-    
+
     # Calculate distance matrix
     matrix = centrevo.distance_matrix(pop, chromosome_idx=0)
-    
+
     print(f"\nDistance matrix shape: {len(matrix)}x{len(matrix[0])}")
     print(f"Number of sequences: {len(matrix)} (5 individuals × 2 haplotypes)")
-    
+
     # Export to structured format
     dist_data = centrevo.export_distance_matrix(pop, chromosome_idx=0)
     print(f"Distance data points: {len(dist_data)}")
-    
+
     # Convert to pandas
     df = pd.DataFrame(dist_data)
     print("\nDistance DataFrame (first 10 rows):")
@@ -229,14 +229,14 @@ def example_visualization():
     print("\n" + "=" * 60)
     print("Visualization Example")
     print("=" * 60)
-    
+
     try:
         import matplotlib
         matplotlib.use('Agg')  # Non-interactive backend
     except ImportError:
         print("matplotlib not installed, skipping visualization")
         return
-    
+
     # Create population
     alphabet = centrevo.Alphabet.dna()
     base_a = centrevo.Nucleotide.A()
@@ -248,19 +248,19 @@ def example_visualization():
         hors_per_chr=50,
         chrs_per_hap=1,
     )
-    
+
     pop = centrevo.create_initial_population(size=10, structure=structure)
-    
+
     # Plot nucleotide composition
     comp = centrevo.nucleotide_composition(pop, None, None, None)
     _ = plot_nucleotide_composition(comp)
     print("\nNucleotide composition plot created")
-    
+
     # Plot distance matrix
     matrix = centrevo.distance_matrix(pop, chromosome_idx=0)
     _ = plot_distance_matrix(matrix, figsize=(8, 6))
     print("Distance matrix heatmap created")
-    
+
     # Note: For trajectory plots, you'd need data from multiple generations
     print("\nTo create trajectory plots, collect diversity metrics over multiple generations")
     print("and use plot_diversity_trajectory() or plot_multiple_diversity_metrics()")
@@ -271,14 +271,14 @@ def main():
     print("\n" + "=" * 60)
     print("Centrevo Python Analysis Examples")
     print("=" * 60)
-    
+
     example_diversity_analysis()
     example_export_to_pyarrow()
     example_ld_analysis()
     example_composition_analysis()
     example_distance_analysis()
     example_visualization()
-    
+
     print("\n" + "=" * 60)
     print("All examples completed successfully!")
     print("=" * 60)

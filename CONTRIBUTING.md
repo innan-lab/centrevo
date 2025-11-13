@@ -18,9 +18,9 @@ There are many ways to contribute to Centrevo:
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.88 or later
 - Git
-- (Optional) Python 3.8+ and maturin for Python bindings
+- (Optional) Python 3.12+ and maturin for Python bindings
 
 ### Setup Development Environment
 
@@ -165,6 +165,7 @@ When reporting bugs, please include:
 - **Environment:**
   - OS and version
   - Rust version (`rustc --version`)
+  - Python version (`python --version`)
   - Centrevo version
 - **Additional Context:** Logs, screenshots, etc.
 
@@ -186,8 +187,9 @@ What actually happens
 
 ## Environment
 - OS: [e.g., Ubuntu 22.04]
-- Rust: [e.g., 1.75.0]
-- Centrevo: [e.g., 0.1.0]
+- Rust: [e.g., 1.88.0]
+- Python: [e.g., 3.12.0]
+- Centrevo: [e.g., 0.2.1]
 
 ## Additional Context
 Any other relevant information

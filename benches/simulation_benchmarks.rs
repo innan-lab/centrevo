@@ -53,7 +53,7 @@ fn create_simulation_with_fitness(
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     
     let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
-    let fitness = FitnessConfig::new(Some(gc_fitness), None, None);
+    let fitness = FitnessConfig::new(Some(gc_fitness), None, None, None);
     
     let config = SimulationConfig::new(pop_size, generations, Some(42));
     
@@ -68,7 +68,7 @@ fn bench_simulation_init(c: &mut Criterion) {
     
     for pop_size in pop_sizes {
         for chr_length in chr_lengths {
-            let label = format!("pop{}_len{}", pop_size, chr_length);
+            let label = format!("pop{pop_size}_len{chr_length}");
             
             group.bench_with_input(
                 BenchmarkId::new("create_neutral", &label),
@@ -189,7 +189,7 @@ fn bench_population_operations(c: &mut Criterion) {
         
         // Test with GC fitness
         let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
-        let fitness_config = FitnessConfig::new(Some(gc_fitness), None, None);
+        let fitness_config = FitnessConfig::new(Some(gc_fitness), None, None, None);
         
         group.bench_with_input(
             BenchmarkId::new("compute_fitness_gc", pop_size),

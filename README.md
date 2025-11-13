@@ -2,7 +2,7 @@
 
 **High-performance simulator for centromeric sequence evolution**
 
-[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Centrevo is a fast, flexible simulator for studying the evolution of tandemly repeated DNA sequences, with a focus on centromeric arrays. Built in Rust for maximum performance, it provides both command-line and Python interfaces for running population genetic simulations and comprehensive analysis.
@@ -23,8 +23,9 @@ Centrevo is a fast, flexible simulator for studying the evolution of tandemly re
 
 ### Prerequisites
 
-- **Rust** (1.70+): Install from [rust-lang.org](https://www.rust-lang.org/tools/install)
+- **Rust** (1.88+): Install from [rust-lang.org](https://www.rust-lang.org/tools/install)
 - **Cargo**: Comes with Rust
+- **Python** (3.12+): For Python bindings (optional)
 
 ### Build from Source
 
@@ -47,7 +48,7 @@ git clone https://github.com/innan-lab/centrevo.git
 cd centrevo
 
 # Build using the official Rust Docker image
-docker run --rm -v "$(pwd)":/workspace -w /workspace rust:1.70 cargo build --release
+docker run --rm -v "$(pwd)":/workspace -w /workspace rust:1.88 cargo build --release
 
 # The binary will be in target/release/centrevo
 ./target/release/centrevo --version
@@ -73,9 +74,6 @@ To build distributable Python wheels for Linux using Docker:
 ```bash
 # Build for Python 3.12 on Linux x86_64
 docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.12
-
-# Build for multiple Python versions
-docker run --rm -v "$(pwd)":/io ghcr.io/pyo3/maturin build --release --target x86_64-unknown-linux-gnu -i python3.10 -i python3.11 -i python3.12
 
 # Wheels will be in target/wheels/
 ls target/wheels/
@@ -103,23 +101,23 @@ See [CLI.md](CLI.md) for complete CLI documentation.
 ### Python API
 
 ```python
-import centrevo
+import centrevo as cv
 
-# Create simulation
-alphabet = centrevo.Alphabet.dna()
-structure = centrevo.RepeatStructure(
-    alphabet=alphabet,
-    init_base=centrevo.Nucleotide.A(),
-    ru_length=171,
-    rus_per_hor=12,
-    hors_per_chr=100,
-    chrs_per_hap=1
-)
+# Create simulation with builder pattern (recommended)
+sim = (cv.SimulationBuilder()
+    .population_size(100)
+    .generations(1000)
+    .repeat_structure(ru_length=171, rus_per_hor=12, hors_per_chr=100)
+    .mutation_rate(0.0001)
+    .seed(42)
+    .build())
 
-population = centrevo.create_initial_population(100, structure)
+# Run simulation
+sim.run()
 
 # Analyze
-pi = centrevo.nucleotide_diversity(population, 0)
+population = sim.population()
+pi = cv.nucleotide_diversity(population, 0)
 print(f"Nucleotide diversity: {pi:.6f}")
 ```
 
@@ -227,6 +225,9 @@ Built with:
 
 ---
 
-**Version**: 0.2.0  
-**Status**: Active development  
-**Rust Version**: 1.70+
+
+**Version**: 0.2.1
+**Status**: Active development
+**Rust Version**: 1.88+
+**Python Version**: 3.12+
+

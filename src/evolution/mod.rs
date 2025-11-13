@@ -13,6 +13,7 @@ pub use mutation::{SubstitutionModel, MutationError};
 pub use recombination::{RecombinationParams, RecombinationType, RecombinationError};
 pub use selection::{
     HaplotypeFitness, IndividualFitness,
-    GCContentFitness, LengthFitness, SequenceSimilarityFitness,
+    GCContentFitness, LengthFitness,
+    SequenceSimilarityFitness, LengthSimilarityFitness,
     FitnessError,
 };

@@ -20,7 +20,7 @@ fn create_random_individual(id: &str, length: usize, rng: &mut Xoshiro256PlusPlu
         seq.push(nuc);
     }
     
-    let chr = Chromosome::new(format!("chr_{}", id), seq.clone(), 171, 12);
+    let chr = Chromosome::new(format!("chr_{id}"), seq.clone(), 171, 12);
     let mut hap1 = Haplotype::new();
     hap1.push(chr.clone());
     let mut hap2 = Haplotype::new();
@@ -32,7 +32,7 @@ fn create_random_individual(id: &str, length: usize, rng: &mut Xoshiro256PlusPlu
 fn create_test_population(n_individuals: usize, seq_length: usize) -> Population {
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let individuals: Vec<Individual> = (0..n_individuals)
-        .map(|i| create_random_individual(&format!("ind{}", i), seq_length, &mut rng))
+        .map(|i| create_random_individual(&format!("ind{i}"), seq_length, &mut rng))
         .collect();
     
     Population::new("test_pop", individuals)

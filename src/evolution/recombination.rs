@@ -242,19 +242,19 @@ impl std::fmt::Display for RecombinationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RecombinationError::InvalidProbability(name, val) => {
-                write!(f, "Invalid probability for {}: {} (must be between 0.0 and 1.0)", name, val)
+                write!(f, "Invalid probability for {name}: {val} (must be between 0.0 and 1.0)")
             }
             RecombinationError::LengthMismatch { len1, len2 } => {
-                write!(f, "Sequence length mismatch: {} vs {}", len1, len2)
+                write!(f, "Sequence length mismatch: {len1} vs {len2}")
             }
             RecombinationError::AlphabetMismatch => {
                 write!(f, "Sequence alphabet mismatch")
             }
             RecombinationError::InvalidPosition { position, length } => {
-                write!(f, "Invalid position {} for sequence of length {}", position, length)
+                write!(f, "Invalid position {position} for sequence of length {length}")
             }
             RecombinationError::InvalidRange { start, end } => {
-                write!(f, "Invalid range [{}, {}) for gene conversion", start, end)
+                write!(f, "Invalid range [{start}, {end}) for gene conversion")
             }
         }
     }

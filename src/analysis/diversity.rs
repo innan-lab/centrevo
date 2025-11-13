@@ -268,7 +268,7 @@ pub fn haplotype_diversity(
                     let seq = chr.sequence();
                     (0..seq.len())
                         .filter_map(|i| seq.get(i))
-                        .map(|n| format!("{:?}", n))
+                        .map(|n| format!("{n:?}"))
                         .collect::<String>()
                 }))
         })

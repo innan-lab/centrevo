@@ -3,7 +3,11 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 /// Shared, immutable alphabet.
-/// Use Arc to share one instance across all chromosomes in a population.
+///
+/// `Alphabet` defines the mapping between characters and compact indices used
+/// to store sequences efficiently. It is intentionally immutable and
+/// shareable via `Arc` so a single `Alphabet` instance can be reused across
+/// many sequences or chromosomes without cloning the underlying data.
 #[derive(Debug, Clone)]
 pub struct Alphabet {
     /// Character representation of bases
@@ -13,8 +17,19 @@ pub struct Alphabet {
 }
 
 impl Alphabet {
-    /// Create a new case-sensitive alphabet from characters.
-    /// The order determines the index mapping.
+    /// Create a new, case-sensitive `Alphabet` from the provided characters.
+    ///
+    /// The order of `chars` determines the integer index assigned to each
+    /// character (starting at 0). Duplicate characters are allowed but the
+    /// last occurrence wins for the index mapping.
+    ///
+    /// Example:
+    ///
+    /// ```rust
+    /// # use centrevo::Alphabet;
+    /// let alph = Alphabet::new(vec!['A', 'C', 'G', 'T']);
+    /// assert_eq!(alph.len(), 4);
+    /// ```
     pub fn new(chars: impl Into<Vec<char>>) -> Self {
         let chars: Vec<char> = chars.into();
         let char_to_index = chars
@@ -29,47 +44,70 @@ impl Alphabet {
         }
     }
 
-    /// Standard DNA alphabet (A, C, G, T)
+    /// Standard DNA alphabet (A, C, G, T).
+    ///
+    /// This is the crate's default alphabet and is returned by `Default`.
     pub fn dna() -> Self {
         Self::new(vec!['A', 'C', 'G', 'T'])
     }
 
-    // Standard RNA alphabet (A, C, G, U)
+    /// Standard RNA alphabet (A, C, G, U).
     pub fn rna() -> Self {
         Self::new(vec!['A', 'C', 'G', 'U'])
     }
 
-    /// Get the number of bases in this alphabet
+    /// Standard amino acid alphabet (20 amino acids).
+    pub fn amino_acids() -> Self {
+        Self::new(vec![
+            'A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I',
+            'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V',
+        ])
+    }
+
+    /// Return the number of distinct characters in this alphabet.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.chars.len()
     }
 
-    /// Check if empty (should never be)
+    /// Return true if the alphabet contains no characters.
+    ///
+    /// Most code expects a non-empty alphabet; creating an empty alphabet is
+    /// allowed but unusual and many higher-level operations will be invalid.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.chars.is_empty()
     }
 
-    /// Get character by index
+    /// Return the character at `index`, or `None` if out of range.
+    ///
+    /// Indices are the compact integer representation used by `Sequence` and
+    /// `SharedSequence` storage.
     #[inline]
     pub fn get_char(&self, index: u8) -> Option<char> {
         self.chars.get(index as usize).copied()
     }
 
-    /// Get index by character
+    /// Return the compact index for character `c`, or `None` if `c` is not in
+    /// the alphabet.
     #[inline]
     pub fn get_index(&self, c: char) -> Option<u8> {
         self.char_to_index.get(&c).copied()
     }
 
-    /// Get all characters as slice
+    /// Return the backing character slice for this alphabet.
+    ///
+    /// This slice is reference-counted internally; callers should not mutate
+    /// it (it is owned by the `Alphabet`).
     #[inline]
     pub fn chars(&self) -> &[char] {
         &self.chars
     }
 
-    /// Check if character is in alphabet
+    /// Return `true` if the alphabet contains `c`.
+    ///
+    /// This is a convenience wrapper around `get_index` used when quick
+    /// membership checks are needed.
     #[inline]
     pub fn contains(&self, c: char) -> bool {
         self.char_to_index.contains_key(&c)

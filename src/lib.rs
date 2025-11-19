@@ -18,5 +18,10 @@ pub mod python;
 // TODO: Uncomment as modules are implemented
 // pub mod utils;
 
-// Re-export commonly used types
+// Re-export commonly used types for convenient external access.
+//
+// These types form the public, stable surface that most consumers of the
+// library will use when building analyses or running simulations. Re-exporting
+// them here makes them available as `centrevo::Sequence`, `centrevo::Nucleotide`,
+// etc.
 pub use base::{Nucleotide, Alphabet, Sequence, SharedSequence};

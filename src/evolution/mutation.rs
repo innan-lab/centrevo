@@ -316,6 +316,12 @@ pub enum MutationError {
     InvalidMutationRate(f64),
 }
 
+/// Public mutation errors explained:
+///
+/// This enum is returned by constructors and operations that validate
+/// mutation-related parameters (for example `SubstitutionModel::new`).
+/// Consumers should convert or propagate these errors as appropriate when
+/// building simulation configurations.
 impl std::fmt::Display for MutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

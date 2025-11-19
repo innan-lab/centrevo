@@ -7,7 +7,10 @@ use rand::Rng;
 use crate::base::Sequence;
 use serde::{Serialize, Deserialize};
 
-/// Type of recombination event
+/// Type of recombination event that can occur on a sequence.
+///
+/// Variants describe whether no recombination occurred, a crossover at a
+/// specific position, or a gene conversion tract (start..end).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RecombinationType {
     /// No recombination occurs
@@ -18,7 +21,12 @@ pub enum RecombinationType {
     GeneConversion { start: usize, end: usize },
 }
 
-/// Parameters for recombination events.
+/// Parameters controlling recombination behavior.
+///
+/// These parameters determine the per-base break probability and how breaks
+/// are resolved (crossover vs gene conversion) as well as the extension
+/// behavior of gene conversion tracts. Use `RecombinationParams::new` to
+/// validate values before using sampling/operation helpers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecombinationParams {
     /// Probability of a double-strand break per base per generation
@@ -224,6 +232,12 @@ impl RecombinationParams {
 }
 
 /// Errors that can occur during recombination operations.
+///
+/// These errors are returned when invalid parameters are provided or when
+/// attempted recombination operations are incompatible (e.g. different
+/// sequence lengths or alphabets).
+
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RecombinationError {
     /// Invalid probability value

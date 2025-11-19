@@ -2,7 +2,12 @@ use super::{Nucleotide, Alphabet};
 use std::fmt;
 use std::sync::Arc;
 
-/// Mutable sequence - use for active operations
+/// Mutable biological sequence backed by compact indices.
+///
+/// `Sequence` stores a vector of compact indices (u8) referring to an
+/// `Alphabet`. It is intended for active, in-place operations such as
+/// mutation, insertion, and deletion. For read-only, shareable views convert
+/// to `SharedSequence` using `to_shared` or `into_shared`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sequence {
     /// Indices into alphabet (0-3 for standard DNA)
@@ -12,7 +17,15 @@ pub struct Sequence {
 }
 
 impl Sequence {
-    /// Create a new empty sequence
+    /// Create a new, empty `Sequence` using `alphabet` for conversions.
+    ///
+    /// Example:
+    ///
+    /// ```rust
+    /// # use centrevo::base::{Alphabet, Sequence};
+    /// let seq = Sequence::new(Alphabet::dna());
+    /// assert_eq!(seq.len(), 0);
+    /// ```
     pub fn new(alphabet: Alphabet) -> Self {
         Self {
             data: Vec::new(),
@@ -20,7 +33,7 @@ impl Sequence {
         }
     }
 
-    /// Create with capacity
+    /// Create a `Sequence` with reserved capacity for `capacity` bases.
     pub fn with_capacity(capacity: usize, alphabet: Alphabet) -> Self {
         Self {
             data: Vec::with_capacity(capacity),
@@ -28,7 +41,11 @@ impl Sequence {
         }
     }
 
-    /// Create from raw indices
+    /// Create a `Sequence` from raw compact indices and an `Alphabet`.
+    ///
+    /// The caller is responsible for ensuring `indices` are valid for the
+    /// provided alphabet; invalid indices will be interpreted as `None` when
+    /// converted to `Nucleotide`.
     pub fn from_indices(indices: Vec<u8>, alphabet: Alphabet) -> Self {
         Self {
             data: indices,
@@ -36,7 +53,10 @@ impl Sequence {
         }
     }
 
-    /// Create from string
+    /// Parse a textual representation (e.g. "ACGT") into a `Sequence`.
+    ///
+    /// Characters not present in `alphabet` produce an `InvalidSequence`
+    /// error. This function is case-insensitive for ASCII letters.
     pub fn from_str(s: &str, alphabet: Alphabet) -> Result<Self, InvalidSequence> {
         let data: Result<Vec<u8>, _> = s
             .chars()
@@ -53,25 +73,29 @@ impl Sequence {
         })
     }
 
-    /// Get length
+    /// Return the length of the sequence in bases.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
-    /// Check if empty
+    /// Return `true` if the sequence contains no bases.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
-    /// Get base at position
+    /// Return the `Nucleotide` at `index`, or `None` if out of range or if
+    /// the stored index is invalid for `Nucleotide`.
     #[inline]
     pub fn get(&self, index: usize) -> Option<Nucleotide> {
         self.data.get(index).and_then(|&idx| Nucleotide::from_index(idx))
     }
 
-    /// Set base at position
+    /// Set the base at `index` to `base`.
+    ///
+    /// Returns `OutOfBounds` if `index` is greater than or equal to the
+    /// sequence length.
     #[inline]
     pub fn set(&mut self, index: usize, base: Nucleotide) -> Result<(), OutOfBounds> {
         self.data
@@ -80,50 +104,62 @@ impl Sequence {
             .ok_or(OutOfBounds { index, len: self.len() })
     }
 
-    /// Get raw indices
+    /// Borrow the underlying compact indices as a slice.
+    ///
+    /// This can be useful for high-performance code that operates on raw
+    /// indices instead of converting to `Nucleotide` values.
     #[inline]
     pub fn indices(&self) -> &[u8] {
         &self.data
     }
 
-    /// Get mutable raw indices
+    /// Borrow the mutable slice of underlying indices.
+    ///
+    /// Mutating these indices directly bypasses `Nucleotide` safety checks —
+    /// be careful to keep indices valid for the alphabet.
     #[inline]
     pub fn indices_mut(&mut self) -> &mut [u8] {
         &mut self.data
     }
 
-    /// Get alphabet
+    /// Borrow the `Alphabet` used by this sequence.
     #[inline]
     pub fn alphabet(&self) -> &Alphabet {
         &self.alphabet
     }
 
-    /// Push a base
+    /// Append `base` to the end of the sequence.
     #[inline]
     pub fn push(&mut self, base: Nucleotide) {
         self.data.push(base.to_index());
     }
 
-    /// Pop a base
+    /// Remove and return the last base, or `None` if the sequence is empty.
     #[inline]
     pub fn pop(&mut self) -> Option<Nucleotide> {
         self.data.pop().and_then(Nucleotide::from_index)
     }
 
-    /// Insert a base
+    /// Insert `base` at position `index`, shifting subsequent elements.
     #[inline]
     pub fn insert(&mut self, index: usize, base: Nucleotide) {
         self.data.insert(index, base.to_index());
     }
 
-    /// Remove a base
+    /// Remove and return the base at `index`.
+    ///
+    /// Panics if `index` is out of bounds (matching the behavior of
+    /// `Vec::remove`).
     #[inline]
     pub fn remove(&mut self, index: usize) -> Nucleotide {
         Nucleotide::from_index(self.data.remove(index))
             .expect("Invalid base in sequence")
     }
 
-    /// Convert to immutable shared sequence
+    /// Consume this `Sequence` and produce an immutable `SharedSequence`.
+    ///
+    /// This avoids cloning the internal buffer by reusing the owned `Vec`
+    /// storage as an `Arc<[u8]>` where possible.
     pub fn into_shared(self) -> SharedSequence {
         SharedSequence {
             data: self.data.into(),
@@ -131,7 +167,10 @@ impl Sequence {
         }
     }
 
-    /// Convert to immutable shared sequence (cloning data)
+    /// Create an immutable `SharedSequence` by cloning the internal data.
+    ///
+    /// Use this when you need a shared, read-only view but still keep the
+    /// original mutable `Sequence`.
     pub fn to_shared(&self) -> SharedSequence {
         SharedSequence {
             data: self.data.clone().into(),
@@ -151,7 +190,11 @@ impl fmt::Display for Sequence {
     }
 }
 
-/// Immutable shared sequence - use for read-only operations
+/// Immutable, shareable sequence view.
+///
+/// `SharedSequence` holds its data in a reference-counted `Arc<[u8]>` and an
+/// `Alphabet`. Cloning a `SharedSequence` is cheap and the structure is safe
+/// to share across threads for read-only operations.
 #[derive(Debug, Clone)]
 pub struct SharedSequence {
     /// Shared immutable indices
@@ -161,42 +204,49 @@ pub struct SharedSequence {
 }
 
 impl SharedSequence {
-    /// Create from Arc
+    /// Create a `SharedSequence` from an `Arc<[u8]>` and an `Alphabet`.
+    ///
+    /// This constructor is useful when the caller already manages shared
+    /// index storage and wants to wrap it for use with the crate's APIs.
     pub fn new(data: Arc<[u8]>, alphabet: Alphabet) -> Self {
         Self { data, alphabet }
     }
 
-    /// Get length
+    /// Return the number of bases in the shared sequence.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
-    /// Check if empty
+    /// Return true if the shared sequence has no bases.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
-    /// Get base at position
+    /// Return the `Nucleotide` at `index`, or `None` if out of bounds.
     #[inline]
     pub fn get(&self, index: usize) -> Option<Nucleotide> {
         self.data.get(index).and_then(|&idx| Nucleotide::from_index(idx))
     }
 
-    /// Get raw indices
+    /// Borrow the compact indices slice.
     #[inline]
     pub fn indices(&self) -> &[u8] {
         &self.data
     }
 
-    /// Get alphabet
+    /// Borrow the `Alphabet` used by this sequence.
     #[inline]
     pub fn alphabet(&self) -> &Alphabet {
         &self.alphabet
     }
 
-    /// Clone data into mutable sequence
+    /// Clone the shared data into a new mutable `Sequence`.
+    ///
+    /// This performs a copy of the underlying indices into owned `Vec<u8>` so
+    /// the returned `Sequence` can be mutated independently of the shared
+    /// view.
     pub fn to_mutable(&self) -> Sequence {
         Sequence {
             data: self.data.to_vec(),
@@ -204,7 +254,8 @@ impl SharedSequence {
         }
     }
 
-    /// Get strong reference count (for debugging)
+    /// Return the current strong reference count to the shared data (useful
+    /// for debugging or assertions about copying behavior).
     pub fn strong_count(&self) -> usize {
         Arc::strong_count(&self.data)
     }
@@ -232,9 +283,18 @@ impl fmt::Display for SharedSequence {
 }
 
 // Errors
+/// Error type for failures when constructing or manipulating a `Sequence`.
+///
+/// - `InvalidChar(c)` indicates the provided character `c` was not present in
+///   the alphabet and therefore could not be converted to a base index.
+/// - `EmptySequence` indicates an operation that disallows empty sequences
+///   (where applicable) encountered an empty input.
 #[derive(Debug, Clone)]
 pub enum InvalidSequence {
+    /// A character was not recognized by the alphabet.
     InvalidChar(char),
+
+    /// The sequence was empty when a non-empty sequence was required.
     EmptySequence,
 }
 
@@ -249,9 +309,17 @@ impl std::fmt::Display for InvalidSequence {
 
 impl std::error::Error for InvalidSequence {}
 
+/// Error returned when an index is outside the valid range for a sequence.
+///
+/// Fields:
+/// - `index`: the attempted access index
+/// - `len`: the current length of the sequence
 #[derive(Debug, Clone, Copy)]
 pub struct OutOfBounds {
+    /// The index that was requested
     pub index: usize,
+
+    /// The current length of the sequence (upper bound)
     pub len: usize,
 }
 

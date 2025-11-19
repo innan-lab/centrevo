@@ -1,7 +1,12 @@
 use std::sync::Arc;
 use crate::genome::Haplotype;
 
-/// An individual organism with diploid genome.
+/// An individual organism with a diploid genome.
+///
+/// `Individual` contains two `Haplotype`s (representing the two chromosome
+/// sets) and a cached fitness value. The `id` is stored in an `Arc<str>` so
+/// cloning individuals is cheap for the identifier field. Use the provided
+/// accessors to read or mutate haplotypes and fitness as needed.
 #[derive(Debug, Clone)]
 pub struct Individual {
     /// Unique identifier
@@ -15,7 +20,11 @@ pub struct Individual {
 }
 
 impl Individual {
-    /// Create a new individual
+    /// Create a new `Individual` from two haplotypes.
+    ///
+    /// The `id` can be any type convertible into `Arc<str>` (for example `&str`
+    /// or `String`). The initial fitness is set to `0.0` and may be updated
+    /// later with `set_fitness`.
     pub fn new(
         id: impl Into<Arc<str>>,
         haplotype1: Haplotype,
@@ -29,54 +38,54 @@ impl Individual {
         }
     }
 
-    /// Get individual ID
+    /// Return the individual's identifier as a `&str`.
     #[inline]
     pub fn id(&self) -> &str {
         &self.id
     }
 
-    /// Get first haplotype
+    /// Borrow the first haplotype (read-only).
     #[inline]
     pub fn haplotype1(&self) -> &Haplotype {
         &self.haplotype1
     }
 
-    /// Get mutable first haplotype
+    /// Borrow the first haplotype mutably to perform in-place modifications.
     #[inline]
     pub fn haplotype1_mut(&mut self) -> &mut Haplotype {
         &mut self.haplotype1
     }
 
-    /// Get second haplotype
+    /// Borrow the second haplotype (read-only).
     #[inline]
     pub fn haplotype2(&self) -> &Haplotype {
         &self.haplotype2
     }
 
-    /// Get mutable second haplotype
+    /// Borrow the second haplotype mutably to perform in-place modifications.
     #[inline]
     pub fn haplotype2_mut(&mut self) -> &mut Haplotype {
         &mut self.haplotype2
     }
 
-    /// Get fitness
+    /// Return the cached fitness value for this individual.
     #[inline]
     pub fn fitness(&self) -> f64 {
         self.fitness
     }
 
-    /// Set fitness
+    /// Set the cached fitness value for this individual.
     #[inline]
     pub fn set_fitness(&mut self, fitness: f64) {
         self.fitness = fitness;
     }
 
-    /// Get both haplotypes
+    /// Borrow both haplotypes as a pair of references.
     pub fn haplotypes(&self) -> (&Haplotype, &Haplotype) {
         (&self.haplotype1, &self.haplotype2)
     }
 
-    /// Get both haplotypes mutably
+    /// Borrow both haplotypes mutably as a pair of mutable references.
     pub fn haplotypes_mut(&mut self) -> (&mut Haplotype, &mut Haplotype) {
         (&mut self.haplotype1, &mut self.haplotype2)
     }

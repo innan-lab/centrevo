@@ -1,6 +1,13 @@
 use crate::genome::Chromosome;
 
-/// A haplotype is a collection of chromosomes.
+/// A haplotype: an ordered collection of chromosomes representing one set of
+/// genetic material for an individual.
+///
+/// `Haplotype` owns its `Chromosome`s and provides simple accessors to query
+/// chromosomes by index, iterate over them, and obtain aggregate properties
+/// (for example total length). For read-only, parallel scenarios prefer
+/// converting to `SharedHaplotype` (via `to_shared`) which contains
+/// `SharedChromosome`s and is cheap to clone.
 #[derive(Debug, Clone)]
 pub struct Haplotype {
     /// Chromosomes in this haplotype
@@ -8,77 +15,80 @@ pub struct Haplotype {
 }
 
 impl Haplotype {
-    /// Create a new empty haplotype
+    /// Create a new, empty `Haplotype`.
     pub fn new() -> Self {
         Self {
             chromosomes: Vec::new(),
         }
     }
 
-    /// Create with specific capacity
+    /// Create a `Haplotype` with reserved capacity for `capacity` chromosomes.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             chromosomes: Vec::with_capacity(capacity),
         }
     }
 
-    /// Create from chromosomes
+    /// Create a `Haplotype` from an existing vector of `Chromosome`s.
     pub fn from_chromosomes(chromosomes: Vec<Chromosome>) -> Self {
         Self { chromosomes }
     }
 
-    /// Get number of chromosomes
+    /// Return the number of chromosomes in this haplotype.
     #[inline]
     pub fn len(&self) -> usize {
         self.chromosomes.len()
     }
 
-    /// Check if empty
+    /// Return `true` if this haplotype contains no chromosomes.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.chromosomes.is_empty()
     }
 
-    /// Get chromosome by index
+    /// Get a reference to the chromosome at `index`, or `None` if out of
+    /// bounds.
     #[inline]
     pub fn get(&self, index: usize) -> Option<&Chromosome> {
         self.chromosomes.get(index)
     }
 
-    /// Get mutable chromosome by index
+    /// Get a mutable reference to the chromosome at `index`, or `None` if out
+    /// of bounds.
     #[inline]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut Chromosome> {
         self.chromosomes.get_mut(index)
     }
 
-    /// Add a chromosome
+    /// Append a `Chromosome` to this haplotype.
     pub fn push(&mut self, chromosome: Chromosome) {
         self.chromosomes.push(chromosome);
     }
 
-    /// Get all chromosomes
+    /// Borrow the slice of chromosomes.
     #[inline]
     pub fn chromosomes(&self) -> &[Chromosome] {
         &self.chromosomes
     }
 
-    /// Get mutable chromosomes
+    /// Borrow the mutable slice of chromosomes.
     #[inline]
     pub fn chromosomes_mut(&mut self) -> &mut [Chromosome] {
         &mut self.chromosomes
     }
 
-    /// Iterate over chromosomes
+    /// Iterate over chromosomes by reference.
     pub fn iter(&self) -> impl Iterator<Item = &Chromosome> {
         self.chromosomes.iter()
     }
 
-    /// Iterate mutably over chromosomes
+    /// Iterate mutably over chromosomes.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Chromosome> {
         self.chromosomes.iter_mut()
     }
 
-    /// Total length across all chromosomes
+    /// Return the total number of bases across all chromosomes in this
+    /// haplotype.
     pub fn total_length(&self) -> usize {
         self.chromosomes.iter().map(|chr| chr.len()).sum()
     }

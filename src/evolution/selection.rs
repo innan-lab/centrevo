@@ -18,6 +18,25 @@ pub trait HaplotypeFitness {
 }
 
 /// Trait for scoring fitness of a diploid individual (two haplotypes).
+///
+/// Implementors should provide an `individual_fitness` method that computes a
+/// non-negative fitness value for the whole individual. The default
+/// implementation composes the per-haplotype score by multiplying the two
+/// haplotype fitness values. Override `individual_fitness` when the fitness
+/// depends on interactions between haplotypes (for example sequence similarity
+/// or length similarity).
+///
+/// Example (override default):
+///
+/// ```rust
+/// # use centrevo::evolution::IndividualFitness;
+/// # use centrevo::genome::Individual;
+/// struct MyFitness;
+/// impl centrevo::evolution::HaplotypeFitness for MyFitness {}
+/// impl IndividualFitness for MyFitness {
+///     fn individual_fitness(&self, _ind: &Individual) -> f64 { 42.0 }
+/// }
+/// ```
 pub trait IndividualFitness: HaplotypeFitness {
     /// Calculate fitness score for a diploid individual.
     ///

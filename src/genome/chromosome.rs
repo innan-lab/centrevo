@@ -1,7 +1,13 @@
 use std::sync::Arc;
 use crate::base::{Alphabet, Sequence, SharedSequence, Nucleotide};
 
-/// A chromosome is a sequence organized into repeat units and higher-order repeats.
+/// A chromosome: a named sequence organized into repeat units (RUs) and
+/// higher-order repeats (HORs).
+///
+/// A `Chromosome` owns a mutable `Sequence` and provides helpers that expose
+/// the repeat structure (RU length, RUs per HOR) and convenience methods such
+/// as GC content and formatted string output. For parallel/read-only
+/// operations prefer `SharedChromosome` which shares sequence storage.
 #[derive(Debug, Clone)]
 pub struct Chromosome {
     /// Unique identifier (shared across clones)
@@ -30,7 +36,10 @@ impl Chromosome {
         }
     }
 
-    /// Create a uniform chromosome (all same base)
+    /// Create a uniform chromosome where every base is the same `base`.
+    ///
+    /// This is a convenience constructor often used in tests and for creating
+    /// deterministic initial populations.
     pub fn uniform(
         id: impl Into<Arc<str>>,
         base: Nucleotide,
@@ -47,67 +56,75 @@ impl Chromosome {
         Self::new(id, sequence, ru_length, rus_per_hor)
     }
 
-    /// Get chromosome ID
+    /// Return the chromosome identifier.
+    ///
+    /// The ID is stored in an `Arc<str>` so cloning the `Chromosome` cheaply
+    /// shares the identifier.
     #[inline]
     pub fn id(&self) -> &str {
         &self.id
     }
 
-    /// Get sequence reference
+    /// Borrow the underlying mutable `Sequence` for read-only operations.
     #[inline]
     pub fn sequence(&self) -> &Sequence {
         &self.sequence
     }
 
-    /// Get mutable sequence reference
+    /// Borrow the underlying `Sequence` mutably to apply in-place modifications
+    /// such as mutation or recombination.
     #[inline]
     pub fn sequence_mut(&mut self) -> &mut Sequence {
         &mut self.sequence
     }
 
-    /// Get length
+    /// Return the length of the chromosome in bases.
     #[inline]
     pub fn len(&self) -> usize {
         self.sequence.len()
     }
 
-    /// Check if empty
+    /// Return true if the chromosome contains no bases.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.sequence.is_empty()
     }
 
-    /// Get repeat unit length
+    /// Get the repeat unit (RU) length in bases.
     #[inline]
     pub fn ru_length(&self) -> usize {
         self.ru_length
     }
 
-    /// Get RUs per HOR
+    /// Get the number of repeat units per higher-order repeat (HOR).
     #[inline]
     pub fn rus_per_hor(&self) -> usize {
         self.rus_per_hor
     }
 
-    /// Get HOR length in bases
+    /// Return the HOR length in bases (RU length × RUs per HOR).
     #[inline]
     pub fn hor_length(&self) -> usize {
         self.ru_length * self.rus_per_hor
     }
 
-    /// Get number of complete HORs
+    /// Return the number of complete HORs contained in this chromosome
+    /// (integer division).
     #[inline]
     pub fn num_hors(&self) -> usize {
         self.len() / self.hor_length()
     }
 
-    /// Get alphabet
+    /// Return the `Alphabet` used by the underlying sequence.
     #[inline]
     pub fn alphabet(&self) -> &Alphabet {
         self.sequence.alphabet()
     }
 
-    /// Calculate GC content
+    /// Calculate GC content of the chromosome as a proportion in [0.0, 1.0].
+    ///
+    /// Positions with invalid indices (not mapping to a `Nucleotide`) are
+    /// ignored.
     pub fn gc_content(&self) -> f64 {
         let mut gc_count = 0;
         let mut total = 0;
@@ -128,7 +145,10 @@ impl Chromosome {
         }
     }
 
-    /// Convert to formatted string with RU and HOR delimiters
+    /// Convert the chromosome sequence to a formatted string inserting
+    /// delimiters between repeat units and higher-order repeats.
+    ///
+    /// `ru_delim` is used between repeat units, `hor_delim` between HORs.
     pub fn to_formatted_string(&self, ru_delim: char, hor_delim: char) -> String {
         let chars: Vec<char> = self.sequence
             .indices()
@@ -153,7 +173,8 @@ impl Chromosome {
         result
     }
 
-    /// Create a shared immutable view
+    /// Create a `SharedChromosome` which provides an immutable, cheaply
+    /// clonable view of this chromosome suitable for parallel read-only use.
     pub fn to_shared(&self) -> SharedChromosome {
         SharedChromosome {
             id: self.id.clone(),
@@ -170,7 +191,11 @@ impl std::fmt::Display for Chromosome {
     }
 }
 
-/// Immutable shared chromosome - use for parallel operations
+/// Immutable, shared view of a chromosome.
+///
+/// `SharedChromosome` contains a reference-counted view of the sequence data
+/// and the repeat-structure metadata. It is intended for read-only access and
+/// cheap cloning across threads.
 #[derive(Debug, Clone)]
 pub struct SharedChromosome {
     id: Arc<str>,
@@ -180,43 +205,43 @@ pub struct SharedChromosome {
 }
 
 impl SharedChromosome {
-    /// Get chromosome ID
+    /// Return the chromosome identifier.
     #[inline]
     pub fn id(&self) -> &str {
         &self.id
     }
 
-    /// Get sequence reference
+    /// Borrow the shared, immutable sequence.
     #[inline]
     pub fn sequence(&self) -> &SharedSequence {
         &self.sequence
     }
 
-    /// Get length
+    /// Return the length of the shared chromosome in bases.
     #[inline]
     pub fn len(&self) -> usize {
         self.sequence.len()
     }
 
-    /// Check if empty
+    /// Return true if the shared chromosome contains no bases.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.sequence.is_empty()
     }
 
-    /// Get repeat unit length
+    /// Get the repeat unit (RU) length in bases.
     #[inline]
     pub fn ru_length(&self) -> usize {
         self.ru_length
     }
 
-    /// Get RUs per HOR
+    /// Get the number of RUs per HOR.
     #[inline]
     pub fn rus_per_hor(&self) -> usize {
         self.rus_per_hor
     }
 
-    /// Calculate GC content
+    /// Calculate GC content for the shared chromosome.
     pub fn gc_content(&self) -> f64 {
         let mut gc_count = 0;
         let mut total = 0;
@@ -237,7 +262,8 @@ impl SharedChromosome {
         }
     }
 
-    /// Clone data into mutable chromosome
+    /// Convert the shared chromosome into an owned `Chromosome` with
+    /// mutable sequence data (clones the underlying indices if necessary).
     pub fn to_mutable(&self) -> Chromosome {
         Chromosome {
             id: self.id.clone(),

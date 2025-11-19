@@ -1,7 +1,11 @@
 use serde::{Serialize, Deserialize};
 
-/// Represents a single nucleotide base.
-/// Uses u8 internally (0=A, 1=C, 2=G, 3=T) for efficiency.
+/// A DNA nucleotide base.
+///
+/// `Nucleotide` is a compact, Copyable representation of DNA bases backed by
+/// a single byte (u8). The mapping of variants to integers is stable and used
+/// throughout the crate (A=0, C=1, G=2, T=3). Use the convenience conversion
+/// functions to go between bytes/chars and `Nucleotide`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Nucleotide {
@@ -24,13 +28,14 @@ impl Nucleotide {
         }
     }
 
-    /// Convert to u8 index (0-3)
+    /// Convert to the compact u8 index (0-3).
     #[inline(always)]
     pub const fn to_index(self) -> u8 {
         self as u8
     }
 
-    /// Convert from ASCII byte
+    /// Convert from an ASCII byte (`b'A'`, `b'C'`, `b'G'`, `b'T'`) and also
+    /// accepts lowercase bytes. Returns `None` for non-standard characters.
     #[inline]
     pub const fn from_ascii(byte: u8) -> Option<Self> {
         match byte {
@@ -42,7 +47,7 @@ impl Nucleotide {
         }
     }
 
-    /// Convert to ASCII byte (uppercase)
+    /// Convert to an uppercase ASCII byte representing this nucleotide.
     #[inline(always)]
     pub const fn to_ascii(self) -> u8 {
         match self {
@@ -53,13 +58,13 @@ impl Nucleotide {
         }
     }
 
-    /// Convert to char
+    /// Convert to an uppercase `char` representing this nucleotide.
     #[inline(always)]
     pub const fn to_char(self) -> char {
         self.to_ascii() as char
     }
 
-    /// Get complement base
+    /// Return the complementary base (A <-> T, C <-> G).
     #[inline(always)]
     pub const fn complement(self) -> Self {
         match self {
@@ -70,13 +75,13 @@ impl Nucleotide {
         }
     }
 
-    /// Check if purine (A or G)
+    /// Return true if the nucleotide is a purine (A or G).
     #[inline(always)]
     pub const fn is_purine(self) -> bool {
         matches!(self, Self::A | Self::G)
     }
 
-    /// Check if pyrimidine (C or T)
+    /// Return true if the nucleotide is a pyrimidine (C or T).
     #[inline(always)]
     pub const fn is_pyrimidine(self) -> bool {
         matches!(self, Self::C | Self::T)
@@ -105,6 +110,21 @@ impl From<Nucleotide> for char {
     }
 }
 
+
+/// Error returned when attempting to convert an invalid byte/character into
+/// a `Nucleotide`.
+///
+/// The inner `u8` is the original byte that failed to parse. This type
+/// implements `std::error::Error` and `Display` to provide helpful messages
+/// when surfaced to callers or upstream libraries.
+///
+/// Example:
+///
+/// ```rust
+/// # use centrevo::Nucleotide;
+/// let err = Nucleotide::try_from(b'X').unwrap_err();
+/// println!("{err}");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidNucleotide(pub u8);
 

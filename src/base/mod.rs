@@ -5,6 +5,8 @@
 
 mod nucleotide;
 mod sequence;
+mod errors;
 
-pub use nucleotide::{InvalidNucleotide, Nucleotide};
-pub use sequence::{InvalidSequence, OutOfBounds, Sequence, SharedSequence};
+pub use nucleotide::Nucleotide;
+pub use sequence::{Sequence, SharedSequence};
+pub use errors::{InvalidNucleotide, InvalidSequence, OutOfBounds};

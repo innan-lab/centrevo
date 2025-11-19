@@ -1,6 +1,8 @@
 use super::Nucleotide;
 use std::fmt;
 use std::sync::Arc;
+use std::str::FromStr;
+use super::errors::{InvalidSequence, OutOfBounds};
 
 /// Mutable biological sequence backed by a vector of Nucleotides.
 ///
@@ -8,7 +10,7 @@ use std::sync::Arc;
 /// in-place operations such as mutation, insertion, and deletion. For read-only,
 /// shareable views convert to `SharedSequence` using `to_shared` or `into_shared`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Sequence(pub Vec<Nucleotide>);
+pub struct Sequence(Vec<Nucleotide>);
 
 impl Sequence {
     /// Create a new, empty `Sequence`.
@@ -32,19 +34,6 @@ impl Sequence {
     /// Create a `Sequence` from a vector of `Nucleotide`s.
     pub fn from_nucleotides(nucleotides: Vec<Nucleotide>) -> Self {
         Self(nucleotides)
-    }
-
-    /// Parse a textual representation (e.g. "ACGT") into a `Sequence`.
-    ///
-    /// Characters not present in the standard DNA alphabet produce an
-    /// `InvalidSequence` error. This function is case-insensitive for ASCII letters.
-    pub fn from_str(s: &str) -> Result<Self, InvalidSequence> {
-        let data: Result<Vec<Nucleotide>, _> = s
-            .chars()
-            .map(|c| Nucleotide::from_ascii(c as u8).ok_or(InvalidSequence::InvalidChar(c)))
-            .collect();
-
-        Ok(Self(data?))
     }
 
     /// Return the length of the sequence in bases.
@@ -151,6 +140,23 @@ impl fmt::Display for Sequence {
     }
 }
 
+impl FromStr for Sequence {
+    type Err = InvalidSequence;
+
+    /// Parse a textual representation (e.g. "ACGT") into a `Sequence`.
+    ///
+    /// Characters not present in the standard DNA alphabet produce an
+    /// `InvalidSequence` error. This function is case-insensitive for ASCII letters.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let data: Result<Vec<Nucleotide>, _> = s
+            .chars()
+            .map(|c| Nucleotide::from_ascii(c as u8).ok_or(InvalidSequence::InvalidChar(c)))
+            .collect();
+
+        Ok(Self(data?))
+    }
+}
+
 /// Immutable, shareable sequence view.
 ///
 /// `SharedSequence` holds its data in a reference-counted `Arc<[Nucleotide]>`.
@@ -213,46 +219,6 @@ impl fmt::Display for SharedSequence {
         Ok(())
     }
 }
-
-// Errors
-/// Error type for failures when constructing or manipulating a `Sequence`.
-#[derive(Debug, Clone)]
-pub enum InvalidSequence {
-    /// A character was not recognized as a valid nucleotide.
-    InvalidChar(char),
-
-    /// The sequence was empty when a non-empty sequence was required.
-    EmptySequence,
-}
-
-impl std::fmt::Display for InvalidSequence {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidChar(c) => write!(f, "Invalid character in sequence: '{c}'"),
-            Self::EmptySequence => write!(f, "Empty sequence not allowed"),
-        }
-    }
-}
-
-impl std::error::Error for InvalidSequence {}
-
-/// Error returned when an index is outside the valid range for a sequence.
-#[derive(Debug, Clone, Copy)]
-pub struct OutOfBounds {
-    /// The index that was requested
-    pub index: usize,
-
-    /// The current length of the sequence (upper bound)
-    pub len: usize,
-}
-
-impl std::fmt::Display for OutOfBounds {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Index {} out of bounds (len = {})", self.index, self.len)
-    }
-}
-
-impl std::error::Error for OutOfBounds {}
 
 #[cfg(test)]
 mod tests {

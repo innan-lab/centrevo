@@ -1,4 +1,7 @@
+use core::fmt;
+
 use serde::{Serialize, Deserialize};
+use super::errors::InvalidNucleotide;
 
 /// A DNA nucleotide base.
 ///
@@ -110,31 +113,12 @@ impl From<Nucleotide> for char {
     }
 }
 
-
-/// Error returned when attempting to convert an invalid byte/character into
-/// a `Nucleotide`.
-///
-/// The inner `u8` is the original byte that failed to parse. This type
-/// implements `std::error::Error` and `Display` to provide helpful messages
-/// when surfaced to callers or upstream libraries.
-///
-/// Example:
-///
-/// ```rust
-/// # use centrevo::Nucleotide;
-/// let err = Nucleotide::try_from(b'X').unwrap_err();
-/// println!("{err}");
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidNucleotide(pub u8);
-
-impl std::fmt::Display for InvalidNucleotide {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Invalid nucleotide byte: {} ('{}')", self.0, self.0 as char)
+impl fmt::Display for Nucleotide {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_char())
     }
 }
 
-impl std::error::Error for InvalidNucleotide {}
 
 #[cfg(test)]
 mod tests {
@@ -254,7 +238,7 @@ mod tests {
     #[test]
     fn test_invalid_nucleotide_display() {
         let err = InvalidNucleotide(b'X');
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("Invalid"));
         assert!(msg.contains("88")); // ASCII value of 'X'
         assert!(msg.contains("X"));

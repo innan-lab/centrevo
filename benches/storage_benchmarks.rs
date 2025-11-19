@@ -1,5 +1,5 @@
 use centrevo::{
-    base::{Alphabet, Nucleotide},
+    base::Nucleotide,
     genome::{Chromosome, Haplotype, Individual},
     simulation::Population,
     storage::{AsyncRecorder, BufferConfig, Recorder, RecordingStrategy},
@@ -8,22 +8,20 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use std::hint::black_box;
 
 fn create_test_individual(id: &str, length: usize) -> Individual {
-    let alphabet = Alphabet::dna();
+    
     let chr1 = Chromosome::uniform(
-        format!("{}_h1_chr1", id),
+        format!("{id}_h1_chr1"),
         Nucleotide::A,
         length,
         20,
         5,
-        alphabet.clone(),
     );
     let chr2 = Chromosome::uniform(
-        format!("{}_h2_chr1", id),
+        format!("{id}_h2_chr1"),
         Nucleotide::C,
         length,
         20,
         5,
-        alphabet,
     );
 
     let h1 = Haplotype::from_chromosomes(vec![chr1]);
@@ -35,7 +33,7 @@ fn create_test_individual(id: &str, length: usize) -> Individual {
 fn create_test_population(size: usize, chr_length: usize) -> Population {
     let mut individuals = Vec::new();
     for i in 0..size {
-        let mut ind = create_test_individual(&format!("ind_{}", i), chr_length);
+        let mut ind = create_test_individual(&format!("ind_{i}"), chr_length);
         ind.set_fitness(i as f64 / size as f64);
         individuals.push(ind);
     }

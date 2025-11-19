@@ -2,7 +2,7 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use centrevo::base::{Alphabet, Nucleotide};
+use centrevo::base::{Nucleotide};
 use centrevo::simulation::{
     Simulation, RepeatStructure, MutationConfig, RecombinationConfig,
     FitnessConfig, SimulationConfig,
@@ -14,10 +14,9 @@ fn create_test_simulation(
     chr_length: usize,
     generations: usize,
 ) -> Simulation {
-    let alphabet = Alphabet::dna();
+    
     
     let structure = RepeatStructure::new(
-        alphabet.clone(),
         Nucleotide::A,
         171,
         12,
@@ -25,7 +24,7 @@ fn create_test_simulation(
         1,
     );
     
-    let mutation = MutationConfig::uniform(alphabet, 0.001).unwrap();
+    let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(pop_size, generations, Some(42));
@@ -38,10 +37,9 @@ fn create_simulation_with_fitness(
     chr_length: usize,
     generations: usize,
 ) -> Simulation {
-    let alphabet = Alphabet::dna();
+    
     
     let structure = RepeatStructure::new(
-        alphabet.clone(),
         Nucleotide::A,
         171,
         12,
@@ -49,7 +47,7 @@ fn create_simulation_with_fitness(
         1,
     );
     
-    let mutation = MutationConfig::uniform(alphabet, 0.001).unwrap();
+    let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     
     let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
@@ -243,9 +241,8 @@ fn bench_mutation_rates(c: &mut Criterion) {
     let rates = [0.0001, 0.001, 0.01];
     
     for rate in rates {
-        let alphabet = Alphabet::dna();
+        
         let structure = RepeatStructure::new(
-            alphabet.clone(),
             Nucleotide::A,
             171,
             12,
@@ -253,7 +250,7 @@ fn bench_mutation_rates(c: &mut Criterion) {
             1,
         );
         
-        let mutation = MutationConfig::uniform(alphabet, rate).unwrap();
+        let mutation = MutationConfig::uniform(rate).unwrap();
         let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
         let fitness = FitnessConfig::neutral();
         let config = SimulationConfig::new(pop_size, 1, Some(42));

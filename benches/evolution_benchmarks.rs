@@ -1,7 +1,7 @@
 //! Benchmarks for evolution module (mutation, recombination, selection operations).
 use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use centrevo::base::{Alphabet, Nucleotide, Sequence};
+use centrevo::base::{Nucleotide, Sequence};
 use centrevo::genome::{Chromosome, Haplotype, Individual};
 use centrevo::evolution::{
     SubstitutionModel, RecombinationParams, 
@@ -11,8 +11,8 @@ use centrevo::evolution::{
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
 
-fn create_test_sequence(size: usize, alphabet: Alphabet) -> Sequence {
-    let mut seq = Sequence::with_capacity(size, alphabet);
+fn create_test_sequence(size: usize) -> Sequence {
+    let mut seq = Sequence::with_capacity(size);
     for i in 0..size {
         seq.push(match i % 4 {
             0 => Nucleotide::A,
@@ -25,8 +25,8 @@ fn create_test_sequence(size: usize, alphabet: Alphabet) -> Sequence {
 }
 
 fn create_test_individual(size: usize) -> Individual {
-    let alphabet = Alphabet::dna();
-    let seq = create_test_sequence(size, alphabet.clone());
+    
+    let seq = create_test_sequence(size);
     let chr1 = Chromosome::new("chr1", seq.clone(), 171, 12);
     let chr2 = Chromosome::new("chr2", seq, 171, 12);
     
@@ -41,13 +41,13 @@ fn create_test_individual(size: usize) -> Individual {
 /// Benchmark mutation operations
 fn bench_mutation(c: &mut Criterion) {
     let mut group = c.benchmark_group("mutation");
-    let alphabet = Alphabet::dna();
+    
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let rates = [0.001, 0.01, 0.1];
     let sizes = [1_000, 10_000, 100_000];
     
     for rate in rates {
-        let model = SubstitutionModel::uniform(alphabet.clone(), rate).unwrap();
+        let model = SubstitutionModel::uniform(rate).unwrap();
         
         for size in sizes {
             let label = format!("rate_{}_size_{}", rate, size);
@@ -59,7 +59,7 @@ fn bench_mutation(c: &mut Criterion) {
                 &size,
                 |b, &s| {
                     b.iter(|| {
-                        let mut seq = create_test_sequence(s, alphabet.clone());
+                        let mut seq = create_test_sequence(s);
                         model.mutate_sequence(&mut seq, &mut rng);
                         black_box(seq)
                     });
@@ -72,7 +72,7 @@ fn bench_mutation(c: &mut Criterion) {
                 &size,
                 |b, &s| {
                     b.iter(|| {
-                        let mut seq = create_test_sequence(s, alphabet.clone());
+                        let mut seq = create_test_sequence(s);
                         model.mutate_sequence_poisson(&mut seq, &mut rng);
                         black_box(seq)
                     });
@@ -87,12 +87,12 @@ fn bench_mutation(c: &mut Criterion) {
 /// Benchmark single base mutation
 fn bench_mutate_base(c: &mut Criterion) {
     let mut group = c.benchmark_group("mutate_base");
-    let alphabet = Alphabet::dna();
+    
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let rates = [0.001, 0.01, 0.1];
     
     for rate in rates {
-        let model = SubstitutionModel::uniform(alphabet.clone(), rate).unwrap();
+        let model = SubstitutionModel::uniform(rate).unwrap();
         
         group.bench_with_input(
             BenchmarkId::new("single", rate),
@@ -111,7 +111,7 @@ fn bench_mutate_base(c: &mut Criterion) {
 /// Benchmark recombination operations
 fn bench_recombination(c: &mut Criterion) {
     let mut group = c.benchmark_group("recombination");
-    let alphabet = Alphabet::dna();
+    
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let sizes = [1_000, 10_000, 100_000];
     
@@ -130,8 +130,8 @@ fn bench_recombination(c: &mut Criterion) {
         );
         
         // Benchmark crossover
-        let seq1 = create_test_sequence(size, alphabet.clone());
-        let seq2 = create_test_sequence(size, alphabet.clone());
+        let seq1 = create_test_sequence(size);
+        let seq2 = create_test_sequence(size);
         let position = size / 2;
         
         group.bench_with_input(
@@ -163,7 +163,7 @@ fn bench_recombination(c: &mut Criterion) {
 /// Benchmark fitness calculations
 fn bench_fitness(c: &mut Criterion) {
     let mut group = c.benchmark_group("fitness");
-    let alphabet = Alphabet::dna();
+    
     let sizes = [1_000, 10_000, 100_000];
     
     // GC content fitness
@@ -172,7 +172,7 @@ fn bench_fitness(c: &mut Criterion) {
     for size in sizes {
         let chr = Chromosome::new(
             "chr1",
-            create_test_sequence(size, alphabet.clone()),
+            create_test_sequence(size),
             171,
             12,
         );
@@ -194,7 +194,7 @@ fn bench_fitness(c: &mut Criterion) {
     for size in sizes {
         let chr = Chromosome::new(
             "chr1",
-            create_test_sequence(size, alphabet.clone()),
+            create_test_sequence(size),
             171,
             12,
         );
@@ -229,17 +229,17 @@ fn bench_fitness(c: &mut Criterion) {
 /// Benchmark combined evolution operations
 fn bench_combined_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("combined_operations");
-    let alphabet = Alphabet::dna();
+    
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let size = 10_000;
     
-    let mutation_model = SubstitutionModel::uniform(alphabet.clone(), 0.001).unwrap();
+    let mutation_model = SubstitutionModel::uniform(0.001).unwrap();
     let recomb_params = RecombinationParams::new(0.01, 0.7, 0.1).unwrap();
     let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
     
     group.bench_function("mutation_then_fitness", |b| {
         b.iter(|| {
-            let mut seq = create_test_sequence(size, alphabet.clone());
+            let mut seq = create_test_sequence(size);
             mutation_model.mutate_sequence(&mut seq, &mut rng);
             let chr = Chromosome::new("chr1", seq, 171, 12);
             black_box(gc_fitness.haplotype_fitness(&chr))
@@ -248,8 +248,8 @@ fn bench_combined_operations(c: &mut Criterion) {
     
     group.bench_function("recombination_then_fitness", |b| {
         b.iter(|| {
-            let seq1 = create_test_sequence(size, alphabet.clone());
-            let seq2 = create_test_sequence(size, alphabet.clone());
+            let seq1 = create_test_sequence(size);
+            let seq2 = create_test_sequence(size);
             let event = recomb_params.sample_event(size, &mut rng);
             
             let result_seq = match event {

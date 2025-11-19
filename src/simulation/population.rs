@@ -191,7 +191,7 @@ mod tests {
             seq.push(base);
         }
 
-        let chr = Chromosome::new(format!("chr_{}", id), seq, 10, 5);
+        let chr = Chromosome::new(format!("chr_{id}"), seq, 10, 5);
         let mut hap1 = Haplotype::new();
         hap1.push(chr.clone());
         let mut hap2 = Haplotype::new();

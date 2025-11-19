@@ -306,7 +306,7 @@ mod tests {
 
         // Add 23 chromosomes (human genome)
         for i in 1..=23 {
-            hap.push(test_chromosome(&format!("chr{}", i), i * 100));
+            hap.push(test_chromosome(&format!("chr{i}"), i * 100));
         }
 
         assert_eq!(hap.len(), 23);
@@ -326,7 +326,7 @@ mod tests {
 
         // Add some chromosomes
         for i in 1..=5 {
-            hap.push(test_chromosome(&format!("chr{}", i), i * 100));
+            hap.push(test_chromosome(&format!("chr{i}"), i * 100));
         }
 
         // Random access

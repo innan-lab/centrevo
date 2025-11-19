@@ -21,7 +21,7 @@ fn create_test_structure() -> RepeatStructure {
 }
 
 fn create_test_configs() -> (MutationConfig, RecombinationConfig, FitnessConfig, SimulationConfig) {
-    let alphabet = Alphabet::dna();
+    
     let mutation = MutationConfig::uniform(alphabet, 0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();

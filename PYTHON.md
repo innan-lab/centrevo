@@ -360,7 +360,7 @@ sim.run()
   - Static method: `dna()` - Creates standard DNA alphabet
   
 - **`Chromosome`**: Chromosome with repeat structure
-  - Static method: `uniform(id, base, length, ru_length, rus_per_hor, alphabet)`
+  - Static method: `uniform(id, base, length, ru_length, rus_per_hor)`
   
 - **`Haplotype`**: Collection of chromosomes
   - Constructor: `Haplotype()`

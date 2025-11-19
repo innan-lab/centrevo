@@ -2,7 +2,7 @@
 //! Tests the interaction between recording simulation data and querying it back.
 
 use centrevo::{
-    base::{Alphabet, Nucleotide},
+    base::Nucleotide,
     simulation::{
         FitnessConfig, MutationConfig, RecombinationConfig, RepeatStructure, Simulation,
         SimulationConfig,
@@ -16,9 +16,8 @@ fn test_record_and_query_simulation() {
     let _ = std::fs::remove_file(path);
 
     // Create and run simulation
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::A, 20, 10, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::A, 20, 10, 10, 1);
+    let mutation = MutationConfig::uniform(0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(20, 10, Some(42));
@@ -81,9 +80,8 @@ fn test_partial_recording_strategy() {
     let _ = std::fs::remove_file(path);
 
     // Create simulation
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::C, 15, 10, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new( Nucleotide::C, 15, 10, 10, 1);
+    let mutation = MutationConfig::uniform( 0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(30, 20, Some(123));
@@ -128,9 +126,8 @@ fn test_multiple_simulations_in_one_database() {
     let path = "/tmp/test_multi_sim.sqlite";
     let _ = std::fs::remove_file(path);
 
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::G, 10, 10, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new( Nucleotide::G, 10, 10, 10, 1);
+    let mutation = MutationConfig::uniform(0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
 
@@ -184,9 +181,8 @@ fn test_fitness_tracking_over_generations() {
     let _ = std::fs::remove_file(path);
 
     // Create simulation with selection
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::A, 20, 10, 5, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::A, 20, 10, 5, 1);
+    let mutation = MutationConfig::uniform( 0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
 
     use centrevo::evolution::GCContentFitness;
@@ -243,9 +239,8 @@ fn test_query_nonexistent_data() {
     let _ = std::fs::remove_file(path);
 
     // Create simulation and database
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::T, 10, 10, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::T, 10, 10, 10, 1);
+    let mutation = MutationConfig::uniform(0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(10, 1, Some(789));

@@ -2,11 +2,11 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use centrevo::base::{Alphabet, Nucleotide, Sequence};
+use centrevo::base::{Nucleotide, Sequence};
 use centrevo::genome::{Chromosome, Haplotype, Individual};
 
-fn create_test_chromosome(size: usize, alphabet: Alphabet) -> Chromosome {
-    let mut seq = Sequence::with_capacity(size, alphabet);
+fn create_test_chromosome(size: usize) -> Chromosome {
+    let mut seq = Sequence::with_capacity(size);
     for i in 0..size {
         seq.push(match i % 4 {
             0 => Nucleotide::A,
@@ -19,13 +19,13 @@ fn create_test_chromosome(size: usize, alphabet: Alphabet) -> Chromosome {
 }
 
 fn create_test_individual(chr_size: usize, n_chromosomes: usize) -> Individual {
-    let alphabet = Alphabet::dna();
+    
     let mut hap1 = Haplotype::new();
     let mut hap2 = Haplotype::new();
     
     for _ in 0..n_chromosomes {
-        let chr1 = create_test_chromosome(chr_size, alphabet.clone());
-        let chr2 = create_test_chromosome(chr_size, alphabet.clone());
+        let chr1 = create_test_chromosome(chr_size);
+        let chr2 = create_test_chromosome(chr_size);
         hap1.push(chr1);
         hap2.push(chr2);
     }
@@ -36,13 +36,13 @@ fn create_test_individual(chr_size: usize, n_chromosomes: usize) -> Individual {
 /// Benchmark chromosome creation
 fn bench_chromosome_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("chromosome_creation");
-    let alphabet = Alphabet::dna();
+    
     let sizes = [1_000, 10_000, 100_000];
     
     for size in sizes {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::new("create", size), &size, |b, &s| {
-            b.iter(|| black_box(create_test_chromosome(s, alphabet.clone())));
+            b.iter(|| black_box(create_test_chromosome(s)));
         });
     }
     
@@ -52,11 +52,11 @@ fn bench_chromosome_creation(c: &mut Criterion) {
 /// Benchmark chromosome operations
 fn bench_chromosome_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("chromosome_operations");
-    let alphabet = Alphabet::dna();
+    
     let sizes = [1_000, 10_000, 100_000];
     
     for size in sizes {
-        let chr = create_test_chromosome(size, alphabet.clone());
+        let chr = create_test_chromosome(size);
         
         group.throughput(Throughput::Elements(size as u64));
         
@@ -87,7 +87,7 @@ fn bench_chromosome_operations(c: &mut Criterion) {
 /// Benchmark haplotype operations
 fn bench_haplotype_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("haplotype_operations");
-    let alphabet = Alphabet::dna();
+    
     let chr_sizes = [1_000, 10_000];
     let n_chromosomes_list = [1, 10, 50];
     
@@ -95,7 +95,7 @@ fn bench_haplotype_operations(c: &mut Criterion) {
         for n_chromosomes in n_chromosomes_list {
             let mut hap = Haplotype::new();
             for _ in 0..n_chromosomes {
-                hap.push(create_test_chromosome(chr_size, alphabet.clone()));
+                hap.push(create_test_chromosome(chr_size));
             }
             
             let label = format!("{}chr_x_{}", n_chromosomes, chr_size);

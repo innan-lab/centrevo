@@ -3,10 +3,10 @@
 //! This module provides mutation functionality including point substitutions
 //! based on substitution models (e.g., JC69, uniform).
 
-use crate::base::{Nucleotide, Sequence};
 use rand::Rng;
 use rand_distr::{Distribution, Poisson};
 use serde::{Deserialize, Serialize};
+use crate::base::{Nucleotide, Sequence};
 
 /// Substitution model for nucleotide mutations.
 ///
@@ -328,6 +328,7 @@ impl std::error::Error for MutationError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
     use rand::SeedableRng;
     use rand_xoshiro::Xoshiro256PlusPlus;
 
@@ -473,7 +474,7 @@ mod tests {
     #[test]
     fn test_mutation_error_display() {
         let err = MutationError::InvalidMutationRate(1.5);
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("Invalid mutation rate"));
         assert!(msg.contains("1.5"));
     }
@@ -601,9 +602,7 @@ mod tests {
         let diff_ratio = (mean_standard - mean_poisson).abs() / mean_standard.max(mean_poisson);
         assert!(
             diff_ratio < 0.2,
-            "Mean difference too large: standard={}, poisson={}",
-            mean_standard,
-            mean_poisson
+            "Mean difference too large: standard={mean_standard}, poisson={mean_poisson}",
         );
     }
 

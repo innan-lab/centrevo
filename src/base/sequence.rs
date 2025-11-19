@@ -582,7 +582,7 @@ mod tests {
     #[test]
     fn test_invalid_sequence_display() {
         let err = InvalidSequence::InvalidChar('N');
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("Invalid character"));
         assert!(msg.contains("N"));
     }
@@ -590,14 +590,14 @@ mod tests {
     #[test]
     fn test_invalid_sequence_empty_display() {
         let err = InvalidSequence::EmptySequence;
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("Empty sequence"));
     }
 
     #[test]
     fn test_out_of_bounds_display() {
         let err = OutOfBounds { index: 10, len: 5 };
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("10"));
         assert!(msg.contains("5"));
         assert!(msg.contains("out of bounds"));

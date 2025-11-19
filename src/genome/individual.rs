@@ -90,7 +90,6 @@ impl Individual {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::*;
     use crate::base::Nucleotide;
     use crate::genome::Chromosome;
 
@@ -101,7 +100,7 @@ mod tests {
     fn test_haplotype(num_chrs: usize) -> Haplotype {
         let mut hap = Haplotype::new();
         for i in 1..=num_chrs {
-            hap.push(test_chromosome(&format!("chr{}", i), i * 100));
+            hap.push(test_chromosome(&format!("chr{i}"), i * 100));
         }
         hap
     }
@@ -330,14 +329,14 @@ mod tests {
         // Add multiple chromosomes with different structures
         for i in 1..=5 {
             hap1.push(Chromosome::uniform(
-                format!("chr{}", i),
+                format!("chr{i}"),
                 Nucleotide::A,
                 i * 1000,
                 171,
                 12,
             ));
             hap2.push(Chromosome::uniform(
-                format!("chr{}", i),
+                format!("chr{i}"),
                 Nucleotide::C,
                 i * 1000,
                 171,
@@ -403,8 +402,8 @@ mod tests {
         let mut hap2 = Haplotype::new();
 
         for i in 1..=23 {
-            hap1.push(test_chromosome(&format!("chr{}", i), i * 10_000));
-            hap2.push(test_chromosome(&format!("chr{}", i), i * 10_000));
+            hap1.push(test_chromosome(&format!("chr{i}"), i * 10_000));
+            hap2.push(test_chromosome(&format!("chr{i}"), i * 10_000));
         }
 
         let ind = Individual::new("ind1", hap1, hap2);

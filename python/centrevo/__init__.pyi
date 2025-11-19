@@ -564,7 +564,7 @@ class SimulationBuilder:
         """
         ...
     
-    def alphabet(self, alphabet: Alphabet) -> SimulationBuilder:
+    def alphabet(self: Alphabet) -> SimulationBuilder:
         """Set the alphabet (default: DNA).
         
         Args:

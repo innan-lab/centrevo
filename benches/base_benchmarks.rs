@@ -1,7 +1,8 @@
-//! Benchmarks for base module (nucleotide, alphabet, sequence operations).
+//! Benchmarks for base module (nucleotide, sequence operations).
+use std::str::FromStr;
 use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use centrevo::base::{Alphabet, Nucleotide, Sequence};
+use centrevo::base::{Nucleotide, Sequence};
 
 /// Benchmark nucleotide conversions
 fn bench_nucleotide_conversions(c: &mut Criterion) {
@@ -37,44 +38,10 @@ fn bench_nucleotide_conversions(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark alphabet operations
-fn bench_alphabet_operations(c: &mut Criterion) {
-    let mut group = c.benchmark_group("alphabet_operations");
-    let alphabet = Alphabet::dna();
-    
-    group.bench_function("create_dna", |b| {
-        b.iter(|| black_box(Alphabet::dna()));
-    });
-    
-    group.bench_function("clone", |b| {
-        b.iter(|| black_box(alphabet.clone()));
-    });
-    
-    group.bench_function("get_char", |b| {
-        b.iter(|| {
-            black_box(alphabet.get_char(0));
-            black_box(alphabet.get_char(1));
-            black_box(alphabet.get_char(2));
-            black_box(alphabet.get_char(3));
-        });
-    });
-    
-    group.bench_function("get_index", |b| {
-        b.iter(|| {
-            black_box(alphabet.get_index('A'));
-            black_box(alphabet.get_index('C'));
-            black_box(alphabet.get_index('G'));
-            black_box(alphabet.get_index('T'));
-        });
-    });
-    
-    group.finish();
-}
-
 /// Benchmark sequence creation
 fn bench_sequence_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("sequence_creation");
-    let alphabet = Alphabet::dna();
+    
     let sizes = [100, 1_000, 10_000, 100_000];
     
     for size in sizes {
@@ -83,13 +50,13 @@ fn bench_sequence_creation(c: &mut Criterion) {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::new("from_str", size), &size, |b, _| {
             b.iter(|| {
-                black_box(Sequence::from_str(&seq_str, alphabet.clone()).unwrap())
+                black_box(Sequence::from_str(&seq_str).unwrap())
             });
         });
         
         group.bench_with_input(BenchmarkId::new("with_capacity", size), &size, |b, &s| {
             b.iter(|| {
-                black_box(Sequence::with_capacity(s, alphabet.clone()))
+                black_box(Sequence::with_capacity(s))
             });
         });
     }
@@ -100,12 +67,12 @@ fn bench_sequence_creation(c: &mut Criterion) {
 /// Benchmark sequence operations
 fn bench_sequence_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("sequence_operations");
-    let alphabet = Alphabet::dna();
+    
     let sizes = [1_000, 10_000, 100_000];
     
     for size in sizes {
         let seq_str = "ACGT".repeat(size / 4);
-        let seq = Sequence::from_str(&seq_str, alphabet.clone()).unwrap();
+        let seq = Sequence::from_str(&seq_str).unwrap();
         
         group.throughput(Throughput::Elements(size as u64));
         
@@ -144,19 +111,19 @@ fn bench_sequence_operations(c: &mut Criterion) {
 /// Benchmark sequence iteration
 fn bench_sequence_iteration(c: &mut Criterion) {
     let mut group = c.benchmark_group("sequence_iteration");
-    let alphabet = Alphabet::dna();
+    
     let sizes = [1_000, 10_000, 100_000];
     
     for size in sizes {
         let seq_str = "ACGT".repeat(size / 4);
-        let seq = Sequence::from_str(&seq_str, alphabet.clone()).unwrap();
+        let seq = Sequence::from_str(&seq_str).unwrap();
         
         group.throughput(Throughput::Elements(size as u64));
         
         group.bench_with_input(BenchmarkId::new("iterate_indices", size), &seq, |b, s| {
             b.iter(|| {
                 let mut sum = 0u64;
-                for &idx in s.indices() {
+                for &idx in s.as_slice() {
                     sum += idx as u64;
                 }
                 black_box(sum)
@@ -182,11 +149,11 @@ fn bench_sequence_iteration(c: &mut Criterion) {
 /// Benchmark sequence modifications
 fn bench_sequence_modifications(c: &mut Criterion) {
     let mut group = c.benchmark_group("sequence_modifications");
-    let alphabet = Alphabet::dna();
+    
     
     group.bench_function("push_100", |b| {
         b.iter(|| {
-            let mut seq = Sequence::with_capacity(100, alphabet.clone());
+            let mut seq = Sequence::with_capacity(100);
             for _ in 0..100 {
                 seq.push(Nucleotide::A);
             }
@@ -196,7 +163,7 @@ fn bench_sequence_modifications(c: &mut Criterion) {
     
     group.bench_function("set_sequential", |b| {
         b.iter(|| {
-            let mut seq = Sequence::from_str(&"A".repeat(1000), alphabet.clone()).unwrap();
+            let mut seq = Sequence::from_str(&"A".repeat(1000)).unwrap();
             for i in 0..seq.len() {
                 let _ = seq.set(i, Nucleotide::C);
             }
@@ -206,7 +173,7 @@ fn bench_sequence_modifications(c: &mut Criterion) {
     
     group.bench_function("insert_middle", |b| {
         b.iter(|| {
-            let mut seq = Sequence::from_str(&"ACGT".repeat(100), alphabet.clone()).unwrap();
+            let mut seq = Sequence::from_str(&"ACGT".repeat(100)).unwrap();
             seq.insert(seq.len() / 2, Nucleotide::G);
             black_box(seq)
         });
@@ -218,7 +185,7 @@ fn bench_sequence_modifications(c: &mut Criterion) {
 /// Benchmark memory usage patterns
 fn bench_memory_patterns(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_patterns");
-    let alphabet = Alphabet::dna();
+    
     let size = 10_000;
     let seq_str = "ACGT".repeat(size / 4);
     
@@ -226,14 +193,14 @@ fn bench_memory_patterns(c: &mut Criterion) {
         b.iter(|| {
             let mut sequences = Vec::with_capacity(1000);
             for _ in 0..1000 {
-                sequences.push(Sequence::from_str(&seq_str, alphabet.clone()).unwrap());
+                sequences.push(Sequence::from_str(&seq_str).unwrap());
             }
             black_box(sequences)
         });
     });
     
     group.bench_function("create_1000_shared", |b| {
-        let base_seq = Sequence::from_str(&seq_str, alphabet.clone()).unwrap().to_shared();
+        let base_seq = Sequence::from_str(&seq_str).unwrap().to_shared();
         b.iter(|| {
             let mut sequences = Vec::with_capacity(1000);
             for _ in 0..1000 {
@@ -249,7 +216,6 @@ fn bench_memory_patterns(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_nucleotide_conversions,
-    bench_alphabet_operations,
     bench_sequence_creation,
     bench_sequence_operations,
     bench_sequence_iteration,

@@ -315,7 +315,7 @@ If upgrading from v0.1.x:
   - Individual snapshots at specific generations
 
 - **Benchmarks** (~1,200 LOC)
-  - Base operations (nucleotide, alphabet, sequence)
+  - Base operations (nucleotide, sequence)
   - Genome operations (chromosome, haplotype, individual)
   - Evolution operations (mutation, recombination, fitness)
   - Full simulation benchmarks

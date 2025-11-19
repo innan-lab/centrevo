@@ -275,6 +275,7 @@ impl std::error::Error for RecombinationError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
     use rand::SeedableRng;
     use rand_xoshiro::Xoshiro256PlusPlus;
 
@@ -476,11 +477,11 @@ mod tests {
     #[test]
     fn test_error_display() {
         let err = RecombinationError::InvalidProbability("test", 1.5);
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("Invalid probability"));
 
         let err = RecombinationError::LengthMismatch { len1: 10, len2: 20 };
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("length mismatch"));
     }
 

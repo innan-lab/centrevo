@@ -8,6 +8,7 @@ use crate::base::{Nucleotide, Sequence};
 use crate::genome::{Chromosome, Haplotype, Individual};
 use crate::simulation::RepeatStructure;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -706,7 +707,7 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         writeln!(file, ">ind0_hap0_chr0").unwrap();
         writeln!(file, "ACGT").unwrap();
-        writeln!(file, "").unwrap();
+        writeln!(file).unwrap();
         writeln!(file, "ACGT").unwrap();
 
         let entries = parse_fasta(file.path()).unwrap();

@@ -3,9 +3,9 @@
 //! This module provides fitness scoring capabilities including GC content,
 //! length-based, and sequence similarity fitness functions.
 
+use serde::{Deserialize, Serialize};
 use crate::base::Nucleotide;
 use crate::genome::{Chromosome, Individual};
-use serde::{Deserialize, Serialize};
 
 /// Trait for scoring fitness of a single haplotype (chromosome).
 pub trait HaplotypeFitness {
@@ -319,6 +319,7 @@ impl std::error::Error for FitnessError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
     use crate::genome::Haplotype;
 
     fn test_chromosome(seq: &str) -> Chromosome {
@@ -613,7 +614,7 @@ mod tests {
     #[test]
     fn test_fitness_error_display() {
         let err = FitnessError::InvalidParameter("test message".into());
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("Invalid fitness parameter"));
         assert!(msg.contains("test message"));
     }

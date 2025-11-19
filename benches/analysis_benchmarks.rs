@@ -2,7 +2,7 @@ use centrevo::analysis::{
     nucleotide_diversity, tajimas_d, wattersons_theta, haplotype_diversity,
     linkage_disequilibrium, pairwise_distances, gc_content,
 };
-use centrevo::base::{Alphabet, Nucleotide, Sequence};
+use centrevo::base::{Nucleotide, Sequence};
 use centrevo::genome::{Chromosome, Haplotype, Individual};
 use centrevo::simulation::Population;
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
@@ -11,10 +11,10 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use std::hint::black_box;
 
 fn create_random_individual(id: &str, length: usize, rng: &mut Xoshiro256PlusPlus) -> Individual {
-    let alphabet = Alphabet::dna();
+    
     let nucleotides = [Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
     
-    let mut seq = Sequence::with_capacity(length, alphabet.clone());
+    let mut seq = Sequence::with_capacity(length);
     for _ in 0..length {
         let nuc = nucleotides[rng.random_range(0..4)];
         seq.push(nuc);

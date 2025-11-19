@@ -7,7 +7,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyList, PyDict};
 use std::path::PathBuf;
 
-use crate::base::{Alphabet, Nucleotide};
+use crate::base::Nucleotide;
 use crate::genome::{Chromosome, Haplotype, Individual};
 use crate::simulation::{
     Population, RepeatStructure, SimulationConfig, Simulation,
@@ -107,49 +107,6 @@ impl PyNucleotide {
     }
 }
 
-/// Alphabet of nucleotide bases.
-#[pyclass(name = "Alphabet")]
-#[derive(Clone)]
-struct PyAlphabet {
-    inner: Alphabet,
-}
-
-#[pymethods]
-impl PyAlphabet {
-    #[new]
-    fn new(chars: Vec<String>) -> PyResult<Self> {
-        let char_vec: Result<Vec<char>, _> = chars
-            .iter()
-            .map(|s| {
-                if s.len() == 1 {
-                    Ok(s.chars().next().unwrap())
-                } else {
-                    Err(PyValueError::new_err("Each element must be a single character"))
-                }
-            })
-            .collect();
-
-        Ok(Self {
-            inner: Alphabet::new(char_vec?),
-        })
-    }
-
-    #[staticmethod]
-    fn dna() -> Self {
-        Self {
-            inner: Alphabet::dna(),
-        }
-    }
-
-    fn __len__(&self) -> usize {
-        self.inner.len()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("Alphabet({:?})", self.inner.chars())
-    }
-}
-
 /// Chromosome with repeat structure.
 #[pyclass(name = "Chromosome")]
 struct PyChromosome {
@@ -165,7 +122,6 @@ impl PyChromosome {
         length: usize,
         ru_length: usize,
         rus_per_hor: usize,
-        alphabet: &PyAlphabet,
     ) -> Self {
         Self {
             inner: Chromosome::uniform(
@@ -174,7 +130,6 @@ impl PyChromosome {
                 length,
                 ru_length,
                 rus_per_hor,
-                alphabet.inner.clone(),
             ),
         }
     }
@@ -330,7 +285,6 @@ struct PyRepeatStructure {
 impl PyRepeatStructure {
     #[new]
     fn new(
-        alphabet: &PyAlphabet,
         init_base: &PyNucleotide,
         ru_length: usize,
         rus_per_hor: usize,
@@ -339,7 +293,6 @@ impl PyRepeatStructure {
     ) -> Self {
         Self {
             inner: RepeatStructure::new(
-                alphabet.inner.clone(),
                 init_base.inner,
                 ru_length,
                 rus_per_hor,
@@ -651,12 +604,12 @@ impl PyQueryBuilder {
         }
 
         // Convert snapshots to individuals
-        let alphabet = Alphabet::dna();
+        
         let mut individuals = Vec::new();
 
         for snap in snapshots {
-            let seq1 = crate::base::Sequence::from_indices(snap.haplotype1_seq, alphabet.clone());
-            let seq2 = crate::base::Sequence::from_indices(snap.haplotype2_seq, alphabet.clone());
+            let seq1 = crate::base::Sequence::from_indices(snap.haplotype1_seq);
+            let seq2 = crate::base::Sequence::from_indices(snap.haplotype2_seq);
 
             let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, 171, 12);
             let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, 171, 12);
@@ -729,7 +682,6 @@ fn create_initial_population(
             structure.inner.chr_length(),
             structure.inner.ru_length,
             structure.inner.rus_per_hor,
-            structure.inner.alphabet.clone(),
         );
 
         let chr2 = Chromosome::uniform(
@@ -738,7 +690,6 @@ fn create_initial_population(
             structure.inner.chr_length(),
             structure.inner.ru_length,
             structure.inner.rus_per_hor,
-            structure.inner.alphabet.clone(),
         );
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
@@ -762,8 +713,8 @@ struct PyMutationConfig {
 #[pymethods]
 impl PyMutationConfig {
     #[staticmethod]
-    fn uniform(alphabet: &PyAlphabet, rate: f64) -> PyResult<Self> {
-        let config = MutationConfig::uniform(alphabet.inner.clone(), rate)
+    fn uniform(rate: f64) -> PyResult<Self> {
+        let config = MutationConfig::uniform(rate)
             .map_err(|e| PyValueError::new_err(format!("Failed to create mutation config: {}", e)))?;
         Ok(Self { inner: config })
     }
@@ -1152,12 +1103,6 @@ impl PySimulationBuilder {
         generation: Option<usize>,
     ) -> PyRefMut<'_, Self> {
         slf.inner = slf.inner.clone().init_from_checkpoint(db_path, sim_id, generation);
-        slf
-    }
-
-    /// Set the alphabet (default: DNA).
-    fn alphabet<'a>(mut slf: PyRefMut<'a, Self>, alphabet: &PyAlphabet) -> PyRefMut<'a, Self> {
-        slf.inner = slf.inner.clone().alphabet(alphabet.inner.clone());
         slf
     }
 

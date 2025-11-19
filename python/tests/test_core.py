@@ -135,16 +135,15 @@ class TestHaplotype:
 
     def test_from_chromosomes(self):
         """Test creating haplotype from chromosomes."""
-        alphabet = centrevo.Alphabet.dna()
         base = centrevo.Nucleotide.A()
 
         chr1 = centrevo.Chromosome.uniform(
             id="chr1", base=base, length=100,
-            ru_length=10, rus_per_hor=5, alphabet=alphabet
+            ru_length=10, rus_per_hor=5
         )
         chr2 = centrevo.Chromosome.uniform(
             id="chr2", base=base, length=100,
-            ru_length=10, rus_per_hor=5, alphabet=alphabet
+            ru_length=10, rus_per_hor=5
         )
 
         hap = centrevo.Haplotype.from_chromosomes([chr1, chr2])
@@ -162,7 +161,7 @@ class TestIndividual:
 
         chr = centrevo.Chromosome.uniform(
             id="chr1", base=base, length=100,
-            ru_length=10, rus_per_hor=5, alphabet=alphabet
+            ru_length=10, rus_per_hor=5
         )
 
         hap1 = centrevo.Haplotype.from_chromosomes([chr])
@@ -179,7 +178,7 @@ class TestIndividual:
 
         chrom = centrevo.Chromosome.uniform(
             id="chr1", base=base, length=100,
-            ru_length=10, rus_per_hor=5, alphabet=alphabet
+            ru_length=10, rus_per_hor=5
         )
 
         hap = centrevo.Haplotype.from_chromosomes([chrom])
@@ -203,7 +202,7 @@ class TestPopulation:
 
         chr = centrevo.Chromosome.uniform(
             id="chr1", base=base, length=100,
-            ru_length=10, rus_per_hor=5, alphabet=alphabet
+            ru_length=10, rus_per_hor=5
         )
 
         hap = centrevo.Haplotype.from_chromosomes([chr])

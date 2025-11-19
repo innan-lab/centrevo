@@ -263,6 +263,7 @@ impl SharedChromosome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     fn test_sequence() -> Sequence {
         Sequence::from_str("ACGTACGTACGTACGT").unwrap()

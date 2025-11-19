@@ -3,9 +3,9 @@
 //! This module provides recombination functionality including crossover
 //! and gene conversion events.
 
-use rand::Rng;
 use crate::base::Sequence;
-use serde::{Serialize, Deserialize};
+use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 /// Type of recombination event that can occur on a sequence.
 ///
@@ -53,13 +53,22 @@ impl RecombinationParams {
         gc_extension_prob: f64,
     ) -> Result<Self, RecombinationError> {
         if !(0.0..=1.0).contains(&break_prob) {
-            return Err(RecombinationError::InvalidProbability("break_prob", break_prob));
+            return Err(RecombinationError::InvalidProbability(
+                "break_prob",
+                break_prob,
+            ));
         }
         if !(0.0..=1.0).contains(&crossover_prob) {
-            return Err(RecombinationError::InvalidProbability("crossover_prob", crossover_prob));
+            return Err(RecombinationError::InvalidProbability(
+                "crossover_prob",
+                crossover_prob,
+            ));
         }
         if !(0.0..=1.0).contains(&gc_extension_prob) {
-            return Err(RecombinationError::InvalidProbability("gc_extension_prob", gc_extension_prob));
+            return Err(RecombinationError::InvalidProbability(
+                "gc_extension_prob",
+                gc_extension_prob,
+            ));
         }
 
         Ok(Self {
@@ -90,11 +99,7 @@ impl RecombinationParams {
     /// Sample a recombination event for a sequence of given length.
     ///
     /// Returns the type of event that occurred.
-    pub fn sample_event<R: Rng + ?Sized>(
-        &self,
-        length: usize,
-        rng: &mut R,
-    ) -> RecombinationType {
+    pub fn sample_event<R: Rng + ?Sized>(&self, length: usize, rng: &mut R) -> RecombinationType {
         if length == 0 {
             return RecombinationType::None;
         }
@@ -113,10 +118,11 @@ impl RecombinationParams {
         } else {
             // Gene conversion: sample tract length
             let mut tract_length = 1;
-            while tract_length < (length - position) && rng.random::<f64>() < self.gc_extension_prob {
+            while tract_length < (length - position) && rng.random::<f64>() < self.gc_extension_prob
+            {
                 tract_length += 1;
             }
-            
+
             let end = (position + tract_length).min(length);
             RecombinationType::GeneConversion {
                 start: position,
@@ -133,7 +139,7 @@ impl RecombinationParams {
     /// A tuple of two new sequences (offspring1, offspring2).
     ///
     /// # Errors
-    /// Returns an error if the sequences have different lengths or alphabets.
+    /// Returns an error if the sequences have different lengths.
     pub fn crossover(
         &self,
         seq1: &Sequence,
@@ -147,10 +153,6 @@ impl RecombinationParams {
             });
         }
 
-        if seq1.alphabet() != seq2.alphabet() {
-            return Err(RecombinationError::AlphabetMismatch);
-        }
-
         if position >= seq1.len() {
             return Err(RecombinationError::InvalidPosition {
                 position,
@@ -158,23 +160,21 @@ impl RecombinationParams {
             });
         }
 
-        let alphabet = seq1.alphabet().clone();
-
         // Create offspring by combining parts
         let mut offspring1_data = Vec::with_capacity(seq1.len());
         let mut offspring2_data = Vec::with_capacity(seq2.len());
 
         // Copy first part
-        offspring1_data.extend_from_slice(&seq1.indices()[..position]);
-        offspring2_data.extend_from_slice(&seq2.indices()[..position]);
+        offspring1_data.extend_from_slice(&seq1.as_slice()[..position]);
+        offspring2_data.extend_from_slice(&seq2.as_slice()[..position]);
 
         // Copy second part (swapped)
-        offspring1_data.extend_from_slice(&seq2.indices()[position..]);
-        offspring2_data.extend_from_slice(&seq1.indices()[position..]);
+        offspring1_data.extend_from_slice(&seq2.as_slice()[position..]);
+        offspring2_data.extend_from_slice(&seq1.as_slice()[position..]);
 
         Ok((
-            Sequence::from_indices(offspring1_data, alphabet.clone()),
-            Sequence::from_indices(offspring2_data, alphabet),
+            Sequence::from_nucleotides(offspring1_data),
+            Sequence::from_nucleotides(offspring2_data),
         ))
     }
 
@@ -186,7 +186,7 @@ impl RecombinationParams {
     /// A new sequence with the converted tract.
     ///
     /// # Errors
-    /// Returns an error if sequences have different lengths/alphabets or indices are invalid.
+    /// Returns an error if sequences have different lengths or indices are invalid.
     pub fn gene_conversion(
         &self,
         recipient: &Sequence,
@@ -199,10 +199,6 @@ impl RecombinationParams {
                 len1: recipient.len(),
                 len2: donor.len(),
             });
-        }
-
-        if recipient.alphabet() != donor.alphabet() {
-            return Err(RecombinationError::AlphabetMismatch);
         }
 
         if start >= recipient.len() {
@@ -224,10 +220,10 @@ impl RecombinationParams {
         }
 
         // Create new sequence with converted tract
-        let mut new_data = recipient.indices().to_vec();
-        new_data[start..end].copy_from_slice(&donor.indices()[start..end]);
+        let mut new_data = recipient.as_slice().to_vec();
+        new_data[start..end].copy_from_slice(&donor.as_slice()[start..end]);
 
-        Ok(Sequence::from_indices(new_data, recipient.alphabet().clone()))
+        Ok(Sequence::from_nucleotides(new_data))
     }
 }
 
@@ -235,8 +231,7 @@ impl RecombinationParams {
 ///
 /// These errors are returned when invalid parameters are provided or when
 /// attempted recombination operations are incompatible (e.g. different
-/// sequence lengths or alphabets).
-
+/// sequence lengths).
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RecombinationError {
@@ -244,8 +239,6 @@ pub enum RecombinationError {
     InvalidProbability(&'static str, f64),
     /// Sequences have different lengths
     LengthMismatch { len1: usize, len2: usize },
-    /// Sequences have different alphabets
-    AlphabetMismatch,
     /// Invalid position for operation
     InvalidPosition { position: usize, length: usize },
     /// Invalid range for gene conversion
@@ -256,16 +249,19 @@ impl std::fmt::Display for RecombinationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RecombinationError::InvalidProbability(name, val) => {
-                write!(f, "Invalid probability for {name}: {val} (must be between 0.0 and 1.0)")
+                write!(
+                    f,
+                    "Invalid probability for {name}: {val} (must be between 0.0 and 1.0)"
+                )
             }
             RecombinationError::LengthMismatch { len1, len2 } => {
                 write!(f, "Sequence length mismatch: {len1} vs {len2}")
             }
-            RecombinationError::AlphabetMismatch => {
-                write!(f, "Sequence alphabet mismatch")
-            }
             RecombinationError::InvalidPosition { position, length } => {
-                write!(f, "Invalid position {position} for sequence of length {length}")
+                write!(
+                    f,
+                    "Invalid position {position} for sequence of length {length}"
+                )
             }
             RecombinationError::InvalidRange { start, end } => {
                 write!(f, "Invalid range [{start}, {end}) for gene conversion")
@@ -279,13 +275,8 @@ impl std::error::Error for RecombinationError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::Alphabet;
     use rand::SeedableRng;
     use rand_xoshiro::Xoshiro256PlusPlus;
-
-    fn test_alphabet() -> Alphabet {
-        Alphabet::dna()
-    }
 
     #[test]
     fn test_recombination_params_new() {
@@ -331,7 +322,7 @@ mod tests {
         for _ in 0..10 {
             let event = params.sample_event(100, &mut rng);
             match event {
-                RecombinationType::Crossover { .. } => {},
+                RecombinationType::Crossover { .. } => {}
                 _ => panic!("Expected crossover event"),
             }
         }
@@ -349,7 +340,7 @@ mod tests {
                 RecombinationType::GeneConversion { start, end } => {
                     assert!(start < end);
                     assert!(end <= 100);
-                },
+                }
                 _ => panic!("Expected gene conversion event"),
             }
         }
@@ -358,8 +349,8 @@ mod tests {
     #[test]
     fn test_crossover_basic() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let seq1 = Sequence::from_str("AAAA", test_alphabet()).unwrap();
-        let seq2 = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let seq1 = Sequence::from_str("AAAA").unwrap();
+        let seq2 = Sequence::from_str("TTTT").unwrap();
 
         let (offspring1, offspring2) = params.crossover(&seq1, &seq2, 2).unwrap();
 
@@ -370,8 +361,8 @@ mod tests {
     #[test]
     fn test_crossover_at_start() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let seq1 = Sequence::from_str("AAAA", test_alphabet()).unwrap();
-        let seq2 = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let seq1 = Sequence::from_str("AAAA").unwrap();
+        let seq2 = Sequence::from_str("TTTT").unwrap();
 
         let (offspring1, offspring2) = params.crossover(&seq1, &seq2, 0).unwrap();
 
@@ -382,8 +373,8 @@ mod tests {
     #[test]
     fn test_crossover_length_mismatch() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let seq1 = Sequence::from_str("AAA", test_alphabet()).unwrap();
-        let seq2 = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let seq1 = Sequence::from_str("AAA").unwrap();
+        let seq2 = Sequence::from_str("TTTT").unwrap();
 
         let result = params.crossover(&seq1, &seq2, 1);
         assert!(result.is_err());
@@ -392,8 +383,8 @@ mod tests {
     #[test]
     fn test_crossover_invalid_position() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let seq1 = Sequence::from_str("AAAA", test_alphabet()).unwrap();
-        let seq2 = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let seq1 = Sequence::from_str("AAAA").unwrap();
+        let seq2 = Sequence::from_str("TTTT").unwrap();
 
         let result = params.crossover(&seq1, &seq2, 10);
         assert!(result.is_err());
@@ -402,8 +393,8 @@ mod tests {
     #[test]
     fn test_gene_conversion_basic() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA", test_alphabet()).unwrap();
-        let donor = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let recipient = Sequence::from_str("AAAA").unwrap();
+        let donor = Sequence::from_str("TTTT").unwrap();
 
         let result = params.gene_conversion(&recipient, &donor, 1, 3).unwrap();
 
@@ -413,8 +404,8 @@ mod tests {
     #[test]
     fn test_gene_conversion_full() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA", test_alphabet()).unwrap();
-        let donor = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let recipient = Sequence::from_str("AAAA").unwrap();
+        let donor = Sequence::from_str("TTTT").unwrap();
 
         let result = params.gene_conversion(&recipient, &donor, 0, 4).unwrap();
 
@@ -424,8 +415,8 @@ mod tests {
     #[test]
     fn test_gene_conversion_single_base() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA", test_alphabet()).unwrap();
-        let donor = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let recipient = Sequence::from_str("AAAA").unwrap();
+        let donor = Sequence::from_str("TTTT").unwrap();
 
         let result = params.gene_conversion(&recipient, &donor, 2, 3).unwrap();
 
@@ -435,8 +426,8 @@ mod tests {
     #[test]
     fn test_gene_conversion_length_mismatch() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAA", test_alphabet()).unwrap();
-        let donor = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let recipient = Sequence::from_str("AAA").unwrap();
+        let donor = Sequence::from_str("TTTT").unwrap();
 
         let result = params.gene_conversion(&recipient, &donor, 1, 2);
         assert!(result.is_err());
@@ -445,8 +436,8 @@ mod tests {
     #[test]
     fn test_gene_conversion_invalid_range() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA", test_alphabet()).unwrap();
-        let donor = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let recipient = Sequence::from_str("AAAA").unwrap();
+        let donor = Sequence::from_str("TTTT").unwrap();
 
         // start >= end
         let result = params.gene_conversion(&recipient, &donor, 2, 2);
@@ -459,8 +450,8 @@ mod tests {
     #[test]
     fn test_gene_conversion_invalid_position() {
         let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA", test_alphabet()).unwrap();
-        let donor = Sequence::from_str("TTTT", test_alphabet()).unwrap();
+        let recipient = Sequence::from_str("AAAA").unwrap();
+        let donor = Sequence::from_str("TTTT").unwrap();
 
         let result = params.gene_conversion(&recipient, &donor, 10, 11);
         assert!(result.is_err());

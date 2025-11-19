@@ -1,7 +1,7 @@
 //! Sequence composition analysis
-//! 
+//!
 //! Functions for analyzing nucleotide composition and content.
-//! 
+//!
 //! These functions are flexible and work at multiple levels:
 //! - Population level: No indices specified
 //! - Individual level: Only individual_idx specified
@@ -13,40 +13,40 @@ use crate::simulation::Population;
 use std::collections::HashMap;
 
 /// Calculate GC content flexibly based on provided indices
-/// 
+///
 /// This function adapts to different levels of analysis:
 /// - **Population level**: `gc_content(pop, None, None, None)` - Mean across all sequences
 /// - **Individual level**: `gc_content(pop, Some(i), None, None)` - Mean across both haplotypes
 /// - **Haplotype level**: `gc_content(pop, Some(i), Some(h), None)` - Mean across all chromosomes in haplotype
 /// - **Chromosome level**: `gc_content(pop, Some(i), Some(h), Some(c))` - Single chromosome
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `population` - The population to analyze
 /// * `individual_idx` - Optional index of individual
 /// * `haplotype_idx` - Optional haplotype index (0 or 1)
 /// * `chromosome_idx` - Optional chromosome index
-/// 
+///
 /// # Returns
-/// 
+///
 /// GC content as proportion (0.0 to 1.0)
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use centrevo::analysis::composition::gc_content;
 /// # use centrevo::simulation::Population;
 /// # let population = Population::new("test", vec![]);
-/// 
+///
 /// // Population-wide GC content
 /// let pop_gc = gc_content(&population, None, None, None);
-/// 
+///
 /// // Individual-level GC content (both haplotypes)
 /// let ind_gc = gc_content(&population, Some(0), None, None);
-/// 
+///
 /// // Haplotype-level GC content (all chromosomes in haplotype)
 /// let hap_gc = gc_content(&population, Some(0), Some(0), None);
-/// 
+///
 /// // Chromosome-level GC content
 /// let chr_gc = gc_content(&population, Some(0), Some(0), Some(0));
 /// ```
@@ -61,62 +61,58 @@ pub fn gc_content(
         (Some(ind_idx), Some(hap_idx), Some(chr_idx)) => {
             gc_content_chromosome(population, ind_idx, hap_idx, chr_idx)
         }
-        
+
         // Haplotype level: all chromosomes in haplotype
-        (Some(ind_idx), Some(hap_idx), None) => {
-            gc_content_haplotype(population, ind_idx, hap_idx)
-        }
-        
+        (Some(ind_idx), Some(hap_idx), None) => gc_content_haplotype(population, ind_idx, hap_idx),
+
         // Individual level: both haplotypes
-        (Some(ind_idx), None, None) => {
-            gc_content_individual(population, ind_idx)
-        }
-        
+        (Some(ind_idx), None, None) => gc_content_individual(population, ind_idx),
+
         // Population level: all individuals, haplotypes, chromosomes
-        (None, None, None) => {
-            gc_content_population(population)
-        }
-        
+        (None, None, None) => gc_content_population(population),
+
         // Invalid combinations
         _ => {
-            eprintln!("Warning: Invalid index combination for gc_content. Use None for all higher levels.");
+            eprintln!(
+                "Warning: Invalid index combination for gc_content. Use None for all higher levels."
+            );
             0.0
         }
     }
 }
 
 /// Calculate nucleotide composition flexibly based on provided indices
-/// 
+///
 /// This function adapts to different levels of analysis:
 /// - **Population level**: Sum across all sequences
 /// - **Individual level**: Sum across both haplotypes
 /// - **Haplotype level**: Sum across all chromosomes in haplotype
 /// - **Chromosome level**: Single chromosome counts
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `population` - The population to analyze
 /// * `individual_idx` - Optional index of individual
 /// * `haplotype_idx` - Optional haplotype index (0 or 1)
 /// * `chromosome_idx` - Optional chromosome index
-/// 
+///
 /// # Returns
-/// 
+///
 /// HashMap with nucleotide counts
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use centrevo::analysis::composition::nucleotide_composition;
 /// # use centrevo::simulation::Population;
 /// # let population = Population::new("test", vec![]);
-/// 
+///
 /// // Population-wide composition
 /// let pop_comp = nucleotide_composition(&population, None, None, None);
-/// 
+///
 /// // Individual-level composition
 /// let ind_comp = nucleotide_composition(&population, Some(0), None, None);
-/// 
+///
 /// // Chromosome-level composition
 /// let chr_comp = nucleotide_composition(&population, Some(0), Some(0), Some(0));
 /// ```
@@ -131,25 +127,21 @@ pub fn nucleotide_composition(
         (Some(ind_idx), Some(hap_idx), Some(chr_idx)) => {
             composition_chromosome(population, ind_idx, hap_idx, chr_idx)
         }
-        
+
         // Haplotype level: all chromosomes in haplotype
-        (Some(ind_idx), Some(hap_idx), None) => {
-            composition_haplotype(population, ind_idx, hap_idx)
-        }
-        
+        (Some(ind_idx), Some(hap_idx), None) => composition_haplotype(population, ind_idx, hap_idx),
+
         // Individual level: both haplotypes
-        (Some(ind_idx), None, None) => {
-            composition_individual(population, ind_idx)
-        }
-        
+        (Some(ind_idx), None, None) => composition_individual(population, ind_idx),
+
         // Population level: all individuals, haplotypes, chromosomes
-        (None, None, None) => {
-            composition_population(population)
-        }
-        
+        (None, None, None) => composition_population(population),
+
         // Invalid combinations
         _ => {
-            eprintln!("Warning: Invalid index combination for nucleotide_composition. Use None for all higher levels.");
+            eprintln!(
+                "Warning: Invalid index combination for nucleotide_composition. Use None for all higher levels."
+            );
             HashMap::new()
         }
     }
@@ -178,10 +170,9 @@ fn gc_content_chromosome(
             }
 
             let gc_count = seq
-                .indices()
+                .as_slice()
                 .iter()
-                .filter_map(|&idx| crate::base::Nucleotide::from_index(idx))
-                .filter(|&n| n == Nucleotide::G || n == Nucleotide::C)
+                .filter(|&n| *n == Nucleotide::G || *n == Nucleotide::C)
                 .count();
 
             return gc_count as f64 / total as f64;
@@ -209,10 +200,9 @@ fn gc_content_haplotype(
             let seq = chr.sequence();
             total_bases += seq.len();
             total_gc += seq
-                .indices()
+                .as_slice()
                 .iter()
-                .filter_map(|&idx| crate::base::Nucleotide::from_index(idx))
-                .filter(|&n| n == Nucleotide::G || n == Nucleotide::C)
+                .filter(|&n| *n == Nucleotide::G || *n == Nucleotide::C)
                 .count();
         }
 
@@ -234,10 +224,9 @@ fn gc_content_individual(population: &Population, individual_idx: usize) -> f64 
                 let seq = chr.sequence();
                 total_bases += seq.len();
                 total_gc += seq
-                    .indices()
+                    .as_slice()
                     .iter()
-                    .filter_map(|&idx| crate::base::Nucleotide::from_index(idx))
-                    .filter(|&n| n == Nucleotide::G || n == Nucleotide::C)
+                    .filter(|&n| *n == Nucleotide::G || *n == Nucleotide::C)
                     .count();
             }
         }
@@ -259,10 +248,9 @@ fn gc_content_population(population: &Population) -> f64 {
                 let seq = chr.sequence();
                 total_bases += seq.len();
                 total_gc += seq
-                    .indices()
+                    .as_slice()
                     .iter()
-                    .filter_map(|&idx| crate::base::Nucleotide::from_index(idx))
-                    .filter(|&n| n == Nucleotide::G || n == Nucleotide::C)
+                    .filter(|&n| *n == Nucleotide::G || *n == Nucleotide::C)
                     .count();
             }
         }
@@ -392,12 +380,11 @@ fn composition_population(population: &Population) -> HashMap<Nucleotide, usize>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::{Alphabet, Sequence};
+    use crate::base::Sequence;
     use crate::genome::{Chromosome, Haplotype, Individual};
 
     fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
-        let alphabet = Alphabet::dna();
-        let mut seq = Sequence::with_capacity(sequence.len(), alphabet);
+        let mut seq = Sequence::with_capacity(sequence.len());
         for &nuc in sequence {
             seq.push(nuc);
         }

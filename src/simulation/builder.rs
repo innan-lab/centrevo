@@ -3,12 +3,12 @@
 //! Provides a fluent API for configuring and creating simulations with
 //! sensible defaults and comprehensive validation.
 
-use crate::base::{Alphabet, Nucleotide};
+use crate::base::Nucleotide;
+use crate::simulation::initialization::SequenceInput;
 use crate::simulation::{
     FitnessConfig, MutationConfig, RecombinationConfig, RepeatStructure, Simulation,
     SimulationConfig,
 };
-use crate::simulation::initialization::SequenceInput;
 
 /// Builder for constructing Simulation instances with a fluent API.
 ///
@@ -16,7 +16,7 @@ use crate::simulation::initialization::SequenceInput;
 ///
 /// ```
 /// use centrevo::simulation::SimulationBuilder;
-/// use centrevo::base::{Alphabet, Nucleotide};
+/// use centrevo::base::Nucleotide;
 ///
 /// // Simple simulation with defaults
 /// let sim = SimulationBuilder::new()
@@ -68,11 +68,10 @@ pub struct SimulationBuilder {
     init_mode: InitMode,
 
     // Evolutionary parameters (with defaults)
-    alphabet: Alphabet,          // Default: DNA
-    mutation_rate: f64,          // Default: 0.0 (no mutation)
+    mutation_rate: f64,                           // Default: 0.0 (no mutation)
     recombination_rates: Option<(f64, f64, f64)>, // Default: None (no recombination)
-    fitness: FitnessConfig,      // Default: neutral
-    seed: Option<u64>,           // Default: None (random)
+    fitness: FitnessConfig,                       // Default: neutral
+    seed: Option<u64>,                            // Default: None (random)
 }
 
 /// Initialization mode for the simulation.
@@ -111,7 +110,6 @@ impl SimulationBuilder {
             hors_per_chr: None,
             chrs_per_hap: 1,
             init_mode: InitMode::Uniform(Nucleotide::A),
-            alphabet: Alphabet::dna(),
             mutation_rate: 0.0,
             recombination_rates: None,
             fitness: FitnessConfig::neutral(),
@@ -199,12 +197,6 @@ impl SimulationBuilder {
         self
     }
 
-    /// Set the alphabet (default: DNA).
-    pub fn alphabet(mut self, alphabet: Alphabet) -> Self {
-        self.alphabet = alphabet;
-        self
-    }
-
     /// Set the mutation rate (default: 0.0).
     pub fn mutation_rate(mut self, rate: f64) -> Self {
         self.mutation_rate = rate;
@@ -253,7 +245,7 @@ impl SimulationBuilder {
         let config = SimulationConfig::new(population_size, generations, self.seed);
 
         // Create mutation config
-        let mutation = MutationConfig::uniform(self.alphabet.clone(), self.mutation_rate)
+        let mutation = MutationConfig::uniform(self.mutation_rate)
             .map_err(|e| BuilderError::InvalidParameter(format!("mutation_rate: {e}")))?;
 
         // Create recombination config
@@ -272,9 +264,9 @@ impl SimulationBuilder {
         match self.init_mode {
             InitMode::Uniform(base) => {
                 // For uniform, we need repeat structure
-                let ru_length = self
-                    .ru_length
-                    .ok_or(BuilderError::MissingRequired("ru_length (via repeat_structure)"))?;
+                let ru_length = self.ru_length.ok_or(BuilderError::MissingRequired(
+                    "ru_length (via repeat_structure)",
+                ))?;
                 let rus_per_hor = self.rus_per_hor.ok_or(BuilderError::MissingRequired(
                     "rus_per_hor (via repeat_structure)",
                 ))?;
@@ -283,7 +275,6 @@ impl SimulationBuilder {
                 ))?;
 
                 let structure = RepeatStructure::new(
-                    self.alphabet.clone(),
                     base,
                     ru_length,
                     rus_per_hor,
@@ -297,9 +288,9 @@ impl SimulationBuilder {
 
             InitMode::Random => {
                 // For random, we need repeat structure
-                let ru_length = self
-                    .ru_length
-                    .ok_or(BuilderError::MissingRequired("ru_length (via repeat_structure)"))?;
+                let ru_length = self.ru_length.ok_or(BuilderError::MissingRequired(
+                    "ru_length (via repeat_structure)",
+                ))?;
                 let rus_per_hor = self.rus_per_hor.ok_or(BuilderError::MissingRequired(
                     "rus_per_hor (via repeat_structure)",
                 ))?;
@@ -308,8 +299,7 @@ impl SimulationBuilder {
                 ))?;
 
                 let structure = RepeatStructure::new(
-                    self.alphabet.clone(),
-                    Nucleotide::A,  // Doesn't matter for random init
+                    Nucleotide::A, // Doesn't matter for random init
                     ru_length,
                     rus_per_hor,
                     hors_per_chr,
@@ -323,18 +313,30 @@ impl SimulationBuilder {
             InitMode::FromFasta(path) => {
                 // For imported sequences, infer structure from sequences
                 let source = SequenceInput::Fasta(path);
-                let alphabet = self.alphabet.clone();
                 let chrs_per_hap = self.chrs_per_hap;
                 let fitness = self.fitness;
-                Self::build_from_source_static(source, alphabet, chrs_per_hap, mutation, recombination, fitness, config)
+                Self::build_from_source_static(
+                    source,
+                    chrs_per_hap,
+                    mutation,
+                    recombination,
+                    fitness,
+                    config,
+                )
             }
 
             InitMode::FromJson(input) => {
                 let source = SequenceInput::Json(input);
-                let alphabet = self.alphabet.clone();
                 let chrs_per_hap = self.chrs_per_hap;
                 let fitness = self.fitness;
-                Self::build_from_source_static(source, alphabet, chrs_per_hap, mutation, recombination, fitness, config)
+                Self::build_from_source_static(
+                    source,
+                    chrs_per_hap,
+                    mutation,
+                    recombination,
+                    fitness,
+                    config,
+                )
             }
 
             InitMode::FromCheckpoint {
@@ -347,10 +349,16 @@ impl SimulationBuilder {
                     sim_id,
                     generation,
                 };
-                let alphabet = self.alphabet.clone();
                 let chrs_per_hap = self.chrs_per_hap;
                 let fitness = self.fitness;
-                Self::build_from_source_static(source, alphabet, chrs_per_hap, mutation, recombination, fitness, config)
+                Self::build_from_source_static(
+                    source,
+                    chrs_per_hap,
+                    mutation,
+                    recombination,
+                    fitness,
+                    config,
+                )
             }
         }
     }
@@ -358,7 +366,6 @@ impl SimulationBuilder {
     /// Helper to build simulation from imported sequence source.
     fn build_from_source_static(
         source: SequenceInput,
-        alphabet: Alphabet,
         chrs_per_hap: usize,
         mutation: MutationConfig,
         recombination: RecombinationConfig,
@@ -368,7 +375,6 @@ impl SimulationBuilder {
         // For imported sequences, we need to infer structure
         // We'll use a dummy structure that will be replaced by actual sequence structure
         let dummy_structure = RepeatStructure::new(
-            alphabet,
             Nucleotide::A,
             1, // Will be inferred from sequences
             1,
@@ -549,19 +555,6 @@ mod tests {
             .repeat_structure(10, 5, 2)
             .init_random()
             .seed(42)
-            .build();
-
-        assert!(sim.is_ok());
-    }
-
-    #[test]
-    fn test_builder_custom_alphabet() {
-        let alphabet = Alphabet::new(vec!['A', 'C', 'G', 'T']);
-        let sim = SimulationBuilder::new()
-            .population_size(10)
-            .generations(50)
-            .repeat_structure(10, 5, 2)
-            .alphabet(alphabet)
             .build();
 
         assert!(sim.is_ok());

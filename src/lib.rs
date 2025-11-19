@@ -3,12 +3,12 @@
 //! This library provides efficient data structures and algorithms for modeling
 //! the evolution of tandemly repeated DNA sequences, particularly centromeric arrays.
 
+pub mod analysis;
 pub mod base;
-pub mod genome;
 pub mod evolution;
+pub mod genome;
 pub mod simulation;
 pub mod storage;
-pub mod analysis;
 
 // Python bindings module (conditionally compiled)
 // Use `maturin develop` or `maturin build` to build as Python extension
@@ -24,4 +24,4 @@ pub mod python;
 // library will use when building analyses or running simulations. Re-exporting
 // them here makes them available as `centrevo::Sequence`, `centrevo::Nucleotide`,
 // etc.
-pub use base::{Nucleotide, Alphabet, Sequence, SharedSequence};
+pub use base::{Nucleotide, Sequence, SharedSequence};

@@ -1,11 +1,14 @@
 //! High-level recording of simulation state.
 
 use crate::genome::Individual;
-use crate::simulation::{Population, SimulationConfig, RepeatStructure, MutationConfig, RecombinationConfig, FitnessConfig};
+use crate::simulation::{
+    FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure,
+    SimulationConfig,
+};
 use crate::storage::{Database, DatabaseError};
 use rusqlite::params;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
 
 /// Complete simulation configuration for resumability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,13 +69,27 @@ impl IndividualSnapshot {
 
         // Get first chromosome from each haplotype
         let (h1_chr_id, h1_seq) = if let Some(chr) = h1.get(0) {
-            (chr.id().to_string(), chr.sequence().indices().to_vec())
+            (
+                chr.id().to_string(),
+                chr.sequence()
+                    .as_slice()
+                    .iter()
+                    .map(|n| n.to_index())
+                    .collect(),
+            )
         } else {
             (String::new(), Vec::new())
         };
 
         let (h2_chr_id, h2_seq) = if let Some(chr) = h2.get(0) {
-            (chr.id().to_string(), chr.sequence().indices().to_vec())
+            (
+                chr.id().to_string(),
+                chr.sequence()
+                    .as_slice()
+                    .iter()
+                    .map(|n| n.to_index())
+                    .collect(),
+            )
         } else {
             (String::new(), Vec::new())
         };
@@ -93,19 +110,24 @@ impl IndividualSnapshot {
         &self,
         structure: &crate::simulation::RepeatStructure,
     ) -> Result<Individual, String> {
-        use crate::base::Sequence;
+        use crate::base::{Nucleotide, Sequence};
         use crate::genome::{Chromosome, Haplotype};
-        
+
         // Reconstruct sequence from indices
-        let seq1 = Sequence::from_indices(
-            self.haplotype1_seq.clone(),
-            structure.alphabet.clone(),
-        );
-        let seq2 = Sequence::from_indices(
-            self.haplotype2_seq.clone(),
-            structure.alphabet.clone(),
-        );
-        
+        let seq1_nucs: Vec<Nucleotide> = self
+            .haplotype1_seq
+            .iter()
+            .map(|&i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
+            .collect();
+        let seq1 = Sequence::from_nucleotides(seq1_nucs);
+
+        let seq2_nucs: Vec<Nucleotide> = self
+            .haplotype2_seq
+            .iter()
+            .map(|&i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
+            .collect();
+        let seq2 = Sequence::from_nucleotides(seq2_nucs);
+
         // Create chromosomes
         let chr1 = Chromosome::new(
             self.haplotype1_chr_id.clone(),
@@ -119,18 +141,18 @@ impl IndividualSnapshot {
             structure.ru_length,
             structure.rus_per_hor,
         );
-        
+
         // Create haplotypes
         let mut hap1 = Haplotype::new();
         hap1.push(chr1);
-        
+
         let mut hap2 = Haplotype::new();
         hap2.push(chr2);
-        
+
         // Create individual
         let mut individual = Individual::new(self.individual_id.as_str(), hap1, hap2);
         individual.set_fitness(self.fitness);
-        
+
         Ok(individual)
     }
 }
@@ -174,8 +196,8 @@ impl FitnessStats {
             .unwrap_or(0.0);
 
         // Calculate standard deviation
-        let variance: f64 = fitnesses.iter().map(|&f| (f - mean).powi(2)).sum::<f64>()
-            / fitnesses.len() as f64;
+        let variance: f64 =
+            fitnesses.iter().map(|&f| (f - mean).powi(2)).sum::<f64>() / fitnesses.len() as f64;
         let std = variance.sqrt();
 
         Self {
@@ -229,9 +251,8 @@ impl Recorder {
     /// Record simulation metadata.
     pub fn record_metadata(&mut self, config: &SimulationConfig) -> Result<(), DatabaseError> {
         // Serialize configuration to JSON
-        let params_json = serde_json::to_string(config)
-            .unwrap_or_else(|_| "{}".to_string());
-        
+        let params_json = serde_json::to_string(config).unwrap_or_else(|_| "{}".to_string());
+
         let start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -259,10 +280,13 @@ impl Recorder {
     }
 
     /// Record complete simulation configuration for resumability.
-    pub fn record_full_config(&mut self, snapshot: &SimulationSnapshot) -> Result<(), DatabaseError> {
+    pub fn record_full_config(
+        &mut self,
+        snapshot: &SimulationSnapshot,
+    ) -> Result<(), DatabaseError> {
         let config_json = serde_json::to_string(snapshot)
             .map_err(|e| DatabaseError::Insert(format!("Failed to serialize config: {e}")))?;
-        
+
         let start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -440,27 +464,12 @@ impl Recorder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::{Alphabet, Nucleotide};
+    use crate::base::Nucleotide;
     use crate::genome::{Chromosome, Haplotype, Individual};
 
     fn create_test_individual(id: &str, length: usize) -> Individual {
-        let alphabet = Alphabet::dna();
-        let chr1 = Chromosome::uniform(
-            format!("{}_h1_chr1", id),
-            Nucleotide::A,
-            length,
-            20,
-            5,
-            alphabet.clone(),
-        );
-        let chr2 = Chromosome::uniform(
-            format!("{}_h2_chr1", id),
-            Nucleotide::C,
-            length,
-            20,
-            5,
-            alphabet,
-        );
+        let chr1 = Chromosome::uniform(format!("{}_h1_chr1", id), Nucleotide::A, length, 20, 5);
+        let chr2 = Chromosome::uniform(format!("{}_h2_chr1", id), Nucleotide::C, length, 20, 5);
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);

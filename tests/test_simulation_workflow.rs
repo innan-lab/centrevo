@@ -2,25 +2,22 @@
 //! Tests that simulate real-world usage patterns combining multiple modules.
 
 use centrevo::{
-    base::{Alphabet, Nucleotide},
+    analysis::{
+        composition::gc_content, distance::pairwise_distances, diversity::nucleotide_diversity,
+    },
+    base::Nucleotide,
+    evolution::{GCContentFitness, LengthFitness},
     simulation::{
         FitnessConfig, MutationConfig, RecombinationConfig, RepeatStructure, Simulation,
         SimulationConfig,
-    },
-    evolution::{GCContentFitness, LengthFitness},
-    analysis::{
-        composition::gc_content,
-        diversity::nucleotide_diversity,
-        distance::pairwise_distances,
     },
 };
 
 #[test]
 fn test_basic_simulation_workflow() {
     // Create a simple simulation and run it
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::A, 20, 10, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::A, 20, 10, 10, 1);
+    let mutation = MutationConfig::uniform(0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(20, 10, Some(42));
@@ -45,9 +42,8 @@ fn test_basic_simulation_workflow() {
 #[test]
 fn test_simulation_with_mutation_accumulation() {
     // Test that mutations accumulate over generations
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::A, 10, 5, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.05).unwrap(); // High mutation rate
+    let structure = RepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
+    let mutation = MutationConfig::uniform(0.05).unwrap(); // High mutation rate
     let recombination = RecombinationConfig::standard(0.0, 0.0, 0.0).unwrap(); // No recombination
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(10, 50, Some(123));
@@ -70,15 +66,17 @@ fn test_simulation_with_mutation_accumulation() {
     );
 
     // Should have variation in the population
-    assert!(final_diversity > 0.0, "Should have diversity after 50 generations with high mutation");
+    assert!(
+        final_diversity > 0.0,
+        "Should have diversity after 50 generations with high mutation"
+    );
 }
 
 #[test]
 fn test_simulation_with_gc_content_selection() {
     // Test that GC content selection affects the population
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::A, 20, 5, 5, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::A, 20, 5, 5, 1);
+    let mutation = MutationConfig::uniform(0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
 
     // Select for 50% GC content
@@ -115,10 +113,9 @@ fn test_simulation_with_gc_content_selection() {
 #[test]
 fn test_simulation_with_length_selection() {
     // Test that length selection affects fitness
-    let alphabet = Alphabet::dna();
     let target_length = 500;
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::C, 20, 5, 5, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.001).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::C, 20, 5, 5, 1);
+    let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
 
     // Select for specific length
@@ -139,9 +136,8 @@ fn test_simulation_with_length_selection() {
 #[test]
 fn test_simulation_step_by_step() {
     // Test stepping through simulation generation by generation
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::G, 10, 5, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::G, 10, 5, 10, 1);
+    let mutation = MutationConfig::uniform(0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(15, 5, Some(101));
@@ -161,9 +157,8 @@ fn test_simulation_step_by_step() {
 #[test]
 fn test_simulation_with_analysis_pipeline() {
     // Test full workflow: simulate -> analyze
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::T, 15, 8, 8, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.02).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::T, 15, 8, 8, 1);
+    let mutation = MutationConfig::uniform(0.02).unwrap();
     let recombination = RecombinationConfig::standard(0.02, 0.6, 0.15).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(25, 30, Some(202));
@@ -192,9 +187,8 @@ fn test_simulation_with_analysis_pipeline() {
 #[test]
 fn test_multiple_simulations_independence() {
     // Test that multiple simulations with different seeds produce different results
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::A, 10, 5, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet.clone(), 0.01).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
+    let mutation = MutationConfig::uniform(0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
 
@@ -226,9 +220,8 @@ fn test_multiple_simulations_independence() {
 #[test]
 fn test_simulation_reproducibility() {
     // Test that same seed produces same results
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::C, 10, 5, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.01).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::C, 10, 5, 10, 1);
+    let mutation = MutationConfig::uniform(0.01).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(15, 25, Some(42));
@@ -283,9 +276,8 @@ fn test_simulation_reproducibility() {
 #[test]
 fn test_combined_fitness_components() {
     // Test simulation with multiple fitness components
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::A, 20, 5, 5, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.005).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::A, 20, 5, 5, 1);
+    let mutation = MutationConfig::uniform(0.005).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
 
     // Select for both GC content and length

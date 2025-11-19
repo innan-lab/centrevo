@@ -4,16 +4,17 @@
 //! including mutation rates, recombination rates, fitness parameters, and
 //! simulation settings.
 
-use crate::evolution::{SubstitutionModel, RecombinationParams, GCContentFitness, LengthFitness, SequenceSimilarityFitness, LengthSimilarityFitness, FitnessError};
-use crate::base::{Alphabet, Nucleotide};
-use serde::{Serialize, Deserialize};
+use crate::base::Nucleotide;
+use crate::evolution::{
+    FitnessError, GCContentFitness, LengthFitness, LengthSimilarityFitness, RecombinationParams,
+    SequenceSimilarityFitness, SubstitutionModel,
+};
+use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 /// Parameters for defining the initial repeat sequence structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepeatStructure {
-    /// Alphabet used for sequences
-    pub alphabet: Alphabet,
     /// Initial nucleotide to fill sequences
     pub init_base: Nucleotide,
     /// Repeat unit length in bases
@@ -29,7 +30,6 @@ pub struct RepeatStructure {
 impl RepeatStructure {
     /// Create a new repeat structure configuration.
     pub fn new(
-        alphabet: Alphabet,
         init_base: Nucleotide,
         ru_length: usize,
         rus_per_hor: usize,
@@ -37,7 +37,6 @@ impl RepeatStructure {
         chrs_per_hap: usize,
     ) -> Self {
         Self {
-            alphabet,
             init_base,
             ru_length,
             rus_per_hor,
@@ -66,9 +65,8 @@ impl MutationConfig {
     }
 
     /// Create with uniform mutation rate.
-    pub fn uniform(alphabet: Alphabet, rate: f64) -> Result<Self, String> {
-        let model = SubstitutionModel::uniform(alphabet, rate)
-            .map_err(|e| format!("{e}"))?;
+    pub fn uniform(rate: f64) -> Result<Self, String> {
+        let model = SubstitutionModel::uniform(rate).map_err(|e| format!("{e}"))?;
         Ok(Self { model })
     }
 }
@@ -139,8 +137,10 @@ impl FitnessConfig {
 
     /// Check if all fitness components are None (neutral).
     pub fn is_neutral(&self) -> bool {
-        self.gc_content.is_none() && self.length.is_none() && 
-        self.seq_similarity.is_none() && self.length_similarity.is_none()
+        self.gc_content.is_none()
+            && self.length.is_none()
+            && self.seq_similarity.is_none()
+            && self.length_similarity.is_none()
     }
 }
 
@@ -276,7 +276,11 @@ impl FitnessConfigBuilder<BuilderInitialized> {
     ///
     /// # Errors
     /// Returns an error if GC content fitness is already set.
-    pub fn with_gc_content(mut self, optimum: f64, concentration: f64) -> Result<Self, FitnessError> {
+    pub fn with_gc_content(
+        mut self,
+        optimum: f64,
+        concentration: f64,
+    ) -> Result<Self, FitnessError> {
         if self.gc_content.is_some() {
             return Err(FitnessError::InvalidParameter(
                 "GC content fitness already set".into(),
@@ -322,10 +326,10 @@ impl FitnessConfigBuilder<BuilderInitialized> {
     }
 
     /// Add length similarity fitness to the configuration.
-    /// 
+    ///
     /// # Arguments
     /// * `shape` - Shape parameter (> 0.0)
-    /// 
+    ///
     /// # Errors
     /// Returns an error if length similarity fitness is already set.
     pub fn with_length_similarity(mut self, shape: f64) -> Result<Self, FitnessError> {
@@ -340,7 +344,12 @@ impl FitnessConfigBuilder<BuilderInitialized> {
 
     /// Build the final fitness configuration.
     pub fn build(self) -> FitnessConfig {
-        FitnessConfig::new(self.gc_content, self.length, self.seq_similarity, self.length_similarity)
+        FitnessConfig::new(
+            self.gc_content,
+            self.length,
+            self.seq_similarity,
+            self.length_similarity,
+        )
     }
 }
 
@@ -357,11 +366,7 @@ pub struct SimulationConfig {
 
 impl SimulationConfig {
     /// Create new simulation configuration.
-    pub fn new(
-        population_size: usize,
-        total_generations: usize,
-        seed: Option<u64>,
-    ) -> Self {
+    pub fn new(population_size: usize, total_generations: usize, seed: Option<u64>) -> Self {
         Self {
             population_size,
             total_generations,
@@ -376,15 +381,8 @@ mod tests {
 
     #[test]
     fn test_repeat_structure_new() {
-        let structure = RepeatStructure::new(
-            Alphabet::dna(),
-            Nucleotide::A,
-            171,
-            12,
-            100,
-            1,
-        );
-        
+        let structure = RepeatStructure::new(Nucleotide::A, 171, 12, 100, 1);
+
         assert_eq!(structure.ru_length, 171);
         assert_eq!(structure.rus_per_hor, 12);
         assert_eq!(structure.hors_per_chr, 100);
@@ -393,22 +391,15 @@ mod tests {
 
     #[test]
     fn test_repeat_structure_chr_length() {
-        let structure = RepeatStructure::new(
-            Alphabet::dna(),
-            Nucleotide::A,
-            10,
-            5,
-            20,
-            1,
-        );
-        
+        let structure = RepeatStructure::new(Nucleotide::A, 10, 5, 20, 1);
+
         // 10 * 5 * 20 = 1000
         assert_eq!(structure.chr_length(), 1000);
     }
 
     #[test]
     fn test_mutation_config_uniform() {
-        let config = MutationConfig::uniform(Alphabet::dna(), 0.001).unwrap();
+        let config = MutationConfig::uniform(0.001).unwrap();
         // Just check it was created successfully
         assert!(matches!(config.model, SubstitutionModel { .. }));
     }
@@ -433,7 +424,7 @@ mod tests {
     fn test_fitness_config_with_components() {
         let gc = GCContentFitness::new(0.5, 2.0).unwrap();
         let config = FitnessConfig::new(Some(gc), None, None, None);
-        
+
         assert!(!config.is_neutral());
         assert!(config.gc_content.is_some());
         assert!(config.length.is_none());
@@ -450,7 +441,7 @@ mod tests {
         let config = FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(0.5, 2.0)
             .unwrap()
             .build();
-        
+
         assert!(!config.is_neutral());
         assert!(config.gc_content.is_some());
         assert!(config.length.is_none());
@@ -462,7 +453,7 @@ mod tests {
         let config = FitnessConfigBuilder::<BuilderEmpty>::with_length(20000, 0.5)
             .unwrap()
             .build();
-        
+
         assert!(!config.is_neutral());
         assert!(config.gc_content.is_none());
         assert!(config.length.is_some());
@@ -478,7 +469,7 @@ mod tests {
             .with_similarity(2.0)
             .unwrap()
             .build();
-        
+
         assert!(!config.is_neutral());
         assert!(config.gc_content.is_some());
         assert!(config.length.is_some());
@@ -490,7 +481,7 @@ mod tests {
         let result = FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(0.5, 2.0)
             .unwrap()
             .with_gc_content(0.6, 3.0);
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("already set"));
     }
@@ -499,16 +490,16 @@ mod tests {
     fn test_fitness_builder_invalid_parameters() {
         // Invalid GC content optimum
         assert!(FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(1.5, 2.0).is_err());
-        
+
         // Invalid concentration
         assert!(FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(0.5, -1.0).is_err());
-        
+
         // Invalid length optimum
         assert!(FitnessConfigBuilder::<BuilderEmpty>::with_length(0, 0.5).is_err());
-        
+
         // Invalid std_dev
         assert!(FitnessConfigBuilder::<BuilderEmpty>::with_length(20000, 0.0).is_err());
-        
+
         // Invalid similarity shape
         assert!(FitnessConfigBuilder::<BuilderEmpty>::with_similarity(0.0).is_err());
     }
@@ -521,13 +512,13 @@ mod tests {
             .with_length(20000, 0.5)
             .unwrap()
             .build();
-        
+
         let config2 = FitnessConfigBuilder::<BuilderEmpty>::with_length(20000, 0.5)
             .unwrap()
             .with_gc_content(0.5, 2.0)
             .unwrap()
             .build();
-        
+
         // Both should have the same components
         assert!(config1.gc_content.is_some());
         assert!(config1.length.is_some());
@@ -540,7 +531,7 @@ mod tests {
         let config = FitnessConfigBuilder::<BuilderEmpty>::with_length_similarity(2.0)
             .unwrap()
             .build();
-        
+
         assert!(!config.is_neutral());
         assert!(config.gc_content.is_none());
         assert!(config.length.is_none());
@@ -555,7 +546,7 @@ mod tests {
             .with_length_similarity(3.0)
             .unwrap()
             .build();
-        
+
         assert!(!config.is_neutral());
         assert!(config.gc_content.is_some());
         assert!(config.length_similarity.is_some());
@@ -572,7 +563,7 @@ mod tests {
             .with_length_similarity(1.5)
             .unwrap()
             .build();
-        
+
         assert!(!config.is_neutral());
         assert!(config.gc_content.is_some());
         assert!(config.length.is_some());
@@ -585,7 +576,7 @@ mod tests {
         let result = FitnessConfigBuilder::<BuilderEmpty>::with_length_similarity(2.0)
             .unwrap()
             .with_length_similarity(3.0);
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("already set"));
     }
@@ -594,7 +585,7 @@ mod tests {
     fn test_fitness_builder_invalid_length_similarity_shape() {
         // Invalid shape (zero)
         assert!(FitnessConfigBuilder::<BuilderEmpty>::with_length_similarity(0.0).is_err());
-        
+
         // Invalid shape (negative)
         assert!(FitnessConfigBuilder::<BuilderEmpty>::with_length_similarity(-1.0).is_err());
     }
@@ -602,7 +593,7 @@ mod tests {
     #[test]
     fn test_simulation_config_new() {
         let config = SimulationConfig::new(100, 1000, Some(42));
-        
+
         assert_eq!(config.population_size, 100);
         assert_eq!(config.total_generations, 1000);
         assert_eq!(config.seed, Some(42));

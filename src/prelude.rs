@@ -7,19 +7,18 @@
 //!
 //! ```
 //! use centrevo::prelude::*;
-//! 
-//! let alphabet = Alphabet::dna();
-//! let seq = Sequence::from_str("ACGT", alphabet).unwrap();
+//!
+//! let seq = Sequence::from_str("ACGT").unwrap();
 //! ```
 
-pub use crate::base::{Alphabet, InvalidNucleotide, Nucleotide, Sequence, SharedSequence};
+pub use crate::base::{InvalidNucleotide, Nucleotide, Sequence, SharedSequence};
 pub use crate::genome::{Chromosome, Haplotype, Individual};
 pub use crate::simulation::Population;
 
 // Analysis module re-exports
 pub use crate::analysis::{
-    nucleotide_diversity, tajimas_d, wattersons_theta, haplotype_diversity,
-    linkage_disequilibrium, gc_content, nucleotide_composition,
+    gc_content, haplotype_diversity, linkage_disequilibrium, nucleotide_composition,
+    nucleotide_diversity, tajimas_d, wattersons_theta,
 };
 
 // TODO: Add more re-exports as other modules are implemented

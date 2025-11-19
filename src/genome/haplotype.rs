@@ -112,14 +112,10 @@ impl IntoIterator for Haplotype {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::{Alphabet, Nucleotide};
-
-    fn test_alphabet() -> Alphabet {
-        Alphabet::dna()
-    }
+    use crate::base::Nucleotide;
 
     fn test_chromosome(id: &str, length: usize) -> Chromosome {
-        Chromosome::uniform(id, Nucleotide::A, length, 10, 5, test_alphabet())
+        Chromosome::uniform(id, Nucleotide::A, length, 10, 5)
     }
 
     // ===== Haplotype Tests =====
@@ -149,7 +145,7 @@ mod tests {
     fn test_haplotype_from_chromosomes() {
         let chr1 = test_chromosome("chr1", 100);
         let chr2 = test_chromosome("chr2", 200);
-        
+
         let hap = Haplotype::from_chromosomes(vec![chr1, chr2]);
         assert_eq!(hap.len(), 2);
         assert!(!hap.is_empty());
@@ -158,13 +154,13 @@ mod tests {
     #[test]
     fn test_haplotype_push() {
         let mut hap = Haplotype::new();
-        
+
         hap.push(test_chromosome("chr1", 100));
         assert_eq!(hap.len(), 1);
-        
+
         hap.push(test_chromosome("chr2", 200));
         assert_eq!(hap.len(), 2);
-        
+
         hap.push(test_chromosome("chr3", 300));
         assert_eq!(hap.len(), 3);
     }
@@ -174,17 +170,17 @@ mod tests {
         let mut hap = Haplotype::new();
         hap.push(test_chromosome("chr1", 100));
         hap.push(test_chromosome("chr2", 200));
-        
+
         let chr1 = hap.get(0);
         assert!(chr1.is_some());
         assert_eq!(chr1.unwrap().id(), "chr1");
         assert_eq!(chr1.unwrap().len(), 100);
-        
+
         let chr2 = hap.get(1);
         assert!(chr2.is_some());
         assert_eq!(chr2.unwrap().id(), "chr2");
         assert_eq!(chr2.unwrap().len(), 200);
-        
+
         let chr3 = hap.get(2);
         assert!(chr3.is_none());
     }
@@ -193,11 +189,11 @@ mod tests {
     fn test_haplotype_get_mut() {
         let mut hap = Haplotype::new();
         hap.push(test_chromosome("chr1", 100));
-        
+
         if let Some(chr) = hap.get_mut(0) {
             chr.sequence_mut().set(0, Nucleotide::T).unwrap();
         }
-        
+
         let chr = hap.get(0).unwrap();
         assert_eq!(chr.sequence().get(0), Some(Nucleotide::T));
     }
@@ -207,7 +203,7 @@ mod tests {
         let mut hap = Haplotype::new();
         hap.push(test_chromosome("chr1", 100));
         hap.push(test_chromosome("chr2", 200));
-        
+
         let chrs = hap.chromosomes();
         assert_eq!(chrs.len(), 2);
         assert_eq!(chrs[0].id(), "chr1");
@@ -218,10 +214,10 @@ mod tests {
     fn test_haplotype_chromosomes_mut() {
         let mut hap = Haplotype::new();
         hap.push(test_chromosome("chr1", 100));
-        
+
         let chrs = hap.chromosomes_mut();
         chrs[0].sequence_mut().set(0, Nucleotide::G).unwrap();
-        
+
         assert_eq!(hap.get(0).unwrap().sequence().get(0), Some(Nucleotide::G));
     }
 
@@ -231,7 +227,7 @@ mod tests {
         hap.push(test_chromosome("chr1", 100));
         hap.push(test_chromosome("chr2", 200));
         hap.push(test_chromosome("chr3", 300));
-        
+
         let ids: Vec<&str> = hap.iter().map(|chr| chr.id()).collect();
         assert_eq!(ids, vec!["chr1", "chr2", "chr3"]);
     }
@@ -241,12 +237,12 @@ mod tests {
         let mut hap = Haplotype::new();
         hap.push(test_chromosome("chr1", 100));
         hap.push(test_chromosome("chr2", 200));
-        
+
         // Mutate all chromosomes
         for chr in hap.iter_mut() {
             chr.sequence_mut().set(0, Nucleotide::C).unwrap();
         }
-        
+
         // Verify mutations
         for chr in hap.iter() {
             assert_eq!(chr.sequence().get(0), Some(Nucleotide::C));
@@ -258,11 +254,9 @@ mod tests {
         let mut hap = Haplotype::new();
         hap.push(test_chromosome("chr1", 100));
         hap.push(test_chromosome("chr2", 200));
-        
-        let ids: Vec<String> = hap.into_iter()
-            .map(|chr| chr.id().to_string())
-            .collect();
-        
+
+        let ids: Vec<String> = hap.into_iter().map(|chr| chr.id().to_string()).collect();
+
         assert_eq!(ids, vec!["chr1", "chr2"]);
     }
 
@@ -272,7 +266,7 @@ mod tests {
         hap.push(test_chromosome("chr1", 100));
         hap.push(test_chromosome("chr2", 200));
         hap.push(test_chromosome("chr3", 300));
-        
+
         assert_eq!(hap.total_length(), 600);
     }
 
@@ -294,12 +288,12 @@ mod tests {
         let mut hap1 = Haplotype::new();
         hap1.push(test_chromosome("chr1", 100));
         hap1.push(test_chromosome("chr2", 200));
-        
+
         let hap2 = hap1.clone();
-        
+
         assert_eq!(hap1.len(), hap2.len());
         assert_eq!(hap1.total_length(), hap2.total_length());
-        
+
         // Verify chromosome IDs match
         for (chr1, chr2) in hap1.iter().zip(hap2.iter()) {
             assert_eq!(chr1.id(), chr2.id());
@@ -309,12 +303,12 @@ mod tests {
     #[test]
     fn test_haplotype_many_chromosomes() {
         let mut hap = Haplotype::new();
-        
+
         // Add 23 chromosomes (human genome)
         for i in 1..=23 {
             hap.push(test_chromosome(&format!("chr{}", i), i * 100));
         }
-        
+
         assert_eq!(hap.len(), 23);
         assert!(hap.total_length() > 0);
     }
@@ -329,16 +323,16 @@ mod tests {
     #[test]
     fn test_haplotype_access_pattern() {
         let mut hap = Haplotype::new();
-        
+
         // Add some chromosomes
         for i in 1..=5 {
             hap.push(test_chromosome(&format!("chr{}", i), i * 100));
         }
-        
+
         // Random access
         assert_eq!(hap.get(2).unwrap().id(), "chr3");
         assert_eq!(hap.get(2).unwrap().len(), 300);
-        
+
         // Sequential access
         let mut lengths = Vec::new();
         for chr in hap.iter() {
@@ -351,15 +345,16 @@ mod tests {
     fn test_haplotype_mutation_isolation() {
         let mut hap1 = Haplotype::new();
         hap1.push(test_chromosome("chr1", 100));
-        
+
         let mut hap2 = hap1.clone();
-        
+
         // Mutate hap2
-        hap2.get_mut(0).unwrap()
+        hap2.get_mut(0)
+            .unwrap()
             .sequence_mut()
             .set(0, Nucleotide::T)
             .unwrap();
-        
+
         // hap1 should be unchanged
         assert_eq!(hap1.get(0).unwrap().sequence().get(0), Some(Nucleotide::A));
         assert_eq!(hap2.get(0).unwrap().sequence().get(0), Some(Nucleotide::T));
@@ -368,11 +363,11 @@ mod tests {
     #[test]
     fn test_haplotype_large() {
         let mut hap = Haplotype::new();
-        
+
         // Create haplotype with large chromosomes
         hap.push(test_chromosome("chr1", 1_000_000));
         hap.push(test_chromosome("chr2", 500_000));
-        
+
         assert_eq!(hap.len(), 2);
         assert_eq!(hap.total_length(), 1_500_000);
     }
@@ -381,12 +376,12 @@ mod tests {
     fn test_haplotype_realistic_human() {
         // Simplified human genome (just a few chromosomes for testing)
         let mut hap = Haplotype::new();
-        
+
         // Roughly proportional sizes (in kb, scaled down)
         hap.push(test_chromosome("chr1", 248_000));
         hap.push(test_chromosome("chr2", 242_000));
         hap.push(test_chromosome("chrX", 156_000));
-        
+
         assert_eq!(hap.len(), 3);
         assert!(hap.total_length() > 600_000);
     }

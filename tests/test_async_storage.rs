@@ -1,7 +1,7 @@
 //! Integration tests for async recording and compression.
 
 use centrevo::{
-    base::{Alphabet, Nucleotide},
+    base::Nucleotide,
     genome::{Chromosome, Haplotype, Individual},
     simulation::{
         FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure,
@@ -11,23 +11,8 @@ use centrevo::{
 };
 
 fn create_test_individual(id: &str, length: usize) -> Individual {
-    let alphabet = Alphabet::dna();
-    let chr1 = Chromosome::uniform(
-        format!("{}_h1_chr1", id),
-        Nucleotide::A,
-        length,
-        20,
-        5,
-        alphabet.clone(),
-    );
-    let chr2 = Chromosome::uniform(
-        format!("{}_h2_chr1", id),
-        Nucleotide::C,
-        length,
-        20,
-        5,
-        alphabet,
-    );
+    let chr1 = Chromosome::uniform(format!("{}_h1_chr1", id), Nucleotide::A, length, 20, 5);
+    let chr2 = Chromosome::uniform(format!("{}_h2_chr1", id), Nucleotide::C, length, 20, 5);
 
     let h1 = Haplotype::from_chromosomes(vec![chr1]);
     let h2 = Haplotype::from_chromosomes(vec![chr2]);
@@ -51,9 +36,8 @@ async fn test_full_simulation_with_async_recording() {
     let _ = std::fs::remove_file(path);
 
     // Create simulation
-    let alphabet = Alphabet::dna();
-    let structure = RepeatStructure::new(alphabet.clone(), Nucleotide::A, 20, 10, 10, 1);
-    let mutation = MutationConfig::uniform(alphabet, 0.001).unwrap();
+    let structure = RepeatStructure::new(Nucleotide::A, 20, 10, 10, 1);
+    let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(50, 100, Some(42));
@@ -97,7 +81,7 @@ async fn test_async_recording_with_rapid_succession() {
     let _ = std::fs::remove_file(path);
 
     let config = BufferConfig {
-        capacity: 20, // Large buffer for rapid recording
+        capacity: 20,         // Large buffer for rapid recording
         compression_level: 5, // Fast compression
         warn_threshold: 0.8,
     };
@@ -175,7 +159,10 @@ async fn test_compression_ratio_comparison() {
         let pop = create_test_population(50, 1000);
 
         let dummy_rng_state = vec![0u8; 32];
-        recorder.record_generation(&pop, 0, dummy_rng_state).await.unwrap();
+        recorder
+            .record_generation(&pop, 0, dummy_rng_state)
+            .await
+            .unwrap();
 
         let stats = recorder.close().await.unwrap();
         results.push((level, stats));
@@ -271,7 +258,11 @@ async fn test_concurrent_recorders() {
     for handle in handles {
         let (idx, stats) = handle.await.unwrap();
         assert_eq!(stats.generations_recorded, 5);
-        println!("Recorder {}: compression={:.1}%", idx, stats.compression_ratio * 100.0);
+        println!(
+            "Recorder {}: compression={:.1}%",
+            idx,
+            stats.compression_ratio * 100.0
+        );
     }
 
     // Clean up
@@ -292,8 +283,14 @@ async fn test_snapshot_consistency() {
 
     // Record same population twice
     let dummy_rng_state = vec![0u8; 32];
-    recorder.record_generation(&pop, 0, dummy_rng_state.clone()).await.unwrap();
-    recorder.record_generation(&pop, 1, dummy_rng_state).await.unwrap();
+    recorder
+        .record_generation(&pop, 0, dummy_rng_state.clone())
+        .await
+        .unwrap();
+    recorder
+        .record_generation(&pop, 1, dummy_rng_state)
+        .await
+        .unwrap();
 
     let stats = recorder.close().await.unwrap();
 
@@ -335,7 +332,10 @@ async fn test_performance_vs_sync() {
         let recorder = AsyncRecorder::new(async_path, "async_test", config).unwrap();
         for generation in 0..10 {
             let dummy_rng_state = vec![0u8; 32];
-            recorder.record_generation(&pop, generation, dummy_rng_state).await.unwrap();
+            recorder
+                .record_generation(&pop, generation, dummy_rng_state)
+                .await
+                .unwrap();
         }
         recorder.close().await.unwrap();
     }

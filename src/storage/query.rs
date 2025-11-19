@@ -258,19 +258,16 @@ impl QueryBuilder {
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let rows = stmt
-            .query_map(
-                params![sim_id, generation as i64, min_fitness],
-                |row| {
-                    Ok(IndividualSnapshot {
-                        individual_id: row.get(0)?,
-                        haplotype1_chr_id: row.get(1)?,
-                        haplotype1_seq: row.get(2)?,
-                        haplotype2_chr_id: row.get(3)?,
-                        haplotype2_seq: row.get(4)?,
-                        fitness: row.get(5)?,
-                    })
-                },
-            )
+            .query_map(params![sim_id, generation as i64, min_fitness], |row| {
+                Ok(IndividualSnapshot {
+                    individual_id: row.get(0)?,
+                    haplotype1_chr_id: row.get(1)?,
+                    haplotype1_seq: row.get(2)?,
+                    haplotype2_chr_id: row.get(3)?,
+                    haplotype2_seq: row.get(4)?,
+                    fitness: row.get(5)?,
+                })
+            })
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let mut snapshots = Vec::new();
@@ -340,13 +337,14 @@ impl QueryBuilder {
     }
 
     /// Get complete simulation configuration from database.
-    pub fn get_full_config(&self, sim_id: &str) -> Result<crate::storage::SimulationSnapshot, DatabaseError> {
+    pub fn get_full_config(
+        &self,
+        sim_id: &str,
+    ) -> Result<crate::storage::SimulationSnapshot, DatabaseError> {
         let mut stmt = self
             .db
             .connection()
-            .prepare(
-                "SELECT config_json FROM simulations WHERE sim_id = ?1",
-            )
+            .prepare("SELECT config_json FROM simulations WHERE sim_id = ?1")
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let config_json: String = stmt
@@ -390,29 +388,14 @@ pub struct CheckpointInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::{Alphabet, Nucleotide};
+    use crate::base::Nucleotide;
     use crate::genome::{Chromosome, Haplotype, Individual};
     use crate::simulation::{Population, SimulationConfig};
     use crate::storage::Recorder;
 
     fn create_test_individual(id: &str, length: usize) -> Individual {
-        let alphabet = Alphabet::dna();
-        let chr1 = Chromosome::uniform(
-            format!("{}_h1_chr1", id),
-            Nucleotide::A,
-            length,
-            20,
-            5,
-            alphabet.clone(),
-        );
-        let chr2 = Chromosome::uniform(
-            format!("{}_h2_chr1", id),
-            Nucleotide::C,
-            length,
-            20,
-            5,
-            alphabet,
-        );
+        let chr1 = Chromosome::uniform(format!("{}_h1_chr1", id), Nucleotide::A, length, 20, 5);
+        let chr2 = Chromosome::uniform(format!("{}_h2_chr1", id), Nucleotide::C, length, 20, 5);
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);
@@ -436,9 +419,8 @@ mod tests {
 
     fn setup_test_db(path: &str) -> (Recorder, SimulationConfig) {
         let _ = std::fs::remove_file(path);
-        let mut recorder =
-            Recorder::new(path, "test_sim", crate::storage::RecordingStrategy::All)
-                .expect("Failed to create recorder");
+        let mut recorder = Recorder::new(path, "test_sim", crate::storage::RecordingStrategy::All)
+            .expect("Failed to create recorder");
 
         let config = create_test_config();
         recorder
@@ -463,7 +445,9 @@ mod tests {
         recorder.close().ok();
 
         let query = QueryBuilder::new(path).expect("Failed to create query builder");
-        let sims = query.list_simulations().expect("Failed to list simulations");
+        let sims = query
+            .list_simulations()
+            .expect("Failed to list simulations");
 
         assert_eq!(sims.len(), 1);
         assert_eq!(sims[0], "test_sim");

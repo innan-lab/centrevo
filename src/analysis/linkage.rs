@@ -1,5 +1,5 @@
 //! Linkage disequilibrium analysis
-//! 
+//!
 //! Measures non-random association of alleles at different loci.
 
 use crate::base::Nucleotide;
@@ -17,21 +17,21 @@ pub struct LDStatistics {
 }
 
 /// Calculate linkage disequilibrium between two positions
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `population` - The population to analyze
 /// * `pos1` - First position
 /// * `pos2` - Second position
 /// * `chromosome_idx` - Chromosome index
 /// * `haplotype_idx` - Haplotype index
-/// 
+///
 /// # Returns
-/// 
+///
 /// LD statistics (D, D', r²)
-/// 
+///
 /// # References
-/// 
+///
 /// Lewontin, R. C. (1964). The Interaction of Selection and Linkage. I. General
 /// Considerations; Heterotic Models. Genetics, 49(1), 49-67.
 pub fn linkage_disequilibrium(
@@ -118,18 +118,10 @@ pub fn linkage_disequilibrium(
     // Calculate D'
     let d_prime = if d >= 0.0 {
         let d_max = (p_a * (1.0 - p_b)).min((1.0 - p_a) * p_b);
-        if d_max > 0.0 {
-            d / d_max
-        } else {
-            0.0
-        }
+        if d_max > 0.0 { d / d_max } else { 0.0 }
     } else {
         let d_max = (p_a * p_b).min((1.0 - p_a) * (1.0 - p_b));
-        if d_max > 0.0 {
-            -d / d_max
-        } else {
-            0.0
-        }
+        if d_max > 0.0 { -d / d_max } else { 0.0 }
     };
 
     // Calculate r²
@@ -148,19 +140,19 @@ pub fn linkage_disequilibrium(
 }
 
 /// Calculate LD decay with distance
-/// 
+///
 /// Computes average r² for pairs of sites at different distances.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `population` - The population to analyze
 /// * `chromosome_idx` - Chromosome index
 /// * `haplotype_idx` - Haplotype index
 /// * `max_distance` - Maximum distance to consider
 /// * `bin_size` - Size of distance bins
-/// 
+///
 /// # Returns
-/// 
+///
 /// Vector of (distance, average_r²) pairs
 pub fn ld_decay(
     population: &Population,
@@ -201,13 +193,9 @@ pub fn ld_decay(
             let distance = pos2 - pos1;
             let bin_idx = (distance / bin_size).min(num_bins - 1);
 
-            if let Some(ld) = linkage_disequilibrium(
-                population,
-                pos1,
-                pos2,
-                chromosome_idx,
-                haplotype_idx,
-            ) {
+            if let Some(ld) =
+                linkage_disequilibrium(population, pos1, pos2, chromosome_idx, haplotype_idx)
+            {
                 bin_sums[bin_idx] += ld.r_squared;
                 bin_counts[bin_idx] += 1;
             }
@@ -226,19 +214,19 @@ pub fn ld_decay(
 }
 
 /// Identify haplotype blocks using simple LD threshold
-/// 
+///
 /// Returns list of (start, end) positions for blocks with high LD.
 /// This is a simplified version - full implementation would use Gabriel et al. method.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `population` - The population to analyze
 /// * `chromosome_idx` - Chromosome index
 /// * `haplotype_idx` - Haplotype index
 /// * `ld_threshold` - Minimum r² to consider sites in same block (default: 0.8)
-/// 
+///
 /// # Returns
-/// 
+///
 /// Vector of (start_position, end_position) for each block
 pub fn haplotype_blocks(
     population: &Population,
@@ -272,9 +260,13 @@ pub fn haplotype_blocks(
     let sample_step = (seq_len / 50).max(1);
 
     for pos in (0..seq_len - 1).step_by(sample_step) {
-        if let Some(ld) =
-            linkage_disequilibrium(population, pos, pos + sample_step, chromosome_idx, haplotype_idx)
-        {
+        if let Some(ld) = linkage_disequilibrium(
+            population,
+            pos,
+            pos + sample_step,
+            chromosome_idx,
+            haplotype_idx,
+        ) {
             if ld.r_squared >= ld_threshold {
                 if !in_block {
                     block_start = pos;
@@ -297,12 +289,11 @@ pub fn haplotype_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::{Alphabet, Sequence};
+    use crate::base::Sequence;
     use crate::genome::{Chromosome, Haplotype, Individual};
 
     fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
-        let alphabet = Alphabet::dna();
-        let mut seq = Sequence::with_capacity(sequence.len(), alphabet);
+        let mut seq = Sequence::with_capacity(sequence.len());
         for &nuc in sequence {
             seq.push(nuc);
         }

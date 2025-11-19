@@ -3,8 +3,9 @@
 //! This module provides fitness scoring capabilities including GC content,
 //! length-based, and sequence similarity fitness functions.
 
+use crate::base::Nucleotide;
 use crate::genome::{Chromosome, Individual};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Trait for scoring fitness of a single haplotype (chromosome).
 pub trait HaplotypeFitness {
@@ -71,15 +72,18 @@ impl GCContentFitness {
     pub fn new(optimum: f64, concentration: f64) -> Result<Self, FitnessError> {
         if !(0.0..=1.0).contains(&optimum) {
             return Err(FitnessError::InvalidParameter(
-                "optimum must be between 0.0 and 1.0 (inclusive)".into()
+                "optimum must be between 0.0 and 1.0 (inclusive)".into(),
             ));
         }
         if concentration <= 0.0 {
             return Err(FitnessError::InvalidParameter(
-                "concentration must be greater than 0.0".into()
+                "concentration must be greater than 0.0".into(),
             ));
         }
-        Ok(Self { optimum, concentration })
+        Ok(Self {
+            optimum,
+            concentration,
+        })
     }
 
     /// Convert optimum and concentration to alpha/beta parameters for Beta distribution.
@@ -93,12 +97,12 @@ impl GCContentFitness {
 impl HaplotypeFitness for GCContentFitness {
     fn haplotype_fitness(&self, chromosome: &Chromosome) -> f64 {
         let gc_content = chromosome.gc_content();
-        
+
         // Handle edge cases with small epsilon to avoid log(0)
         let gc = gc_content.clamp(1e-10, 1.0 - 1e-10);
 
         let (alpha, beta) = self.to_alpha_beta();
-        
+
         // Unnormalized Beta PDF
         gc.powf(alpha - 1.0) * (1.0 - gc).powf(beta - 1.0)
     }
@@ -129,12 +133,12 @@ impl LengthFitness {
     pub fn new(optimum: usize, std_dev: f64) -> Result<Self, FitnessError> {
         if optimum == 0 {
             return Err(FitnessError::InvalidParameter(
-                "optimum must be greater than 0".into()
+                "optimum must be greater than 0".into(),
             ));
         }
         if std_dev <= 0.0 {
             return Err(FitnessError::InvalidParameter(
-                "std_dev must be greater than 0.0".into()
+                "std_dev must be greater than 0.0".into(),
             ));
         }
         Ok(Self { optimum, std_dev })
@@ -179,24 +183,23 @@ impl SequenceSimilarityFitness {
     pub fn new(shape: f64) -> Result<Self, FitnessError> {
         if shape <= 0.0 {
             return Err(FitnessError::InvalidParameter(
-                "shape must be greater than 0.0".into()
+                "shape must be greater than 0.0".into(),
             ));
         }
         Ok(Self { shape })
     }
 
     /// Calculate hamming distance between two sequences.
-    fn hamming_distance(seq1: &[u8], seq2: &[u8]) -> usize {
-        seq1.iter()
-            .zip(seq2.iter())
-            .filter(|(a, b)| a != b)
-            .count()
+    fn hamming_distance(seq1: &[Nucleotide], seq2: &[Nucleotide]) -> usize {
+        seq1.iter().zip(seq2.iter()).filter(|(a, b)| a != b).count()
     }
 }
 
 impl HaplotypeFitness for SequenceSimilarityFitness {
     fn haplotype_fitness(&self, _chromosome: &Chromosome) -> f64 {
-        panic!("SequenceSimilarityFitness requires two haplotypes. Use individual_fitness instead.");
+        panic!(
+            "SequenceSimilarityFitness requires two haplotypes. Use individual_fitness instead."
+        );
     }
 }
 
@@ -214,8 +217,8 @@ impl IndividualFitness for SequenceSimilarityFitness {
 
         // Compare up to the shorter length
         let distance = Self::hamming_distance(
-            &chr1.sequence().indices()[..min_len],
-            &chr2.sequence().indices()[..min_len],
+            &chr1.sequence().as_slice()[..min_len],
+            &chr2.sequence().as_slice()[..min_len],
         );
 
         // Add penalty for length difference
@@ -229,7 +232,6 @@ impl IndividualFitness for SequenceSimilarityFitness {
         similarity.powf(self.shape)
     }
 }
-
 
 /// Length similarity fitness function.
 ///
@@ -251,7 +253,7 @@ impl LengthSimilarityFitness {
     pub fn new(shape: f64) -> Result<Self, FitnessError> {
         if shape <= 0.0 {
             return Err(FitnessError::InvalidParameter(
-                "shape must be greater than 0.0".into()
+                "shape must be greater than 0.0".into(),
             ));
         }
         Ok(Self { shape })
@@ -259,7 +261,7 @@ impl LengthSimilarityFitness {
 
     /// Calculate the percent length difference between two sequences.
     /// Identical lengths return 0, completely different lengths return 1.
-    fn length_ratio(seq1: &[u8], seq2: &[u8]) -> f64 {
+    fn length_ratio(seq1: &[Nucleotide], seq2: &[Nucleotide]) -> f64 {
         let len1 = seq1.len();
         let len2 = seq2.len();
         let max_len = len1.max(len2);
@@ -287,16 +289,13 @@ impl IndividualFitness for LengthSimilarityFitness {
         }
 
         // Compare the lengths of the sequences as a ratio
-        let similarity = 1.0 - Self::length_ratio(
-            chr1.sequence().indices(),
-            chr2.sequence().indices(),
-        );
+        let similarity =
+            1.0 - Self::length_ratio(chr1.sequence().as_slice(), chr2.sequence().as_slice());
 
         // Apply shape parameter
         similarity.powf(self.shape)
     }
 }
-
 
 /// Errors that can occur in fitness calculations.
 #[derive(Debug, Clone, PartialEq)]
@@ -320,15 +319,10 @@ impl std::error::Error for FitnessError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::Alphabet;
     use crate::genome::Haplotype;
 
-    fn test_alphabet() -> Alphabet {
-        Alphabet::dna()
-    }
-
     fn test_chromosome(seq: &str) -> Chromosome {
-        let sequence = crate::base::Sequence::from_str(seq, test_alphabet()).unwrap();
+        let sequence = crate::base::Sequence::from_str(seq).unwrap();
         Chromosome::new("test", sequence, 4, 2)
     }
 
@@ -413,10 +407,10 @@ mod tests {
         let fitness = LengthFitness::new(8, 0.5).unwrap();
         let chr_optimal = test_chromosome("ACGTACGT");
         let chr_longer = test_chromosome("ACGTACGTACGTACGT");
-        
+
         let score_optimal = fitness.haplotype_fitness(&chr_optimal);
         let score_longer = fitness.haplotype_fitness(&chr_longer);
-        
+
         assert!(score_optimal > score_longer);
     }
 
@@ -445,65 +439,65 @@ mod tests {
     #[test]
     fn test_sequence_similarity_identical() {
         let fitness = SequenceSimilarityFitness::new(1.0).unwrap();
-        
+
         let chr = test_chromosome("ACGTACGT");
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr.clone());
         hap2.push(chr);
-        
+
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
-        
+
         assert_eq!(score, 1.0); // Identical sequences
     }
 
     #[test]
     fn test_sequence_similarity_completely_different() {
         let fitness = SequenceSimilarityFitness::new(1.0).unwrap();
-        
+
         let chr1 = test_chromosome("AAAAAAAA");
         let chr2 = test_chromosome("TTTTTTTT");
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
-        
+
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
-        
+
         assert_eq!(score, 0.0); // Completely different
     }
 
     #[test]
     fn test_sequence_similarity_partial() {
         let fitness = SequenceSimilarityFitness::new(1.0).unwrap();
-        
+
         let chr1 = test_chromosome("ACGTACGT");
         let chr2 = test_chromosome("ACGTTCGT");
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
-        
+
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
-        
+
         assert!(score > 0.0 && score < 1.0); // Partially similar
     }
 
     #[test]
     fn test_hamming_distance() {
-        let seq1 = vec![0u8, 1u8, 2u8, 3u8];
-        let seq2 = vec![0u8, 1u8, 2u8, 3u8];
+        let seq1 = vec![Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
+        let seq2 = vec![Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
         assert_eq!(SequenceSimilarityFitness::hamming_distance(&seq1, &seq2), 0);
 
-        let seq3 = vec![0u8, 0u8, 0u8, 0u8];
-        let seq4 = vec![1u8, 1u8, 1u8, 1u8];
+        let seq3 = vec![Nucleotide::A, Nucleotide::A, Nucleotide::A, Nucleotide::A];
+        let seq4 = vec![Nucleotide::C, Nucleotide::C, Nucleotide::C, Nucleotide::C];
         assert_eq!(SequenceSimilarityFitness::hamming_distance(&seq3, &seq4), 4);
 
-        let seq5 = vec![0u8, 1u8, 2u8, 3u8];
-        let seq6 = vec![0u8, 0u8, 2u8, 2u8];
+        let seq5 = vec![Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
+        let seq6 = vec![Nucleotide::A, Nucleotide::A, Nucleotide::G, Nucleotide::G];
         assert_eq!(SequenceSimilarityFitness::hamming_distance(&seq5, &seq6), 2);
     }
 
@@ -530,33 +524,33 @@ mod tests {
     #[test]
     fn test_length_similarity_identical() {
         let fitness = LengthSimilarityFitness::new(1.0).unwrap();
-        
+
         let chr = test_chromosome("ACGTACGT");
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr.clone());
         hap2.push(chr);
-        
+
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
-        
+
         assert_eq!(score, 1.0); // Identical lengths
     }
 
     #[test]
     fn test_length_similarity_different_lengths() {
         let fitness = LengthSimilarityFitness::new(1.0).unwrap();
-        
+
         let chr1 = test_chromosome("ACGT");
         let chr2 = test_chromosome("ACGTACGT");
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
-        
+
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
-        
+
         // Length diff is 4, max length is 8, so similarity = 1 - 4/8 = 0.5
         assert_eq!(score, 0.5);
     }
@@ -564,17 +558,17 @@ mod tests {
     #[test]
     fn test_length_similarity_completely_different() {
         let fitness = LengthSimilarityFitness::new(1.0).unwrap();
-        
+
         let chr1 = test_chromosome("A");
         let chr2 = test_chromosome("ACGTACGTACGTACGT");
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
-        
+
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
-        
+
         // Length diff is 15, max length is 16, so similarity = 1 - 15/16 = 0.0625
         assert!((score - 0.0625).abs() < 0.001);
     }
@@ -582,37 +576,37 @@ mod tests {
     #[test]
     fn test_length_similarity_with_shape() {
         let fitness = LengthSimilarityFitness::new(2.0).unwrap();
-        
+
         let chr1 = test_chromosome("ACGT");
         let chr2 = test_chromosome("ACGTACGT");
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
-        
+
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
-        
+
         // Similarity is 0.5, with shape 2.0: 0.5^2.0 = 0.25
         assert_eq!(score, 0.25);
     }
 
     #[test]
     fn test_length_ratio() {
-        let seq1 = vec![0u8, 1u8, 2u8, 3u8];
-        let seq2 = vec![0u8, 1u8, 2u8, 3u8];
+        let seq1 = vec![Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
+        let seq2 = vec![Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
         assert_eq!(LengthSimilarityFitness::length_ratio(&seq1, &seq2), 0.0);
 
-        let seq3 = vec![0u8, 1u8];
-        let seq4 = vec![0u8, 1u8, 2u8, 3u8];
+        let seq3 = vec![Nucleotide::A, Nucleotide::C];
+        let seq4 = vec![Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
         assert_eq!(LengthSimilarityFitness::length_ratio(&seq3, &seq4), 0.5);
 
-        let seq5 = vec![0u8];
-        let seq6 = vec![0u8, 1u8, 2u8, 3u8];
+        let seq5 = vec![Nucleotide::A];
+        let seq6 = vec![Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
         assert_eq!(LengthSimilarityFitness::length_ratio(&seq5, &seq6), 0.75);
 
-        let empty1: Vec<u8> = vec![];
-        let empty2: Vec<u8> = vec![];
+        let empty1: Vec<Nucleotide> = vec![];
+        let empty2: Vec<Nucleotide> = vec![];
         assert_eq!(LengthSimilarityFitness::length_ratio(&empty1, &empty2), 0.0);
     }
 
@@ -628,7 +622,7 @@ mod tests {
     fn test_gc_content_fitness_clone() {
         let fitness1 = GCContentFitness::new(0.5, 2.0).unwrap();
         let fitness2 = fitness1.clone();
-        
+
         assert_eq!(fitness1.optimum, fitness2.optimum);
         assert_eq!(fitness1.concentration, fitness2.concentration);
     }

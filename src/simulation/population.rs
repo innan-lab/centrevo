@@ -3,12 +3,12 @@
 //! This module provides structures and functions for managing populations
 //! of individuals during evolutionary simulations.
 
-use crate::genome::Individual;
 use crate::evolution::IndividualFitness;
+use crate::genome::Individual;
 use crate::simulation::FitnessConfig;
 use rand::Rng;
-use std::sync::Arc;
 use rayon::prelude::*;
+use std::sync::Arc;
 
 /// A population of diploid individuals.
 #[derive(Debug, Clone)]
@@ -120,7 +120,7 @@ impl Population {
     ) -> Vec<(usize, usize)> {
         // Create cumulative distribution for weighted sampling
         let total_fitness: f64 = fitness_values.iter().sum();
-        
+
         if total_fitness == 0.0 {
             // All fitness values are zero - use uniform selection
             return (0..n_pairs)
@@ -180,24 +180,23 @@ impl Population {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::{Alphabet, Sequence, Nucleotide};
+    use crate::base::{Nucleotide, Sequence};
     use crate::genome::{Chromosome, Haplotype};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
     fn create_test_individual(id: &str, base: Nucleotide) -> Individual {
-        let alphabet = Alphabet::dna();
-        let mut seq = Sequence::with_capacity(100, alphabet.clone());
+        let mut seq = Sequence::with_capacity(100);
         for _ in 0..100 {
             seq.push(base);
         }
-        
+
         let chr = Chromosome::new(format!("chr_{}", id), seq, 10, 5);
         let mut hap1 = Haplotype::new();
         hap1.push(chr.clone());
         let mut hap2 = Haplotype::new();
         hap2.push(chr);
-        
+
         Individual::new(id, hap1, hap2)
     }
 
@@ -207,7 +206,7 @@ mod tests {
             create_test_individual("ind1", Nucleotide::A),
             create_test_individual("ind2", Nucleotide::C),
         ];
-        
+
         let pop = Population::new("pop1", individuals);
         assert_eq!(pop.size(), 2);
         assert_eq!(pop.generation(), 0);
@@ -218,7 +217,7 @@ mod tests {
     fn test_population_increment_generation() {
         let individuals = vec![create_test_individual("ind1", Nucleotide::A)];
         let mut pop = Population::new("pop1", individuals);
-        
+
         assert_eq!(pop.generation(), 0);
         pop.increment_generation();
         assert_eq!(pop.generation(), 1);
@@ -233,7 +232,7 @@ mod tests {
             create_test_individual("ind2", Nucleotide::C),
             create_test_individual("ind3", Nucleotide::G),
         ];
-        
+
         let pop = Population::new("pop1", individuals);
         assert_eq!(pop.size(), 3);
         assert!(!pop.is_empty());
@@ -252,9 +251,9 @@ mod tests {
             create_test_individual("ind1", Nucleotide::A),
             create_test_individual("ind2", Nucleotide::C),
         ];
-        
+
         let pop = Population::new("pop1", individuals);
-        
+
         assert!(pop.get(0).is_some());
         assert_eq!(pop.get(0).unwrap().id(), "ind1");
         assert!(pop.get(1).is_some());
@@ -268,11 +267,11 @@ mod tests {
             create_test_individual("ind1", Nucleotide::A),
             create_test_individual("ind2", Nucleotide::C),
         ];
-        
+
         let pop = Population::new("pop1", individuals);
         let config = FitnessConfig::neutral();
         let fitness_values = pop.compute_fitness(&config);
-        
+
         // Neutral fitness should be 1.0 for all
         assert_eq!(fitness_values.len(), 2);
         assert_eq!(fitness_values[0], 1.0);
@@ -285,15 +284,15 @@ mod tests {
             create_test_individual("ind1", Nucleotide::A),
             create_test_individual("ind2", Nucleotide::C),
         ];
-        
+
         let mut pop = Population::new("pop1", individuals);
         let config = FitnessConfig::neutral();
-        
+
         // Initially fitness should be 0.0 (default)
         assert_eq!(pop.get(0).unwrap().fitness(), 0.0);
-        
+
         pop.update_fitness(&config);
-        
+
         // After update, should be 1.0 (neutral)
         assert_eq!(pop.get(0).unwrap().fitness(), 1.0);
         assert_eq!(pop.get(1).unwrap().fitness(), 1.0);
@@ -307,13 +306,13 @@ mod tests {
             create_test_individual("ind3", Nucleotide::G),
             create_test_individual("ind4", Nucleotide::T),
         ];
-        
+
         let pop = Population::new("pop1", individuals);
         let fitness_values = vec![0.0, 0.0, 0.0, 0.0]; // All zero - uniform selection
-        
+
         let mut rng = StdRng::seed_from_u64(42);
         let pairs = pop.select_parents(&mut rng, &fitness_values, 5);
-        
+
         assert_eq!(pairs.len(), 5);
         for (p1, p2) in pairs {
             assert!(p1 < pop.size());
@@ -329,13 +328,13 @@ mod tests {
             create_test_individual("ind2", Nucleotide::C),
             create_test_individual("ind3", Nucleotide::G),
         ];
-        
+
         let pop = Population::new("pop1", individuals);
         let fitness_values = vec![1.0, 2.0, 3.0]; // Weighted selection
-        
+
         let mut rng = StdRng::seed_from_u64(42);
         let pairs = pop.select_parents(&mut rng, &fitness_values, 10);
-        
+
         assert_eq!(pairs.len(), 10);
         for (p1, p2) in pairs {
             assert!(p1 < pop.size());
@@ -349,7 +348,7 @@ mod tests {
         let individuals1 = vec![create_test_individual("ind1", Nucleotide::A)];
         let mut pop = Population::new("pop1", individuals1);
         assert_eq!(pop.size(), 1);
-        
+
         let individuals2 = vec![
             create_test_individual("ind2", Nucleotide::C),
             create_test_individual("ind3", Nucleotide::G),

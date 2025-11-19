@@ -1,5 +1,5 @@
+use crate::base::{Nucleotide, Sequence, SharedSequence};
 use std::sync::Arc;
-use crate::base::{Alphabet, Sequence, SharedSequence, Nucleotide};
 
 /// A chromosome: a named sequence organized into repeat units (RUs) and
 /// higher-order repeats (HORs).
@@ -10,7 +10,8 @@ use crate::base::{Alphabet, Sequence, SharedSequence, Nucleotide};
 /// operations prefer `SharedChromosome` which shares sequence storage.
 #[derive(Debug, Clone)]
 pub struct Chromosome {
-    /// Unique identifier (shared across clones)
+    /// Type identifier. Unique in a haplotype, but not unique in a population
+    /// (shared across clones)
     id: Arc<str>,
     /// The sequence data (mutable during simulation)
     sequence: Sequence,
@@ -46,9 +47,8 @@ impl Chromosome {
         length: usize,
         ru_length: usize,
         rus_per_hor: usize,
-        alphabet: Alphabet,
     ) -> Self {
-        let mut sequence = Sequence::with_capacity(length, alphabet);
+        let mut sequence = Sequence::with_capacity(length);
         for _ in 0..length {
             sequence.push(base);
         }
@@ -115,34 +115,22 @@ impl Chromosome {
         self.len() / self.hor_length()
     }
 
-    /// Return the `Alphabet` used by the underlying sequence.
-    #[inline]
-    pub fn alphabet(&self) -> &Alphabet {
-        self.sequence.alphabet()
-    }
-
     /// Calculate GC content of the chromosome as a proportion in [0.0, 1.0].
-    ///
-    /// Positions with invalid indices (not mapping to a `Nucleotide`) are
-    /// ignored.
     pub fn gc_content(&self) -> f64 {
         let mut gc_count = 0;
-        let mut total = 0;
+        let total = self.sequence.len();
 
-        for &idx in self.sequence.indices() {
-            if let Some(nuc) = Nucleotide::from_index(idx) {
-                total += 1;
-                if matches!(nuc, Nucleotide::G | Nucleotide::C) {
-                    gc_count += 1;
-                }
+        if total == 0 {
+            return 0.0;
+        }
+
+        for &nuc in self.sequence.as_slice() {
+            if matches!(nuc, Nucleotide::G | Nucleotide::C) {
+                gc_count += 1;
             }
         }
 
-        if total == 0 {
-            0.0
-        } else {
-            gc_count as f64 / total as f64
-        }
+        gc_count as f64 / total as f64
     }
 
     /// Convert the chromosome sequence to a formatted string inserting
@@ -150,10 +138,11 @@ impl Chromosome {
     ///
     /// `ru_delim` is used between repeat units, `hor_delim` between HORs.
     pub fn to_formatted_string(&self, ru_delim: char, hor_delim: char) -> String {
-        let chars: Vec<char> = self.sequence
-            .indices()
+        let chars: Vec<char> = self
+            .sequence
+            .as_slice()
             .iter()
-            .filter_map(|&idx| self.alphabet().get_char(idx))
+            .map(|&nuc| nuc.to_char())
             .collect();
 
         let mut result = String::with_capacity(chars.len() * 2);
@@ -244,22 +233,19 @@ impl SharedChromosome {
     /// Calculate GC content for the shared chromosome.
     pub fn gc_content(&self) -> f64 {
         let mut gc_count = 0;
-        let mut total = 0;
+        let total = self.sequence.len();
 
-        for &idx in self.sequence.indices() {
-            if let Some(nuc) = Nucleotide::from_index(idx) {
-                total += 1;
-                if matches!(nuc, Nucleotide::G | Nucleotide::C) {
-                    gc_count += 1;
-                }
+        if total == 0 {
+            return 0.0;
+        }
+
+        for &nuc in self.sequence.as_slice() {
+            if matches!(nuc, Nucleotide::G | Nucleotide::C) {
+                gc_count += 1;
             }
         }
 
-        if total == 0 {
-            0.0
-        } else {
-            gc_count as f64 / total as f64
-        }
+        gc_count as f64 / total as f64
     }
 
     /// Convert the shared chromosome into an owned `Chromosome` with
@@ -278,12 +264,8 @@ impl SharedChromosome {
 mod tests {
     use super::*;
 
-    fn test_alphabet() -> Alphabet {
-        Alphabet::dna()
-    }
-
     fn test_sequence() -> Sequence {
-        Sequence::from_str("ACGTACGTACGTACGT", test_alphabet()).unwrap()
+        Sequence::from_str("ACGTACGTACGTACGT").unwrap()
     }
 
     // ===== Chromosome Tests =====
@@ -292,7 +274,7 @@ mod tests {
     fn test_chromosome_new() {
         let seq = test_sequence();
         let chr = Chromosome::new("chr1", seq.clone(), 4, 2);
-        
+
         assert_eq!(chr.id(), "chr1");
         assert_eq!(chr.len(), 16);
         assert_eq!(chr.ru_length(), 4);
@@ -301,15 +283,8 @@ mod tests {
 
     #[test]
     fn test_chromosome_uniform() {
-        let chr = Chromosome::uniform(
-            "chr1",
-            Nucleotide::A,
-            100,
-            10,
-            5,
-            test_alphabet(),
-        );
-        
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+
         assert_eq!(chr.len(), 100);
         assert_eq!(chr.to_string(), "A".repeat(100));
         assert_eq!(chr.ru_length(), 10);
@@ -318,15 +293,15 @@ mod tests {
 
     #[test]
     fn test_chromosome_id() {
-        let chr = Chromosome::uniform("test_id", Nucleotide::A, 10, 5, 2, test_alphabet());
+        let chr = Chromosome::uniform("test_id", Nucleotide::A, 10, 5, 2);
         assert_eq!(chr.id(), "test_id");
     }
 
     #[test]
     fn test_chromosome_id_shared() {
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 10, 5, 2, test_alphabet());
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 10, 5, 2);
         let chr2 = chr1.clone();
-        
+
         // Both should share the same ID Arc
         assert_eq!(chr1.id(), chr2.id());
     }
@@ -335,7 +310,7 @@ mod tests {
     fn test_chromosome_sequence() {
         let seq = test_sequence();
         let chr = Chromosome::new("chr1", seq.clone(), 4, 2);
-        
+
         assert_eq!(chr.sequence().to_string(), "ACGTACGTACGTACGT");
     }
 
@@ -343,92 +318,85 @@ mod tests {
     fn test_chromosome_sequence_mut() {
         let seq = test_sequence();
         let mut chr = Chromosome::new("chr1", seq, 4, 2);
-        
+
         chr.sequence_mut().set(0, Nucleotide::T).unwrap();
         assert_eq!(chr.sequence().to_string().chars().next(), Some('T'));
     }
 
     #[test]
     fn test_chromosome_len() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         assert_eq!(chr.len(), 100);
     }
 
     #[test]
     fn test_chromosome_is_empty() {
-        let empty_seq = Sequence::new(test_alphabet());
+        let empty_seq = Sequence::new();
         let chr = Chromosome::new("chr1", empty_seq, 4, 2);
         assert!(chr.is_empty());
-        
-        let non_empty = Chromosome::uniform("chr2", Nucleotide::A, 10, 5, 2, test_alphabet());
+
+        let non_empty = Chromosome::uniform("chr2", Nucleotide::A, 10, 5, 2);
         assert!(!non_empty.is_empty());
     }
 
     #[test]
     fn test_chromosome_hor_length() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         assert_eq!(chr.hor_length(), 50); // 10 * 5
     }
 
     #[test]
     fn test_chromosome_num_hors() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         assert_eq!(chr.num_hors(), 2); // 100 / 50
     }
 
     #[test]
     fn test_chromosome_num_hors_incomplete() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 75, 10, 5, test_alphabet());
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 75, 10, 5);
         assert_eq!(chr.num_hors(), 1); // 75 / 50 = 1 (integer division)
     }
 
     #[test]
-    fn test_chromosome_alphabet() {
-        let alphabet = test_alphabet();
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 5, 2, alphabet.clone());
-        assert_eq!(chr.alphabet(), &alphabet);
-    }
-
-    #[test]
     fn test_chromosome_gc_content_all_gc() {
-        let seq = Sequence::from_str("GCGCGCGC", test_alphabet()).unwrap();
+        let seq = Sequence::from_str("GCGCGCGC").unwrap();
         let chr = Chromosome::new("chr1", seq, 2, 2);
         assert_eq!(chr.gc_content(), 1.0);
     }
 
     #[test]
     fn test_chromosome_gc_content_all_at() {
-        let seq = Sequence::from_str("ATATATATAT", test_alphabet()).unwrap();
+        let seq = Sequence::from_str("ATATATATAT").unwrap();
         let chr = Chromosome::new("chr1", seq, 2, 2);
         assert_eq!(chr.gc_content(), 0.0);
     }
 
     #[test]
     fn test_chromosome_gc_content_half() {
-        let seq = Sequence::from_str("ACGT", test_alphabet()).unwrap();
+        let seq = Sequence::from_str("ACGT").unwrap();
         let chr = Chromosome::new("chr1", seq, 2, 2);
         assert_eq!(chr.gc_content(), 0.5);
     }
 
     #[test]
     fn test_chromosome_gc_content_empty() {
-        let seq = Sequence::new(test_alphabet());
+        let seq = Sequence::new();
         let chr = Chromosome::new("chr1", seq, 2, 2);
         assert_eq!(chr.gc_content(), 0.0);
     }
 
     #[test]
     fn test_chromosome_to_string() {
-        let seq = Sequence::from_str("ACGT", test_alphabet()).unwrap();
+        let seq = Sequence::from_str("ACGT").unwrap();
         let chr = Chromosome::new("chr1", seq, 2, 2);
         assert_eq!(chr.to_string(), "ACGT");
     }
 
     #[test]
     fn test_chromosome_to_formatted_string_basic() {
-        let seq = Sequence::from_str("ACGTACGTACGTACGT", test_alphabet()).unwrap();
+        let seq = Sequence::from_str("ACGTACGTACGTACGT").unwrap();
         let chr = Chromosome::new("chr1", seq, 4, 2);
-        
+
         let formatted = chr.to_formatted_string('|', '#');
         // RU length = 4, HOR length = 8
         // Expected: ACGT|ACGT#ACGT|ACGT
@@ -437,18 +405,18 @@ mod tests {
 
     #[test]
     fn test_chromosome_to_formatted_string_single_ru() {
-        let seq = Sequence::from_str("ACGT", test_alphabet()).unwrap();
+        let seq = Sequence::from_str("ACGT").unwrap();
         let chr = Chromosome::new("chr1", seq, 4, 1);
-        
+
         let formatted = chr.to_formatted_string('|', '#');
         assert_eq!(formatted, "ACGT"); // No delimiters for single RU
     }
 
     #[test]
     fn test_chromosome_to_formatted_string_custom_delimiters() {
-        let seq = Sequence::from_str("ACGTACGT", test_alphabet()).unwrap();
+        let seq = Sequence::from_str("ACGTACGT").unwrap();
         let chr = Chromosome::new("chr1", seq, 2, 2);
-        
+
         let formatted = chr.to_formatted_string('-', '=');
         // RU length = 2, HOR length = 4
         // Expected: AC-GT=AC-GT
@@ -457,9 +425,9 @@ mod tests {
 
     #[test]
     fn test_chromosome_clone() {
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         let chr2 = chr1.clone();
-        
+
         assert_eq!(chr1.id(), chr2.id());
         assert_eq!(chr1.len(), chr2.len());
         assert_eq!(chr1.ru_length(), chr2.ru_length());
@@ -470,9 +438,9 @@ mod tests {
 
     #[test]
     fn test_chromosome_to_shared() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         let shared = chr.to_shared();
-        
+
         assert_eq!(shared.id(), "chr1");
         assert_eq!(shared.len(), 100);
         assert_eq!(shared.ru_length(), 10);
@@ -481,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_shared_chromosome_id() {
-        let chr = Chromosome::uniform("test_id", Nucleotide::A, 10, 5, 2, test_alphabet());
+        let chr = Chromosome::uniform("test_id", Nucleotide::A, 10, 5, 2);
         let shared = chr.to_shared();
         assert_eq!(shared.id(), "test_id");
     }
@@ -491,20 +459,20 @@ mod tests {
         let seq = test_sequence();
         let chr = Chromosome::new("chr1", seq, 4, 2);
         let shared = chr.to_shared();
-        
+
         assert_eq!(shared.sequence().len(), 16);
     }
 
     #[test]
     fn test_shared_chromosome_len() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         let shared = chr.to_shared();
         assert_eq!(shared.len(), 100);
     }
 
     #[test]
     fn test_shared_chromosome_is_empty() {
-        let empty_seq = Sequence::new(test_alphabet());
+        let empty_seq = Sequence::new();
         let chr = Chromosome::new("chr1", empty_seq, 4, 2);
         let shared = chr.to_shared();
         assert!(shared.is_empty());
@@ -512,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_shared_chromosome_gc_content() {
-        let seq = Sequence::from_str("GCGCGCGC", test_alphabet()).unwrap();
+        let seq = Sequence::from_str("GCGCGCGC").unwrap();
         let chr = Chromosome::new("chr1", seq, 2, 2);
         let shared = chr.to_shared();
         assert_eq!(shared.gc_content(), 1.0);
@@ -520,10 +488,10 @@ mod tests {
 
     #[test]
     fn test_shared_chromosome_clone_is_cheap() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 1000, 10, 5, test_alphabet());
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 1000, 10, 5);
         let shared1 = chr.to_shared();
         let shared2 = shared1.clone();
-        
+
         // Both should share the same sequence data
         assert_eq!(shared1.sequence().strong_count(), 2);
         assert_eq!(shared2.sequence().strong_count(), 2);
@@ -531,10 +499,10 @@ mod tests {
 
     #[test]
     fn test_shared_chromosome_to_mutable() {
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         let shared = chr1.to_shared();
         let chr2 = shared.to_mutable();
-        
+
         assert_eq!(chr2.id(), "chr1");
         assert_eq!(chr2.len(), 100);
         assert_eq!(chr2.ru_length(), 10);
@@ -543,24 +511,24 @@ mod tests {
 
     #[test]
     fn test_roundtrip_mutable_to_shared_to_mutable() {
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         let original_str = chr1.to_string();
-        
+
         let shared = chr1.to_shared();
         let chr2 = shared.to_mutable();
-        
+
         assert_eq!(chr2.to_string(), original_str);
         assert_eq!(chr2.id(), "chr1");
     }
 
     #[test]
     fn test_shared_chromosome_immutability() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
         let shared = chr.to_shared();
-        
+
         // Clone it
         let _cloned = shared.clone();
-        
+
         // Original shared should be unchanged (immutable)
         assert_eq!(shared.len(), 100);
     }
@@ -577,21 +545,20 @@ mod tests {
             20520, // 10 HORs
             171,
             12,
-            test_alphabet(),
         );
-        
+
         assert_eq!(chr.hor_length(), 2052);
         assert_eq!(chr.num_hors(), 10);
     }
 
     #[test]
     fn test_chromosome_mutation_scenario() {
-        let mut chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
-        
+        let mut chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+
         // Mutate some bases
         chr.sequence_mut().set(0, Nucleotide::T).unwrap();
         chr.sequence_mut().set(50, Nucleotide::G).unwrap();
-        
+
         // Check that mutations were applied
         assert_eq!(chr.sequence().get(0), Some(Nucleotide::T));
         assert_eq!(chr.sequence().get(50), Some(Nucleotide::G));
@@ -599,14 +566,14 @@ mod tests {
 
     #[test]
     fn test_chromosome_different_ru_configurations() {
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5, test_alphabet());
-        let chr2 = Chromosome::uniform("chr2", Nucleotide::A, 100, 5, 10, test_alphabet());
-        let chr3 = Chromosome::uniform("chr3", Nucleotide::A, 100, 20, 2, test_alphabet());
-        
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        let chr2 = Chromosome::uniform("chr2", Nucleotide::A, 100, 5, 10);
+        let chr3 = Chromosome::uniform("chr3", Nucleotide::A, 100, 20, 2);
+
         // All same length but different HOR structures
         assert_eq!(chr1.len(), chr2.len());
         assert_eq!(chr2.len(), chr3.len());
-        
+
         // But different HOR lengths
         assert_eq!(chr1.hor_length(), 50);
         assert_eq!(chr2.hor_length(), 50);
@@ -622,9 +589,8 @@ mod tests {
             1_000_000, // 1 Mbp
             171,
             12,
-            test_alphabet(),
         );
-        
+
         assert_eq!(chr.len(), 1_000_000);
         assert!(chr.num_hors() > 0);
     }

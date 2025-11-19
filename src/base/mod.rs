@@ -4,9 +4,7 @@
 //! alphabets, and sequences in the centrevo library.
 
 mod nucleotide;
-mod alphabet;
 mod sequence;
 
-pub use nucleotide::{Nucleotide, InvalidNucleotide};
-pub use alphabet::Alphabet;
-pub use sequence::{Sequence, SharedSequence, InvalidSequence, OutOfBounds};
+pub use nucleotide::{InvalidNucleotide, Nucleotide};
+pub use sequence::{InvalidSequence, OutOfBounds, Sequence, SharedSequence};

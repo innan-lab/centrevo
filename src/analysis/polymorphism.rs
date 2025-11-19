@@ -1,22 +1,22 @@
 //! Polymorphism analysis
-//! 
+//!
 //! Functions for analyzing segregating sites and site frequency spectra.
 
 use crate::base::Sequence;
 use crate::simulation::Population;
 
 /// Calculate site frequency spectrum
-/// 
+///
 /// Returns the distribution of allele frequencies across polymorphic sites.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `population` - The population to analyze
 /// * `chromosome_idx` - Chromosome index
 /// * `haplotype_idx` - Haplotype index
-/// 
+///
 /// # Returns
-/// 
+///
 /// Vector where index i contains count of sites with i derived alleles
 pub fn site_frequency_spectrum(
     _population: &Population,
@@ -28,15 +28,15 @@ pub fn site_frequency_spectrum(
 }
 
 /// Count segregating sites
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `population` - The population to analyze
 /// * `chromosome_idx` - Chromosome index
 /// * `haplotype_idx` - Haplotype index
-/// 
+///
 /// # Returns
-/// 
+///
 /// Number of segregating (polymorphic) sites
 pub fn count_segregating_sites(
     population: &Population,
@@ -72,12 +72,11 @@ pub fn count_segregating_sites(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::{Alphabet, Nucleotide, Sequence};
+    use crate::base::{Nucleotide, Sequence};
     use crate::genome::{Chromosome, Haplotype, Individual};
 
     fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
-        let alphabet = Alphabet::dna();
-        let mut seq = Sequence::with_capacity(sequence.len(), alphabet);
+        let mut seq = Sequence::with_capacity(sequence.len());
         for &nuc in sequence {
             seq.push(nuc);
         }

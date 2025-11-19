@@ -1,11 +1,11 @@
 //! Integration tests for configuration serialization and deserialization.
 //! Tests that all configuration types can be serialized to JSON and back.
 
-use centrevo::base::{Alphabet, Nucleotide};
+use centrevo::base::Nucleotide;
+use centrevo::evolution::{GCContentFitness, LengthFitness};
 use centrevo::simulation::{
     FitnessConfig, MutationConfig, RecombinationConfig, RepeatStructure, SimulationConfig,
 };
-use centrevo::evolution::{GCContentFitness, LengthFitness};
 
 #[test]
 fn test_simulation_config_serialization() {
@@ -19,7 +19,7 @@ fn test_simulation_config_serialization() {
 
 #[test]
 fn test_mutation_config_serialization() {
-    let config = MutationConfig::uniform(Alphabet::dna(), 0.001).unwrap();
+    let config = MutationConfig::uniform(0.001).unwrap();
     let json = serde_json::to_string(&config).unwrap();
     let _deserialized: MutationConfig = serde_json::from_str(&json).unwrap();
 
@@ -62,7 +62,7 @@ fn test_fitness_config_with_components_serialization() {
 
 #[test]
 fn test_repeat_structure_serialization() {
-    let structure = RepeatStructure::new(Alphabet::dna(), Nucleotide::A, 171, 12, 100, 1);
+    let structure = RepeatStructure::new(Nucleotide::A, 171, 12, 100, 1);
     let json = serde_json::to_string(&structure).unwrap();
     let _deserialized: RepeatStructure = serde_json::from_str(&json).unwrap();
 
@@ -73,7 +73,7 @@ fn test_repeat_structure_serialization() {
 fn test_complete_simulation_config_roundtrip() {
     // Test serializing and deserializing a complete set of simulation parameters
     let sim_config = SimulationConfig::new(50, 100, Some(123));
-    let mutation_config = MutationConfig::uniform(Alphabet::dna(), 0.005).unwrap();
+    let mutation_config = MutationConfig::uniform(0.005).unwrap();
     let recombination_config = RecombinationConfig::standard(0.02, 0.6, 0.15).unwrap();
     let fitness_config = FitnessConfig::new(
         Some(GCContentFitness::new(0.45, 2.0).unwrap()),
@@ -81,7 +81,7 @@ fn test_complete_simulation_config_roundtrip() {
         None,
         None,
     );
-    let structure = RepeatStructure::new(Alphabet::dna(), Nucleotide::C, 20, 10, 50, 2);
+    let structure = RepeatStructure::new(Nucleotide::C, 20, 10, 50, 2);
 
     // Serialize all configs
     let sim_json = serde_json::to_string(&sim_config).unwrap();

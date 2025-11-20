@@ -898,8 +898,18 @@ fn analyze_data(
         let seq1 = sequence_from_indices(snap.haplotype1_seq.clone());
         let seq2 = sequence_from_indices(snap.haplotype2_seq.clone());
 
-        let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, 171, 12);
-        let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, 171, 12);
+        // Assume uniform structure for analysis reconstruction
+        // TODO: Load actual structure from database
+        let ru_len = 171;
+        let rus_per_hor = 12;
+        let hor_len = ru_len * rus_per_hor;
+        // Avoid division by zero if length is 0 (though unlikely for valid sim)
+        let hors_per_chr = if hor_len > 0 { seq1.len() / hor_len } else { 0 };
+
+        let map = centrevo::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+
+        let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, map.clone());
+        let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, map);
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);

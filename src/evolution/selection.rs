@@ -320,11 +320,16 @@ impl std::error::Error for FitnessError {}
 mod tests {
     use super::*;
     use std::str::FromStr;
-    use crate::genome::Haplotype;
+    use crate::genome::{Haplotype, RepeatMap};
 
     fn test_chromosome(seq: &str) -> Chromosome {
         let sequence = crate::base::Sequence::from_str(seq).unwrap();
-        Chromosome::new("test", sequence, 4, 2)
+        let total_len = sequence.len();
+        let ru_len = if total_len > 0 { total_len } else { 4 };
+        let rus_per_hor = 1;
+        let num_hors = if total_len > 0 { 1 } else { 0 };
+        let map = RepeatMap::uniform(ru_len, rus_per_hor, num_hors);
+        Chromosome::new("test", sequence, map)
     }
 
     // ===== GCContentFitness Tests =====

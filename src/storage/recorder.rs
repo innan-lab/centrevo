@@ -112,6 +112,7 @@ impl IndividualSnapshot {
     ) -> Result<Individual, String> {
         use crate::base::{Nucleotide, Sequence};
         use crate::genome::{Chromosome, Haplotype};
+        use crate::genome::repeat_map::RepeatMap;
 
         // Reconstruct sequence from indices
         let seq1_nucs: Vec<Nucleotide> = self
@@ -128,18 +129,23 @@ impl IndividualSnapshot {
             .collect();
         let seq2 = Sequence::from_nucleotides(seq2_nucs);
 
+        // Create uniform map
+        let map = RepeatMap::uniform(
+            structure.ru_length,
+            structure.rus_per_hor,
+            structure.hors_per_chr,
+        );
+
         // Create chromosomes
         let chr1 = Chromosome::new(
             self.haplotype1_chr_id.clone(),
             seq1,
-            structure.ru_length,
-            structure.rus_per_hor,
+            map.clone(),
         );
         let chr2 = Chromosome::new(
             self.haplotype2_chr_id.clone(),
             seq2,
-            structure.ru_length,
-            structure.rus_per_hor,
+            map,
         );
 
         // Create haplotypes

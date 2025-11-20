@@ -611,8 +611,16 @@ impl PyQueryBuilder {
             let seq1 = crate::base::Sequence::from_indices(snap.haplotype1_seq);
             let seq2 = crate::base::Sequence::from_indices(snap.haplotype2_seq);
 
-            let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, 171, 12);
-            let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, 171, 12);
+            // Assume uniform structure for analysis reconstruction
+            let ru_len = 171;
+            let rus_per_hor = 12;
+            let hor_len = ru_len * rus_per_hor;
+            let hors_per_chr = if hor_len > 0 { seq1.len() / hor_len } else { 0 };
+
+            let map = crate::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+
+            let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, map.clone());
+            let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, map);
 
             let h1 = Haplotype::from_chromosomes(vec![chr1]);
             let h2 = Haplotype::from_chromosomes(vec![chr2]);

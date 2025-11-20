@@ -181,7 +181,7 @@ impl Population {
 mod tests {
     use super::*;
     use crate::base::{Nucleotide, Sequence};
-    use crate::genome::{Chromosome, Haplotype};
+    use crate::genome::{Chromosome, Haplotype, RepeatMap};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
@@ -191,7 +191,10 @@ mod tests {
             seq.push(base);
         }
 
-        let chr = Chromosome::new(format!("chr_{id}"), seq, 10, 5);
+        // 100 bp. RU=10. RUs=10. HOR=5 RUs. HORs=2.
+        let map = RepeatMap::uniform(10, 5, 2);
+
+        let chr = Chromosome::new(format!("chr_{id}"), seq, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr.clone());
         let mut hap2 = Haplotype::new();

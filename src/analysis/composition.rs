@@ -381,7 +381,7 @@ fn composition_population(population: &Population) -> HashMap<Nucleotide, usize>
 mod tests {
     use super::*;
     use crate::base::Sequence;
-    use crate::genome::{Chromosome, Haplotype, Individual};
+    use crate::genome::{Chromosome, Haplotype, Individual, RepeatMap};
 
     fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
         let mut seq = Sequence::with_capacity(sequence.len());
@@ -389,7 +389,14 @@ mod tests {
             seq.push(nuc);
         }
 
-        let chr = Chromosome::new(format!("chr_{}", id), seq, 10, 5);
+        let total_len = seq.len();
+        let ru_len = if total_len > 0 { total_len } else { 10 };
+        let rus_per_hor = 1;
+        let num_hors = if total_len > 0 { 1 } else { 0 };
+        
+        let map = RepeatMap::uniform(ru_len, rus_per_hor, num_hors);
+
+        let chr = Chromosome::new(format!("chr_{}", id), seq, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr);
         let hap2 = Haplotype::new();

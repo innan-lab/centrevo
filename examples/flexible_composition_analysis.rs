@@ -2,7 +2,7 @@
 
 use centrevo::analysis::composition::{gc_content, nucleotide_composition};
 use centrevo::base::{Nucleotide, Sequence};
-use centrevo::genome::{Chromosome, Haplotype, Individual};
+use centrevo::genome::{Chromosome, Haplotype, Individual, RepeatMap};
 use centrevo::simulation::Population;
 
 fn main() {
@@ -96,8 +96,11 @@ fn create_sequence(nucleotides: &[Nucleotide]) -> Sequence {
 }
 
 fn create_individual(id: &str, seq1: Sequence, seq2: Sequence) -> Individual {
-    let chr1 = Chromosome::new(format!("{}_chr1", id), seq1, 4, 2);
-    let chr2 = Chromosome::new(format!("{}_chr2", id), seq2, 4, 2);
+    let map1 = RepeatMap::uniform(4, 2, seq1.len() / 8);
+    let chr1 = Chromosome::new(format!("{}_chr1", id), seq1, map1);
+    
+    let map2 = RepeatMap::uniform(4, 2, seq2.len() / 8);
+    let chr2 = Chromosome::new(format!("{}_chr2", id), seq2, map2);
 
     let mut hap1 = Haplotype::new();
     hap1.push(chr1);

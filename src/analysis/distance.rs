@@ -161,7 +161,15 @@ mod tests {
             seq.push(nuc);
         }
 
-        let chr = Chromosome::new(format!("chr_{}", id), seq, 10, 5);
+        // Assume uniform structure for tests
+        let ru_len = 10;
+        let rus_per_hor = 5;
+        let hor_len = ru_len * rus_per_hor;
+        let hors_per_chr = if hor_len > 0 { seq.len() / hor_len } else { 0 };
+        
+        let map = crate::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+
+        let chr = Chromosome::new(format!("chr_{}", id), seq, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr);
         let hap2 = Haplotype::new();
@@ -202,8 +210,9 @@ mod tests {
             seq2.push(Nucleotide::T);
         }
 
-        let chr1 = Chromosome::new("chr1", seq1, 5, 1);
-        let chr2 = Chromosome::new("chr2", seq2, 5, 1);
+        let map = crate::genome::repeat_map::RepeatMap::uniform(5, 1, 1);
+        let chr1 = Chromosome::new("chr1", seq1, map.clone());
+        let chr2 = Chromosome::new("chr2", seq2, map);
 
         let mut hap1 = Haplotype::new();
         hap1.push(chr1);
@@ -259,10 +268,11 @@ mod tests {
             seq4.push(Nucleotide::G); // All G
         }
 
-        let chr1 = Chromosome::new("chr1", seq1, 4, 1);
-        let chr2 = Chromosome::new("chr2", seq2, 4, 1);
-        let chr3 = Chromosome::new("chr3", seq3, 4, 1);
-        let chr4 = Chromosome::new("chr4", seq4, 4, 1);
+        let map = crate::genome::repeat_map::RepeatMap::uniform(4, 1, 1);
+        let chr1 = Chromosome::new("chr1", seq1, map.clone());
+        let chr2 = Chromosome::new("chr2", seq2, map.clone());
+        let chr3 = Chromosome::new("chr3", seq3, map.clone());
+        let chr4 = Chromosome::new("chr4", seq4, map);
 
         let mut hap1_ind1 = Haplotype::new();
         hap1_ind1.push(chr1);

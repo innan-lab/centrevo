@@ -298,7 +298,15 @@ mod tests {
             seq.push(nuc);
         }
 
-        let chr = Chromosome::new(format!("chr_{}", id), seq, 10, 5);
+        // Assume uniform structure for tests
+        let ru_len = 10;
+        let rus_per_hor = 5;
+        let hor_len = ru_len * rus_per_hor;
+        let hors_per_chr = if hor_len > 0 { seq.len() / hor_len } else { 0 };
+        
+        let map = crate::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+
+        let chr = Chromosome::new(format!("chr_{}", id), seq, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr);
         let hap2 = Haplotype::new();

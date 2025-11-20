@@ -5,6 +5,7 @@
 
 use crate::base::Sequence;
 use crate::genome::{Chromosome, Haplotype, Individual};
+use crate::genome::repeat_map::RepeatMap;
 use crate::simulation::{
     FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure,
     SimulationConfig,
@@ -310,22 +311,18 @@ impl Simulation {
         let mut hap2 = Haplotype::with_capacity(structure.chrs_per_hap);
 
         for chr_idx in 0..structure.chrs_per_hap {
-            // Create uniform sequence
-            let mut seq = Sequence::with_capacity(chr_length);
-            for _ in 0..chr_length {
-                seq.push(structure.init_base);
-            }
-
             // Create chromosomes
-            let chr1 = Chromosome::new(
+            let chr1 = Chromosome::uniform(
                 format!("chr{chr_idx}"),
-                seq.clone(),
+                structure.init_base,
+                chr_length,
                 structure.ru_length,
                 structure.rus_per_hor,
             );
-            let chr2 = Chromosome::new(
+            let chr2 = Chromosome::uniform(
                 format!("chr{chr_idx}"),
-                seq,
+                structure.init_base,
+                chr_length,
                 structure.ru_length,
                 structure.rus_per_hor,
             );
@@ -371,18 +368,19 @@ impl Simulation {
                 seq2.push(base);
             }
 
+            // Create map
+            let map = RepeatMap::uniform(structure.ru_length, structure.rus_per_hor, structure.hors_per_chr);
+
             // Create chromosomes
             let chr1 = Chromosome::new(
                 format!("chr{chr_idx}"),
                 seq1,
-                structure.ru_length,
-                structure.rus_per_hor,
+                map.clone(),
             );
             let chr2 = Chromosome::new(
                 format!("chr{chr_idx}"),
                 seq2,
-                structure.ru_length,
-                structure.rus_per_hor,
+                map,
             );
 
             hap1.push(chr1);
@@ -515,14 +513,12 @@ impl Simulation {
                             }
                             crate::evolution::RecombinationType::Crossover { position } => {
                                 // Perform crossover
-                                let (new1, new2) = self
-                                    .recombination
-                                    .params
-                                    .crossover(chr1.sequence(), chr2.sequence(), position)
+                                let (new1, new2) = chr1
+                                    .crossover(chr2, position)
                                     .map_err(|e| format!("Crossover failed: {e}"))?;
 
-                                *chr1.sequence_mut() = new1;
-                                *chr2.sequence_mut() = new2;
+                                *chr1 = new1;
+                                *chr2 = new2;
                             }
                             crate::evolution::RecombinationType::GeneConversion { start, end } => {
                                 // Perform gene conversion (chr1 -> chr2)

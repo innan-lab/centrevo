@@ -6,6 +6,7 @@
 
 use crate::base::{Nucleotide, Sequence};
 use crate::genome::{Chromosome, Haplotype, Individual};
+use crate::genome::repeat_map::RepeatMap;
 use crate::simulation::RepeatStructure;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -586,11 +587,17 @@ pub fn create_individuals_from_sequences(
             let seq = Sequence::from_str(seq_str)
                 .map_err(|e| InitializationError::Parse(format!("Invalid sequence: {e}")))?;
 
+            // Create uniform map based on structure
+            let map = RepeatMap::uniform(
+                structure.ru_length,
+                structure.rus_per_hor,
+                structure.hors_per_chr,
+            );
+
             let chr = Chromosome::new(
                 format!("ind_{ind_idx}_h0_chr{chr_idx}"),
                 seq,
-                structure.ru_length,
-                structure.rus_per_hor,
+                map,
             );
             hap0.push(chr);
         }
@@ -608,11 +615,17 @@ pub fn create_individuals_from_sequences(
             let seq = Sequence::from_str(seq_str)
                 .map_err(|e| InitializationError::Parse(format!("Invalid sequence: {e}")))?;
 
+            // Create uniform map based on structure
+            let map = RepeatMap::uniform(
+                structure.ru_length,
+                structure.rus_per_hor,
+                structure.hors_per_chr,
+            );
+
             let chr = Chromosome::new(
                 format!("ind_{ind_idx}_h1_chr{chr_idx}"),
                 seq,
-                structure.ru_length,
-                structure.rus_per_hor,
+                map,
             );
             hap1.push(chr);
         }

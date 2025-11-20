@@ -3,7 +3,9 @@
 mod chromosome;
 mod haplotype;
 mod individual;
+pub mod repeat_map;
 
 pub use chromosome::{Chromosome, SharedChromosome};
 pub use haplotype::Haplotype;
 pub use individual::Individual;
+pub use repeat_map::RepeatMap;

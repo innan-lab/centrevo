@@ -250,3 +250,38 @@ impl fmt::Display for RepeatMapError {
 }
 
 impl error::Error for RepeatMapError {}
+
+/// Errors that can occur during Chromosome construction or manipulation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChromosomeError {
+    /// Invalid nucleotide byte encountered
+    InvalidNucleotide(InvalidNucleotide),
+    /// Error creating the repeat map
+    RepeatMapError(RepeatMapError),
+    /// Generic construction error
+    Construction(String),
+}
+
+impl fmt::Display for ChromosomeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidNucleotide(e) => write!(f, "Invalid nucleotide: {e}"),
+            Self::RepeatMapError(e) => write!(f, "Repeat map error: {e}"),
+            Self::Construction(msg) => write!(f, "Chromosome construction error: {msg}"),
+        }
+    }
+}
+
+impl error::Error for ChromosomeError {}
+
+impl From<InvalidNucleotide> for ChromosomeError {
+    fn from(e: InvalidNucleotide) -> Self {
+        Self::InvalidNucleotide(e)
+    }
+}
+
+impl From<RepeatMapError> for ChromosomeError {
+    fn from(e: RepeatMapError) -> Self {
+        Self::RepeatMapError(e)
+    }
+}

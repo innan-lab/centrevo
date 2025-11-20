@@ -234,8 +234,6 @@ impl fmt::Display for SharedSequence {
 mod tests {
     use super::*;
 
-    // ===== Sequence Tests =====
-
     #[test]
     fn test_sequence_new() {
         let seq = Sequence::new();

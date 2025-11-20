@@ -1,4 +1,5 @@
 use crate::base::{Nucleotide, Sequence, SharedSequence};
+use crate::errors::ChromosomeError;
 use std::sync::Arc;
 use super::repeat_map::RepeatMap;
 
@@ -73,6 +74,98 @@ impl Chromosome {
         // Map length = 100. Matches.
         
         Self::new(id, sequence, map)
+    }
+
+    /// Create a chromosome from a nested vector structure.
+    ///
+    /// The structure is `Vec<Vec<Vec<u8>>>`:
+    /// - Outer Vec: List of Higher-Order Repeats (HORs)
+    /// - Middle Vec: List of Repeat Units (RUs) within an HOR
+    /// - Inner Vec: Sequence of bytes (nucleotides) for an RU
+    pub fn from_nested_vec(
+        id: impl Into<Arc<str>>,
+        nested: Vec<Vec<Vec<u8>>>,
+    ) -> Result<Self, ChromosomeError> {
+        let mut sequence_vec = Vec::new();
+        let mut ru_offsets = vec![0];
+        let mut hor_offsets = vec![0];
+        let mut current_ru_index = 0;
+
+        for hor in nested {
+            for ru in hor {
+                for byte in ru {
+                    let nuc = Nucleotide::try_from(byte)
+                        .map_err(ChromosomeError::InvalidNucleotide)?;
+                    sequence_vec.push(nuc);
+                }
+                ru_offsets.push(sequence_vec.len());
+                current_ru_index += 1;
+            }
+            hor_offsets.push(current_ru_index);
+        }
+
+        let sequence = Sequence::from_nucleotides(sequence_vec);
+        let map = RepeatMap::new(ru_offsets, hor_offsets)
+            .map_err(ChromosomeError::RepeatMapError)?;
+
+        Ok(Self::new(id, sequence, map))
+    }
+
+    /// Create a chromosome from a nested string structure.
+    ///
+    /// The structure is `Vec<Vec<String>>`:
+    /// - Outer Vec: List of Higher-Order Repeats (HORs)
+    /// - Inner Vec: List of Repeat Units (RUs) as strings
+    pub fn from_nested_strings(
+        id: impl Into<Arc<str>>,
+        nested: Vec<Vec<String>>,
+    ) -> Result<Self, ChromosomeError> {
+        let nested_bytes: Vec<Vec<Vec<u8>>> = nested
+            .into_iter()
+            .map(|hor| {
+                hor.into_iter()
+                    .map(|ru| ru.into_bytes())
+                    .collect()
+            })
+            .collect();
+        
+        Self::from_nested_vec(id, nested_bytes)
+    }
+
+    /// Create a chromosome from a formatted string with delimiters.
+    ///
+    /// `hor_delim` separates HORs.
+    /// `ru_delim` separates RUs within an HOR.
+    ///
+    /// Example: "ACGT-ACGT=ACGT-ACGT" with ru_delim='-' and hor_delim='='
+    /// parses to 2 HORs, each with 2 RUs.
+    pub fn from_string_with_delimiters(
+        id: impl Into<Arc<str>>,
+        sequence: &str,
+        hor_delim: char,
+        ru_delim: char,
+    ) -> Result<Self, ChromosomeError> {
+        let hor_strings: Vec<&str> = sequence.split(hor_delim).collect();
+        let mut nested_bytes = Vec::new();
+
+        for hor_str in hor_strings {
+            if hor_str.is_empty() {
+                continue; 
+            }
+            let ru_strings: Vec<&str> = hor_str.split(ru_delim).collect();
+            let mut hor_vec = Vec::new();
+            for ru_str in ru_strings {
+                if ru_str.is_empty() {
+                    continue;
+                }
+                hor_vec.push(ru_str.as_bytes().to_vec());
+            }
+            if !hor_vec.is_empty() {
+                nested_bytes.push(hor_vec);
+            }
+        }
+
+        Self::from_nested_vec(id, nested_bytes)
     }
 
     /// Return the chromosome identifier.
@@ -185,10 +278,6 @@ impl Chromosome {
                 // We should add a method `is_hor_boundary(ru_index)` to RepeatMap.
                 // For now, I'll assume I can add it.
                 
-                // Let's add `is_hor_boundary` to RepeatMap in the next step.
-                // For now, I'll use a placeholder logic or assume I can access it if I make fields public (they are not).
-                // I'll add the method to RepeatMap.
-                
                 // Wait, I can't modify RepeatMap in this tool call.
                 // I'll use `get_hor_interval` to check.
                 // If `get_hor_interval(h).start == start of RU r+1`, then it's a boundary.
@@ -227,7 +316,7 @@ impl Chromosome {
     /// Returns two new chromosomes.
     pub fn crossover(&self, other: &Self, position: usize) -> Result<(Self, Self), String> {
         if position > self.len() || position > other.len() {
-            return Err(format!("Position {} out of bounds", position));
+            return Err(format!("Position {position} out of bounds"));
         }
 
         // Create new sequences
@@ -441,7 +530,6 @@ mod tests {
     #[test]
     fn test_chromosome_gc_content_all_at() {
         let seq = Sequence::from_str("ATATATATAT").unwrap();
-        let map = test_map(2, 2, 2); // Note: length 10. RU=2. RUs=5. HOR=2 RUs. HORs=2.5?
         // test_map(2, 2, 2) -> length 8.
         // We need map matching sequence.
         let map = RepeatMap::uniform(2, 2, 2); // Length 8.
@@ -697,5 +785,141 @@ mod tests {
 
         assert_eq!(chr.len(), 1_000_000);
         assert!(chr.num_hors() > 0);
+    }
+
+    #[test]
+    fn test_from_nested_vec() {
+        // HOR 1: RU1="AC", RU2="GT"
+        // HOR 2: RU3="AA", RU4="TT"
+        let nested = vec![
+            vec![b"AC".to_vec(), b"GT".to_vec()],
+            vec![b"AA".to_vec(), b"TT".to_vec()],
+        ];
+        
+        let chr = Chromosome::from_nested_vec("chr1", nested).unwrap();
+        
+        assert_eq!(chr.len(), 8);
+        assert_eq!(chr.num_hors(), 2);
+        assert_eq!(chr.map().num_rus(), 4);
+        assert_eq!(chr.to_string(), "ACGTAATT");
+        
+        // Check structure
+        // HOR 0: RUs 0, 1.
+        // HOR 1: RUs 2, 3.
+        let (start, end) = chr.map().get_hor_interval(0).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, 4); // "ACGT"
+        
+        let (start, end) = chr.map().get_hor_interval(1).unwrap();
+        assert_eq!(start, 4);
+        assert_eq!(end, 8); // "AATT"
+    }
+
+    #[test]
+    fn test_from_nested_strings() {
+        let nested = vec![
+            vec!["AC".to_string(), "GT".to_string()],
+            vec!["AA".to_string(), "TT".to_string()],
+        ];
+        
+        let chr = Chromosome::from_nested_strings("chr1", nested).unwrap();
+        assert_eq!(chr.to_string(), "ACGTAATT");
+        assert_eq!(chr.num_hors(), 2);
+    }
+
+    #[test]
+    fn test_from_string_with_delimiters() {
+        let input = "AC-GT=AA-TT";
+        let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+        
+        assert_eq!(chr.to_string(), "ACGTAATT");
+        assert_eq!(chr.num_hors(), 2);
+        assert_eq!(chr.map().num_rus(), 4);
+    }
+
+    #[test]
+    fn test_from_string_with_delimiters_empty_parts() {
+        // "AC-GT=" -> 1 HOR with 2 RUs. Trailing delimiter creates empty string which should be ignored.
+        let input = "AC-GT=";
+        let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+        
+        assert_eq!(chr.to_string(), "ACGT");
+        assert_eq!(chr.num_hors(), 1);
+        assert_eq!(chr.map().num_rus(), 2);
+    }
+
+    #[test]
+    fn test_from_nested_vec_invalid_nucleotide() {
+        let nested = vec![
+            vec![vec![b'A', b'X']], // 'X' is invalid
+        ];
+        let result = Chromosome::from_nested_vec("chr1", nested);
+        assert!(matches!(result, Err(ChromosomeError::InvalidNucleotide(_))));
+    }
+
+    #[test]
+    fn test_from_nested_vec_empty() {
+        let nested: Vec<Vec<Vec<u8>>> = vec![];
+        let chr = Chromosome::from_nested_vec("chr1", nested).unwrap();
+        assert!(chr.is_empty());
+        assert_eq!(chr.num_hors(), 0);
+        assert_eq!(chr.map().num_rus(), 0);
+    }
+
+    #[test]
+    fn test_from_nested_vec_empty_hor() {
+        let nested = vec![
+            vec![], // Empty HOR
+            vec![b"AC".to_vec()],
+        ];
+        // This creates an HOR with 0 RUs.
+        // RepeatMap allows this?
+        // hor_offsets: [0, 0, 1].
+        // HOR 0: RUs 0..0 (empty).
+        // HOR 1: RUs 0..1.
+        let chr = Chromosome::from_nested_vec("chr1", nested).unwrap();
+        assert_eq!(chr.num_hors(), 2);
+        assert_eq!(chr.map().num_rus(), 1);
+        assert_eq!(chr.to_string(), "AC");
+    }
+
+    #[test]
+    fn test_from_nested_vec_empty_ru() {
+        let nested = vec![
+            vec![vec![], b"AC".to_vec()], // First RU is empty
+        ];
+        // RU 0: length 0.
+        // RU 1: length 2.
+        let chr = Chromosome::from_nested_vec("chr1", nested).unwrap();
+        assert_eq!(chr.map().num_rus(), 2);
+        assert_eq!(chr.to_string(), "AC");
+        
+        let (start, end) = chr.map().get_ru_interval(0).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, 0);
+        
+        let (start, end) = chr.map().get_ru_interval(1).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, 2);
+    }
+
+    #[test]
+    fn test_from_string_with_delimiters_consecutive_delimiters() {
+        // "AC--GT" -> Empty RU between AC and GT?
+        // The implementation splits by delimiter.
+        // "AC--GT".split('-') -> ["AC", "", "GT"].
+        // The implementation checks `if ru_str.is_empty() { continue; }`.
+        // So empty RUs are skipped.
+        let input = "AC--GT";
+        let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+        assert_eq!(chr.to_string(), "ACGT");
+        assert_eq!(chr.map().num_rus(), 2); // AC, GT. The empty one is skipped.
+    }
+
+    #[test]
+    fn test_from_string_with_delimiters_empty_string() {
+        let input = "";
+        let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+        assert!(chr.is_empty());
     }
 }

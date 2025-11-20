@@ -38,12 +38,12 @@ impl Sequence {
 
     /// Create a `Sequence` from a vector of indices (0-3).
     /// Indices outside 0-3 are treated as A (0).
-    pub fn from_indices(indices: Vec<u8>) -> Self {
-        let nucleotides = indices
+    pub fn from_indices(indices: Vec<u8>) -> Result<Self, InvalidNucleotide> {
+        let nucleotides: Result<Vec<Nucleotide>, InvalidNucleotide> = indices
             .into_iter()
-            .map(|i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
+            .map(|i| Nucleotide::from_index(i).ok_or(InvalidNucleotide(i)))
             .collect();
-        Self(nucleotides)
+        Ok(Self(nucleotides?))
     }
 
     /// Return the length of the sequence in bases.
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn test_sequence_from_indices() {
         let indices = vec![0, 1, 2, 3]; // A, C, G, T
-        let seq = Sequence::from_indices(indices);
+        let seq = Sequence::from_indices(indices).unwrap();
         assert_eq!(seq.len(), 4);
         assert_eq!(seq.get(0), Some(Nucleotide::A));
         assert_eq!(seq.get(1), Some(Nucleotide::C));
@@ -275,12 +275,8 @@ mod tests {
     #[test]
     fn test_sequence_from_indices_with_invalid() {
         let indices = vec![0, 1, 4, 3]; // A, C, A(default), T
-        let seq = Sequence::from_indices(indices);
-        assert_eq!(seq.len(), 4);
-        assert_eq!(seq.get(0), Some(Nucleotide::A));
-        assert_eq!(seq.get(1), Some(Nucleotide::C));
-        assert_eq!(seq.get(2), Some(Nucleotide::A));
-        assert_eq!(seq.get(3), Some(Nucleotide::T));
+        let result = Sequence::from_indices(indices);
+        assert!(result.is_err());
     }
 
     #[test]

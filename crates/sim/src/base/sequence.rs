@@ -2,7 +2,7 @@ use super::Nucleotide;
 use std::fmt;
 use std::sync::Arc;
 use std::str::FromStr;
-use crate::errors::{InvalidSequence, OutOfBounds};
+use crate::errors::{InvalidNucleotide, InvalidSequence, OutOfBounds};
 
 /// Mutable biological sequence backed by a vector of Nucleotides.
 ///
@@ -18,7 +18,7 @@ impl Sequence {
     /// Example:
     ///
     /// ```rust
-    /// # use centrevo::base::{Sequence, Nucleotide};
+    /// # use centrevo_sim::base::{Sequence, Nucleotide};
     /// let seq = Sequence::new();
     /// assert_eq!(seq.len(), 0);
     /// ```

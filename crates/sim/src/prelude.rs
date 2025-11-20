@@ -6,7 +6,8 @@
 //! # Example
 //!
 //! ```
-//! use centrevo::prelude::*;
+//! use centrevo_sim::prelude::*;
+//! use std::str::FromStr;
 //!
 //! let seq = Sequence::from_str("ACGT").unwrap();
 //! ```

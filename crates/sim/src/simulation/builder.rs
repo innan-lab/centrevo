@@ -16,8 +16,8 @@ pub use crate::errors::BuilderError;
 /// # Examples
 ///
 /// ```
-/// use centrevo::simulation::SimulationBuilder;
-/// use centrevo::base::Nucleotide;
+/// use centrevo_sim::simulation::SimulationBuilder;
+/// use centrevo_sim::base::Nucleotide;
 ///
 /// // Simple simulation with defaults
 /// let sim = SimulationBuilder::new()
@@ -42,7 +42,7 @@ pub use crate::errors::BuilderError;
 /// # From imported sequences
 ///
 /// ```no_run
-/// use centrevo::simulation::SimulationBuilder;
+/// use centrevo_sim::simulation::SimulationBuilder;
 ///
 /// // From imported sequences (requires sequences.fasta to exist)
 /// let sim = SimulationBuilder::new()

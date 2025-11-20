@@ -162,7 +162,7 @@ pub struct BuilderInitialized;
 /// # Examples
 ///
 /// ```
-/// use centrevo::simulation::{FitnessConfigBuilder, BuilderEmpty};
+/// use centrevo_sim::simulation::{FitnessConfigBuilder, BuilderEmpty};
 ///
 /// // Neutral fitness (no selection)
 /// let fitness = FitnessConfigBuilder::neutral();

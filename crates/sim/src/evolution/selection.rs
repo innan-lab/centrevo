@@ -31,10 +31,10 @@ pub trait HaplotypeFitness {
 /// Example (override default):
 ///
 /// ```rust
-/// # use centrevo::evolution::IndividualFitness;
-/// # use centrevo::genome::Individual;
+/// # use centrevo_sim::evolution::IndividualFitness;
+/// # use centrevo_sim::genome::Individual;
 /// struct MyFitness;
-/// impl centrevo::evolution::HaplotypeFitness for MyFitness {}
+/// impl centrevo_sim::evolution::HaplotypeFitness for MyFitness {}
 /// impl IndividualFitness for MyFitness {
 ///     fn individual_fitness(&self, _ind: &Individual) -> f64 { 42.0 }
 /// }

@@ -1,0 +1,16 @@
+[package]
+name = "centrevo-py"
+version = "0.2.1"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+
+[lib]
+name = "centrevo"
+crate-type = ["cdylib"]
+
+[dependencies]
+centrevo-sim = { path = "../sim" }
+centrevo-analysis = { path = "../analysis" }
+pyo3 = { version = "0.27", features = ["extension-module"] }
+serde_json = "1.0"

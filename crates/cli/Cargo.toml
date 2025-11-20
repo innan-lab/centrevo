@@ -1,0 +1,18 @@
+[package]
+name = "centrevo-cli"
+version = "0.2.1"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+
+[[bin]]
+name = "centrevo"
+path = "src/main.rs"
+
+[dependencies]
+centrevo-sim = { path = "../sim" }
+centrevo-analysis = { path = "../analysis" }
+clap = { version = "4.5", features = ["derive", "cargo"] }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

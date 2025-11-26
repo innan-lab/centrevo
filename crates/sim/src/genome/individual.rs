@@ -395,9 +395,8 @@ mod tests {
         ind.set_cached_fitness(FitnessValue::new(0.123456789));
         assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.123456789)));
 
-        // FitnessValue clamps to [0.0, 1.0], so f64::MAX gets clamped to 1.0
         ind.set_cached_fitness(FitnessValue::new(f64::MAX));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(1.0)));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(f64::MAX)));
     }
 
     #[test]

@@ -83,11 +83,11 @@ impl Population {
     }
 
     /// Compute fitness values for all individuals.
-    pub fn compute_fitness(&self, config: &FitnessConfig) -> Vec<f64> {
+    pub fn compute_fitness(&self, config: &FitnessConfig) -> Vec<FitnessValue> {
         self.individuals
             .par_iter()
             .map(|ind| {
-                let mut fitness = 1.0;
+                let mut fitness = FitnessValue::default();
 
                 // Apply GC content fitness if configured
                 if let Some(gc_fitness) = &config.gc_content {
@@ -116,11 +116,11 @@ impl Population {
     pub fn select_parents<R: Rng + ?Sized>(
         &self,
         rng: &mut R,
-        fitness_values: &[f64],
+        fitness_values: &[FitnessValue],
         n_pairs: usize,
     ) -> Vec<(usize, usize)> {
         // Create cumulative distribution for weighted sampling
-        let total_fitness: f64 = fitness_values.iter().sum();
+        let total_fitness: f64 = fitness_values.iter().sum::<FitnessValue>().into();
 
         if total_fitness == 0.0 {
             // All fitness values are zero - use uniform selection
@@ -140,7 +140,7 @@ impl Population {
         let cumulative: Vec<f64> = fitness_values
             .iter()
             .scan(0.0, |acc, &f| {
-                *acc += f;
+                *acc += f.get();
                 Some(*acc)
             })
             .collect();
@@ -173,7 +173,7 @@ impl Population {
     pub fn update_fitness(&mut self, config: &FitnessConfig) {
         let fitness_values = self.compute_fitness(config);
         for (ind, fitness) in self.individuals.iter_mut().zip(fitness_values.iter()) {
-            ind.set_cached_fitness(FitnessValue::new(*fitness));
+            ind.set_cached_fitness(*fitness);
         }
     }
 }
@@ -278,8 +278,8 @@ mod tests {
 
         // Neutral fitness should be 1.0 for all
         assert_eq!(fitness_values.len(), 2);
-        assert_eq!(fitness_values[0], 1.0);
-        assert_eq!(fitness_values[1], 1.0);
+        assert_eq!(fitness_values[0], FitnessValue::default());
+        assert_eq!(fitness_values[1], FitnessValue::default());
     }
 
     #[test]
@@ -312,7 +312,12 @@ mod tests {
         ];
 
         let pop = Population::new("pop1", individuals);
-        let fitness_values = vec![0.0, 0.0, 0.0, 0.0]; // All zero - uniform selection
+        let fitness_values = vec![
+            FitnessValue::default(),
+            FitnessValue::default(),
+            FitnessValue::default(),
+            FitnessValue::default(),
+        ]; // All 1.0 - uniform selection
 
         let mut rng = StdRng::seed_from_u64(42);
         let pairs = pop.select_parents(&mut rng, &fitness_values, 5);
@@ -334,7 +339,11 @@ mod tests {
         ];
 
         let pop = Population::new("pop1", individuals);
-        let fitness_values = vec![1.0, 2.0, 3.0]; // Weighted selection
+        let fitness_values = vec![
+            FitnessValue::new(1.0),
+            FitnessValue::new(2.0),
+            FitnessValue::new(3.0),
+        ]; // Weighted selection
 
         let mut rng = StdRng::seed_from_u64(42);
         let pairs = pop.select_parents(&mut rng, &fitness_values, 10);

@@ -6,16 +6,21 @@
 use serde::{Deserialize, Serialize};
 use crate::base::Nucleotide;
 use crate::genome::{Chromosome, Individual};
-pub use crate::errors::FitnessError;
+use crate::errors::FitnessError;
+use crate::base::FitnessValue;
 
 /// Trait for scoring fitness of a single haplotype (chromosome).
+/// 
+/// Implementors should provide a `haplotype_fitness` method that computes a
+/// non-negative fitness value for the haplotype. The default implementation
+/// returns neutral fitness of 1.0.
 pub trait HaplotypeFitness {
     /// Calculate fitness score for a single haplotype.
     ///
     /// Returns a non-negative fitness value. Higher values indicate better fitness.
     /// The default implementation returns neutral fitness of 1.0.
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> f64 {
-        1.0
+    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
+        FitnessValue::default()
     }
 }
 
@@ -43,7 +48,7 @@ pub trait IndividualFitness: HaplotypeFitness {
     /// Calculate fitness score for a diploid individual.
     ///
     /// The default implementation multiplies the fitness scores of both haplotypes.
-    fn individual_fitness(&self, individual: &Individual) -> f64 {
+    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
         let fit1 = self.haplotype_fitness(individual.haplotype1().get(0).unwrap());
         let fit2 = self.haplotype_fitness(individual.haplotype2().get(0).unwrap());
         fit1 * fit2
@@ -96,7 +101,7 @@ impl GCContentFitness {
 }
 
 impl HaplotypeFitness for GCContentFitness {
-    fn haplotype_fitness(&self, chromosome: &Chromosome) -> f64 {
+    fn haplotype_fitness(&self, chromosome: &Chromosome) -> FitnessValue {
         let gc_content = chromosome.gc_content();
 
         // Handle edge cases with small epsilon to avoid log(0)
@@ -105,7 +110,7 @@ impl HaplotypeFitness for GCContentFitness {
         let (alpha, beta) = self.to_alpha_beta();
 
         // Unnormalized Beta PDF
-        gc.powf(alpha - 1.0) * (1.0 - gc).powf(beta - 1.0)
+        FitnessValue::new(gc.powf(alpha - 1.0) * (1.0 - gc).powf(beta - 1.0))
     }
 }
 
@@ -147,9 +152,9 @@ impl LengthFitness {
 }
 
 impl HaplotypeFitness for LengthFitness {
-    fn haplotype_fitness(&self, chromosome: &Chromosome) -> f64 {
+    fn haplotype_fitness(&self, chromosome: &Chromosome) -> FitnessValue {
         if chromosome.is_empty() {
-            return 0.0;
+            return FitnessValue::new(0.0);
         }
 
         let log_length = (chromosome.len() as f64).ln();
@@ -158,7 +163,7 @@ impl HaplotypeFitness for LengthFitness {
 
         // Log-normal fitness
         let log_fit = -(deviation * deviation) / (2.0 * self.std_dev * self.std_dev);
-        log_fit.exp()
+        FitnessValue::new(log_fit.exp())
     }
 }
 
@@ -197,7 +202,7 @@ impl SequenceSimilarityFitness {
 }
 
 impl HaplotypeFitness for SequenceSimilarityFitness {
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> f64 {
+    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
         panic!(
             "SequenceSimilarityFitness requires two haplotypes. Use individual_fitness instead."
         );
@@ -205,12 +210,12 @@ impl HaplotypeFitness for SequenceSimilarityFitness {
 }
 
 impl IndividualFitness for SequenceSimilarityFitness {
-    fn individual_fitness(&self, individual: &Individual) -> f64 {
+    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
         let chr1 = individual.haplotype1().get(0).unwrap();
         let chr2 = individual.haplotype2().get(0).unwrap();
 
         if chr1.is_empty() || chr2.is_empty() {
-            return 0.0;
+            return FitnessValue::new(0.0);
         }
 
         let min_len = chr1.len().min(chr2.len());
@@ -230,7 +235,7 @@ impl IndividualFitness for SequenceSimilarityFitness {
         let similarity = (max_len - total_diff) as f64 / max_len as f64;
 
         // Apply shape parameter
-        similarity.powf(self.shape)
+        FitnessValue::new(similarity.powf(self.shape))
     }
 }
 
@@ -275,18 +280,18 @@ impl LengthSimilarityFitness {
 }
 
 impl HaplotypeFitness for LengthSimilarityFitness {
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> f64 {
+    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
         panic!("LengthSimilarityFitness requires two haplotypes. Use individual_fitness instead.");
     }
 }
 
 impl IndividualFitness for LengthSimilarityFitness {
-    fn individual_fitness(&self, individual: &Individual) -> f64 {
+    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
         let chr1 = individual.haplotype1().get(0).unwrap();
         let chr2 = individual.haplotype2().get(0).unwrap();
 
         if chr1.is_empty() || chr2.is_empty() {
-            return 0.0;
+            return FitnessValue::new(0.0);
         }
 
         // Compare the lengths of the sequences as a ratio
@@ -294,7 +299,7 @@ impl IndividualFitness for LengthSimilarityFitness {
             1.0 - Self::length_ratio(chr1.sequence().as_slice(), chr2.sequence().as_slice());
 
         // Apply shape parameter
-        similarity.powf(self.shape)
+        FitnessValue::new(similarity.powf(self.shape))
     }
 }
 
@@ -345,7 +350,7 @@ mod tests {
         let fitness = GCContentFitness::new(0.5, 2.0).unwrap();
         let chr = test_chromosome("GCGCGCGC");
         let score = fitness.haplotype_fitness(&chr);
-        assert!(score > 0.0);
+        assert!(score.get() > 0.0);
     }
 
     #[test]
@@ -353,7 +358,7 @@ mod tests {
         let fitness = GCContentFitness::new(0.5, 2.0).unwrap();
         let chr = test_chromosome("ATATATAT");
         let score = fitness.haplotype_fitness(&chr);
-        assert!(score > 0.0);
+        assert!(score.get() > 0.0);
     }
 
     #[test]
@@ -361,7 +366,7 @@ mod tests {
         let fitness = GCContentFitness::new(0.5, 2.0).unwrap();
         let chr = test_chromosome("ACGT");
         let score = fitness.haplotype_fitness(&chr);
-        assert!(score > 0.0);
+        assert!(score.get() > 0.0);
     }
 
     // ===== LengthFitness Tests =====
@@ -389,7 +394,7 @@ mod tests {
         let fitness = LengthFitness::new(8, 0.5).unwrap();
         let chr = test_chromosome("ACGTACGT");
         let score = fitness.haplotype_fitness(&chr);
-        assert!((score - 1.0).abs() < 0.01); // Should be close to 1.0
+        assert!((score.get() - 1.0).abs() < 0.01); // Should be close to 1.0
     }
 
     #[test]
@@ -439,7 +444,7 @@ mod tests {
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
 
-        assert_eq!(score, 1.0); // Identical sequences
+        assert_eq!(score.get(), 1.0); // Identical sequences
     }
 
     #[test]
@@ -456,7 +461,7 @@ mod tests {
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
 
-        assert_eq!(score, 0.0); // Completely different
+        assert_eq!(score.get(), 0.0); // Completely different
     }
 
     #[test]
@@ -473,7 +478,7 @@ mod tests {
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
 
-        assert!(score > 0.0 && score < 1.0); // Partially similar
+        assert!(score.get() > 0.0 && score.get() < 1.0); // Partially similar
     }
 
     #[test]
@@ -524,7 +529,7 @@ mod tests {
         let ind = Individual::new("test", hap1, hap2);
         let score = fitness.individual_fitness(&ind);
 
-        assert_eq!(score, 1.0); // Identical lengths
+        assert_eq!(score.get(), 1.0); // Identical lengths
     }
 
     #[test]
@@ -542,7 +547,7 @@ mod tests {
         let score = fitness.individual_fitness(&ind);
 
         // Length diff is 4, max length is 8, so similarity = 1 - 4/8 = 0.5
-        assert_eq!(score, 0.5);
+        assert_eq!(score.get(), 0.5);
     }
 
     #[test]
@@ -560,7 +565,7 @@ mod tests {
         let score = fitness.individual_fitness(&ind);
 
         // Length diff is 15, max length is 16, so similarity = 1 - 15/16 = 0.0625
-        assert!((score - 0.0625).abs() < 0.001);
+        assert!((score.get() - 0.0625).abs() < 0.001);
     }
 
     #[test]
@@ -578,7 +583,7 @@ mod tests {
         let score = fitness.individual_fitness(&ind);
 
         // Similarity is 0.5, with shape 2.0: 0.5^2.0 = 0.25
-        assert_eq!(score, 0.25);
+        assert_eq!(score.get(), 0.25);
     }
 
     #[test]

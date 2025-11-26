@@ -41,8 +41,8 @@ impl SubstitutionModel {
     ///
     /// # Arguments
     /// * `matrix` - 4x4 rate matrix where matrix[i][j] is the rate from nucleotide i to j.
-    ///              Rows/columns are ordered as [A, C, G, T] (indices 0-3).
-    ///              Matrix must be symmetric and have zero diagonal.
+    ///   Rows/columns are ordered as [A, C, G, T] (indices 0-3).
+    ///   Matrix must be symmetric and have zero diagonal.
     ///
     /// # Errors
     /// Returns an error if:
@@ -52,27 +52,16 @@ impl SubstitutionModel {
     /// - Total mutation rate for any base exceeds 1.0
     pub fn new(matrix: [[f64; 4]; 4]) -> Result<Self, MutationError> {
         // Validate diagonal is zero
-        for i in 0..4 {
-            if matrix[i][i] != 0.0 {
-                return Err(MutationError::InvalidMutationRate(matrix[i][i]));
+        for (i, row) in matrix.iter().enumerate() {
+            if row[i] != 0.0 {
+                return Err(MutationError::InvalidMutationRate(row[i]));
             }
         }
         
         // Validate symmetry and rates are in valid range
         for i in 0..4 {
             for j in (i + 1)..4 {
-                let rate_ij = matrix[i][j];
-                let rate_ji = matrix[j][i];
-                
-                // Check symmetry
-                if (rate_ij - rate_ji).abs() > 1e-10 {
-                    return Err(MutationError::InvalidMutationRate(rate_ij));
-                }
-                
-                // Check valid range
-                if !(0.0..=1.0).contains(&rate_ij) {
-                    return Err(MutationError::InvalidMutationRate(rate_ij));
-                }
+                check_matrix_values(matrix[i][j], matrix[j][i])?;
             }
         }
         
@@ -320,6 +309,7 @@ impl SubstitutionModel {
     ///
     /// # Returns
     /// The number of mutations that occurred.
+    #[inline]
     pub fn mutate_sequence_poisson<R: Rng + ?Sized>(
         &self,
         sequence: &mut Sequence,
@@ -331,22 +321,15 @@ impl SubstitutionModel {
         }
 
         // Calculate average mutation rate across all bases
-        let avg_rate = (self.total_rates[1] + self.total_rates[2] + 
-                       self.total_rates[3] + self.total_rates[4]) / 4.0;
+        let avg_rate = self.avg_total_rate();
 
         // Special case: if average mutation rate is very high, use standard approach
         if avg_rate > 0.5 {
             return self.mutate_sequence(sequence, rng);
         }
 
-        // Count bases of each type and collect their positions
-        let mut base_positions: [Vec<usize>; 5] = Default::default();
-        let indices = sequence.as_slice();
-        
-        for (pos, &base) in indices.iter().enumerate() {
-            let idx = base.to_index() as usize;
-            base_positions[idx].push(pos);
-        }
+        // Collect positions for each base type
+        let base_positions = collect_base_positions(sequence);
 
         let mut total_mutations = 0;
         let seq_indices = sequence.as_mut_slice();
@@ -356,71 +339,12 @@ impl SubstitutionModel {
             if positions.is_empty() {
                 continue;
             }
-
-            let count = positions.len();
-            let rate = self.total_rates[base_idx];
-            let lambda = count as f64 * rate;
-
-            if lambda < 0.1 {
-                // Very few expected mutations - process individually
-                for &pos in positions {
-                    if rng.random::<f64>() < rate {
-                        let base = seq_indices[pos];
-                        seq_indices[pos] = self.mutate_base_direct(base, rng);
-                        total_mutations += 1;
-                    }
-                }
-                continue;
-            }
-
-            // Sample number of mutations from Poisson
-            let poisson = match Poisson::new(lambda) {
-                Ok(p) => p,
-                Err(_) => {
-                    // Fallback: process individually
-                    for &pos in positions {
-                        if rng.random::<f64>() < rate {
-                            let base = seq_indices[pos];
-                            seq_indices[pos] = self.mutate_base_direct(base, rng);
-                            total_mutations += 1;
-                        }
-                    }
-                    continue;
-                }
-            };
-
-            let num_mutations = poisson.sample(rng) as usize;
-            if num_mutations == 0 {
-                continue;
-            }
-
-            // Sample positions to mutate (without replacement)
-            let to_mutate = if num_mutations >= count / 2 {
-                // Too many mutations - use standard approach
-                for &pos in positions {
-                    if rng.random::<f64>() < rate {
-                        let base = seq_indices[pos];
-                        seq_indices[pos] = self.mutate_base_direct(base, rng);
-                        total_mutations += 1;
-                    }
-                }
-                continue;
-            } else {
-                sample_without_replacement(count, num_mutations.min(count), rng)
-            };
-
-            // Apply mutations at selected positions
-            let base = Nucleotide::from_index(base_idx as u8).unwrap();
-            for &idx in &to_mutate {
-                let pos = positions[idx];
-                seq_indices[pos] = self.mutate_base_direct(base, rng);
-                total_mutations += 1;
-            }
+            total_mutations += self.apply_poisson_for_base(seq_indices, positions, self.total_rates[base_idx], rng);
         }
 
         total_mutations
     }
-    
+
     /// Mutate a base directly (used internally, assumes mutation should occur)
     #[inline]
     fn mutate_base_direct<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
@@ -442,6 +366,71 @@ impl SubstitutionModel {
         
         targets[2]
     }
+
+    /// Process a list of positions individually using the standard per-base check.
+    #[inline]
+    fn process_positions_standard<R: Rng + ?Sized>(&self, seq_indices: &mut [Nucleotide], positions: &[usize], rate: f64, rng: &mut R) -> usize {
+        let mut count = 0;
+        for &pos in positions {
+            if rng.random::<f64>() < rate {
+                let base = seq_indices[pos];
+                seq_indices[pos] = self.mutate_base_direct(base, rng);
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Apply Poisson-sampled mutation logic for a specific base group.
+    /// Returns the number of mutations applied.
+    #[inline]
+    fn apply_poisson_for_base<R: Rng + ?Sized>(&self, seq_indices: &mut [Nucleotide], positions: &[usize], rate: f64, rng: &mut R) -> usize {
+        let count = positions.len();
+        if count == 0 {
+            return 0;
+        }
+
+        let lambda = count as f64 * rate;
+
+        if lambda < 0.1 {
+            // Very few expected mutations - process individually
+            return self.process_positions_standard(seq_indices, positions, rate, rng);
+        }
+
+        // Sample number of mutations from Poisson
+        let poisson = match Poisson::new(lambda) {
+            Ok(p) => p,
+            Err(_) => return self.process_positions_standard(seq_indices, positions, rate, rng),
+        };
+
+        let num_mutations = poisson.sample(rng) as usize;
+        if num_mutations == 0 {
+            return 0;
+        }
+
+        if num_mutations >= count / 2 {
+            // Too many mutations - fall back to standard approach
+            return self.process_positions_standard(seq_indices, positions, rate, rng);
+        }
+
+        let to_mutate = sample_without_replacement(count, num_mutations.min(count), rng);
+        let mut applied = 0;
+        for &idx in &to_mutate {
+            let pos = positions[idx];
+            let base = seq_indices[pos];
+            seq_indices[pos] = self.mutate_base_direct(base, rng);
+            applied += 1;
+        }
+
+        applied
+    }
+
+    /// Compute the average of total mutation rates across A, C, G, T
+    #[inline]
+    fn avg_total_rate(&self) -> f64 {
+        (self.total_rates[1] + self.total_rates[2] + self.total_rates[3] + self.total_rates[4]) / 4.0
+    }
+
 }
 
 /// Sample k positions from [0, n) without replacement using reservoir sampling.
@@ -513,7 +502,35 @@ fn sample_without_replacement<R: Rng + ?Sized>(n: usize, k: usize, rng: &mut R) 
     }
 }
 
-// Removed MutationError definition, imported from crate::errors
+/// Collect positions for each base type in the sequence.
+/// Returns an array where indices 1..=4 correspond to A,C,G,T positions.
+#[inline]
+fn collect_base_positions(sequence: &Sequence) -> [Vec<usize>; 5] {
+    let mut base_positions: [Vec<usize>; 5] = Default::default();
+    let indices = sequence.as_slice();
+
+    for (pos, &base) in indices.iter().enumerate() {
+        let idx = base.to_index() as usize;
+        base_positions[idx].push(pos);
+    }
+
+    base_positions
+}
+
+fn check_matrix_values(rate_ij: f64, rate_ji: f64) -> Result<(), MutationError> {   
+    // Check symmetry
+    if (rate_ij - rate_ji).abs() > 1e-10 {
+        return Err(MutationError::InvalidMutationRate(rate_ij));
+    }
+    
+    // Check valid range
+    if !(0.0..=1.0).contains(&rate_ij) {
+        return Err(MutationError::InvalidMutationRate(rate_ij));
+    }
+
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {

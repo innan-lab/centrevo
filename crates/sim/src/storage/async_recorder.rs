@@ -4,6 +4,7 @@
 //! allowing simulations to continue without waiting for I/O. The system uses a bounded channel
 //! to buffer snapshots, only blocking the simulation when the buffer is full.
 
+use crate::base::FitnessValue;
 use crate::errors::DatabaseError;
 use crate::simulation::Population;
 use crate::storage::IndividualSnapshot;
@@ -234,7 +235,8 @@ impl AsyncRecorder {
         let fitnesses: Vec<f64> = population
             .individuals()
             .iter()
-            .map(|ind| ind.fitness())
+            .filter_map(|ind| ind.cached_fitness())
+            .map(|f| f.get())
             .collect();
 
         let (mean_fitness, min_fitness, max_fitness, std_fitness) = if fitnesses.is_empty() {
@@ -474,7 +476,7 @@ struct CompressedSnapshot {
     haplotype1_compressed: Vec<u8>,
     haplotype2_chr_id: String,
     haplotype2_compressed: Vec<u8>,
-    fitness: f64,
+    fitness: Option<f64>,
 }
 
 /// Compress snapshots using zstd.
@@ -484,7 +486,7 @@ fn compress_snapshots(
 ) -> Result<Vec<CompressedSnapshot>, DatabaseError> {
     use rayon::prelude::*;
 
-    snapshots
+    let compressed = snapshots
         .par_iter()
         .map(|snapshot| {
             let h1_compressed = zstd::bulk::compress(&snapshot.haplotype1_seq, level)
@@ -501,7 +503,9 @@ fn compress_snapshots(
                 fitness: snapshot.fitness,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(compressed)
 }
 
 /// Write compressed snapshots to database.
@@ -532,7 +536,7 @@ fn write_compressed_snapshots(
             )
             .map_err(|e| DatabaseError::Insert(e.to_string()))?;
 
-        for snapshot in snapshots {
+            for snapshot in snapshots {
             stmt.execute(params![
                 sim_id,
                 generation as i64,
@@ -541,7 +545,7 @@ fn write_compressed_snapshots(
                 &snapshot.haplotype1_compressed,
                 snapshot.haplotype2_chr_id,
                 &snapshot.haplotype2_compressed,
-                snapshot.fitness,
+                    snapshot.fitness,
             ])
             .map_err(|e| DatabaseError::Insert(e.to_string()))?;
         }
@@ -606,7 +610,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{}", i), chr_length);
-            ind.set_fitness(i as f64 / size as f64);
+            ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)

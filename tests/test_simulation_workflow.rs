@@ -35,7 +35,8 @@ fn test_basic_simulation_workflow() {
     for ind in pop.individuals() {
         assert_eq!(ind.haplotype1().chromosomes().len(), 1);
         assert_eq!(ind.haplotype2().chromosomes().len(), 1);
-        assert!(ind.fitness() >= 0.0);
+        let f = ind.cached_fitness().expect("Fitness should be calculated");
+        assert!(f >= 0.0);
     }
 }
 
@@ -128,8 +129,9 @@ fn test_simulation_with_length_selection() {
 
     // Verify fitness values are calculated (they may be 0 for poor matches)
     for ind in sim.population().individuals() {
-        assert!(ind.fitness() >= 0.0, "Fitness should be non-negative");
-        assert!(ind.fitness() <= 1.0, "Fitness should be normalized");
+        let f = ind.cached_fitness().expect("Fitness should be calculated");
+        assert!(f >= 0.0, "Fitness should be non-negative");
+        assert!(f <= 1.0, "Fitness should be normalized");
     }
 }
 
@@ -292,7 +294,8 @@ fn test_combined_fitness_components() {
 
     // All individuals should have computed fitness values (may be 0)
     for ind in sim.population().individuals() {
-        assert!(ind.fitness() >= 0.0, "Fitness should be non-negative");
+        let f = ind.cached_fitness().expect("Fitness should be calculated");
+        assert!(f >= 0.0, "Fitness should be non-negative");
     }
 
     // Population should show genetic variation

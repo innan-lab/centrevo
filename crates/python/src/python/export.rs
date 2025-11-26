@@ -100,7 +100,7 @@ fn export_json_py(population: &PyPopulation) -> PyResult<String> {
             
             json!({
                 "id": ind.id(),
-                "fitness": ind.fitness(),
+                "fitness": ind.cached_fitness(),
                 "haplotype1": h1_seqs,
                 "haplotype2": h2_seqs,
             })

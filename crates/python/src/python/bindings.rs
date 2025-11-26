@@ -187,6 +187,20 @@ impl PyHaplotype {
         self.inner.len()
     }
 
+    #[getter]
+    fn cached_fitness(&self) -> Option<f64> {
+        self.inner.cached_fitness()
+    }
+
+    #[setter]
+    fn set_cached_fitness(&mut self, fitness: f64) {
+        self.inner.set_cached_fitness(fitness);
+    }
+
+    fn clear_cached_fitness(&mut self) {
+        self.inner.clear_cached_fitness();
+    }
+
     fn __repr__(&self) -> String {
         format!("Haplotype({} chromosomes)", self.inner.len())
     }
@@ -213,17 +227,17 @@ impl PyIndividual {
     }
 
     #[getter]
-    fn fitness(&self) -> f64 {
-        self.inner.fitness()
+    fn cached_fitness(&self) -> Option<f64> {
+        self.inner.cached_fitness()
     }
 
     #[setter]
-    fn set_fitness(&mut self, fitness: f64) {
-        self.inner.set_fitness(fitness);
+    fn set_cached_fitness(&mut self, fitness: f64) {
+        self.inner.set_cached_fitness(fitness);
     }
 
     fn __repr__(&self) -> String {
-        format!("Individual(id='{}', fitness={})", self.inner.id(), self.inner.fitness())
+        format!("Individual(id='{}', cached_fitness={:?})", self.inner.id(), self.inner.cached_fitness())
     }
 }
 
@@ -626,7 +640,9 @@ impl PyQueryBuilder {
             let h2 = Haplotype::from_chromosomes(vec![chr2]);
 
             let mut ind = Individual::new(snap.individual_id, h1, h2);
-            ind.set_fitness(snap.fitness);
+            if let Some(f) = snap.fitness {
+                ind.set_cached_fitness(f);
+            }
             individuals.push(ind);
         }
 

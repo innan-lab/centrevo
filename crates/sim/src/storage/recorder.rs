@@ -1,5 +1,6 @@
 //! High-level recording of simulation state.
 
+use crate::base::FitnessValue;
 use crate::errors::DatabaseError;
 use crate::genome::Individual;
 use crate::simulation::{
@@ -57,7 +58,7 @@ pub struct IndividualSnapshot {
     pub haplotype1_seq: Vec<u8>,
     pub haplotype2_chr_id: String,
     pub haplotype2_seq: Vec<u8>,
-    pub fitness: f64,
+    pub fitness: Option<f64>,
 }
 
 impl IndividualSnapshot {
@@ -101,7 +102,7 @@ impl IndividualSnapshot {
             haplotype1_seq: h1_seq,
             haplotype2_chr_id: h2_chr_id,
             haplotype2_seq: h2_seq,
-            fitness: ind.fitness(),
+            fitness: ind.cached_fitness().map(|f| f.get()),
         }
     }
 
@@ -158,7 +159,9 @@ impl IndividualSnapshot {
 
         // Create individual
         let mut individual = Individual::new(self.individual_id.as_str(), hap1, hap2);
-        individual.set_fitness(self.fitness);
+        if let Some(f) = self.fitness {
+            individual.set_cached_fitness(f);
+        }
 
         Ok(individual)
     }
@@ -176,7 +179,7 @@ pub struct FitnessStats {
 impl FitnessStats {
     /// Calculate fitness statistics from a population.
     pub fn from_population(pop: &Population) -> Self {
-        let fitnesses: Vec<f64> = pop.individuals().iter().map(|ind| ind.fitness()).collect();
+        let fitnesses: Vec<f64> = pop.individuals().iter().filter_map(|ind| ind.cached_fitness()).map(|f| f.get()).collect();
 
         if fitnesses.is_empty() {
             return Self {
@@ -490,7 +493,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{}", i), chr_length);
-            ind.set_fitness(i as f64 / size as f64);
+            ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)

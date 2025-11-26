@@ -5,6 +5,8 @@
 
 mod nucleotide;
 mod sequence;
+mod fitness;
 
 pub use nucleotide::Nucleotide;
 pub use sequence::{Sequence, SharedSequence};
+pub use fitness::{FitnessValue, LogFitnessValue};

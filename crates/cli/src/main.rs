@@ -915,7 +915,9 @@ fn analyze_data(
         let h2 = Haplotype::from_chromosomes(vec![chr2]);
 
         let mut ind = Individual::new(snap.individual_id, h1, h2);
-        ind.set_fitness(snap.fitness);
+        if let Some(f) = snap.fitness {
+            ind.set_cached_fitness(f);
+        }
         individuals.push(ind);
     }
 

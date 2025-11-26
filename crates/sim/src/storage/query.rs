@@ -410,7 +410,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{}", i), chr_length);
-            ind.set_fitness(i as f64 / size as f64);
+                ind.set_cached_fitness(i as f64 / size as f64);
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)

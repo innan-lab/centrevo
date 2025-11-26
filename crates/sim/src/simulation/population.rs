@@ -3,6 +3,7 @@
 //! This module provides structures and functions for managing populations
 //! of individuals during evolutionary simulations.
 
+use crate::base::FitnessValue;
 use crate::evolution::IndividualFitness;
 use crate::genome::Individual;
 use crate::simulation::FitnessConfig;
@@ -172,7 +173,7 @@ impl Population {
     pub fn update_fitness(&mut self, config: &FitnessConfig) {
         let fitness_values = self.compute_fitness(config);
         for (ind, fitness) in self.individuals.iter_mut().zip(fitness_values.iter()) {
-            ind.set_fitness(*fitness);
+            ind.set_cached_fitness(FitnessValue::new(*fitness));
         }
     }
 }
@@ -291,14 +292,14 @@ mod tests {
         let mut pop = Population::new("pop1", individuals);
         let config = FitnessConfig::neutral();
 
-        // Initially fitness should be 0.0 (default)
-        assert_eq!(pop.get(0).unwrap().fitness(), 0.0);
+        // Initially cached fitness should be None (not yet computed)
+        assert_eq!(pop.get(0).unwrap().cached_fitness(), None);
 
         pop.update_fitness(&config);
 
-        // After update, should be 1.0 (neutral)
-        assert_eq!(pop.get(0).unwrap().fitness(), 1.0);
-        assert_eq!(pop.get(1).unwrap().fitness(), 1.0);
+        // After update, should be Some(1.0) (neutral)
+        assert_eq!(pop.get(0).unwrap().cached_fitness(), Some(FitnessValue::new(1.0)));
+        assert_eq!(pop.get(1).unwrap().cached_fitness(), Some(FitnessValue::new(1.0)));
     }
 
     #[test]

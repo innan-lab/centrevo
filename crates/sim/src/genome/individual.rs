@@ -1,3 +1,4 @@
+use crate::base::FitnessValue;
 use crate::genome::Haplotype;
 use std::sync::Arc;
 
@@ -15,22 +16,23 @@ pub struct Individual {
     haplotype1: Haplotype,
     /// Second haplotype
     haplotype2: Haplotype,
-    /// Fitness value (cached)
-    fitness: f64,
+    /// Cached fitness value. `None` indicates that the fitness has not
+    /// been computed/memoized yet.
+    fitness: Option<FitnessValue>,
 }
 
 impl Individual {
     /// Create a new `Individual` from two haplotypes.
     ///
     /// The `id` can be any type convertible into `Arc<str>` (for example `&str`
-    /// or `String`). The initial fitness is set to `0.0` and may be updated
+    /// or `String`). The initial cached fitness is `None` and may be updated
     /// later with `set_fitness`.
     pub fn new(id: impl Into<Arc<str>>, haplotype1: Haplotype, haplotype2: Haplotype) -> Self {
         Self {
             id: id.into(),
             haplotype1,
             haplotype2,
-            fitness: 0.0,
+            fitness: None,
         }
     }
 
@@ -65,15 +67,23 @@ impl Individual {
     }
 
     /// Return the cached fitness value for this individual.
+    ///
+    /// Returns `None` if the fitness has not yet been computed.
     #[inline]
-    pub fn fitness(&self) -> f64 {
+    pub fn cached_fitness(&self) -> Option<FitnessValue> {
         self.fitness
     }
 
     /// Set the cached fitness value for this individual.
     #[inline]
-    pub fn set_fitness(&mut self, fitness: f64) {
-        self.fitness = fitness;
+    pub fn set_cached_fitness(&mut self, fitness: impl Into<FitnessValue>) {
+        self.fitness = Some(fitness.into());
+    }
+
+    /// Clear the cached fitness value, indicating it needs to be recomputed.
+    #[inline]
+    pub fn clear_cached_fitness(&mut self) {
+        self.fitness = None;
     }
 
     /// Borrow both haplotypes as a pair of references.
@@ -121,7 +131,7 @@ mod tests {
         assert_eq!(ind.id(), "ind1");
         assert_eq!(ind.haplotype1().len(), 2);
         assert_eq!(ind.haplotype2().len(), 2);
-        assert_eq!(ind.fitness(), 0.0);
+        assert_eq!(ind.cached_fitness(), None);
     }
 
     #[test]
@@ -190,23 +200,29 @@ mod tests {
     }
 
     #[test]
-    fn test_individual_fitness() {
+    fn test_individual_cached_fitness() {
         let ind = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
-        assert_eq!(ind.fitness(), 0.0);
+        assert_eq!(ind.cached_fitness(), None);
     }
 
     #[test]
-    fn test_individual_set_fitness() {
+    fn test_individual_set_cached_fitness() {
         let mut ind = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
 
-        ind.set_fitness(0.75);
-        assert_eq!(ind.fitness(), 0.75);
+        ind.set_cached_fitness(FitnessValue::new(0.75));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.75)));
 
-        ind.set_fitness(1.0);
-        assert_eq!(ind.fitness(), 1.0);
+        ind.set_cached_fitness(FitnessValue::new(1.0));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(1.0)));
+    }
 
-        ind.set_fitness(-0.5);
-        assert_eq!(ind.fitness(), -0.5);
+    #[test]
+    fn test_individual_clear_cached_fitness() {
+        let mut ind = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
+        ind.set_cached_fitness(FitnessValue::new(0.9));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.9)));
+        ind.clear_cached_fitness();
+        assert_eq!(ind.cached_fitness(), None);
     }
 
     #[test]
@@ -239,12 +255,12 @@ mod tests {
     #[test]
     fn test_individual_clone() {
         let mut ind1 = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
-        ind1.set_fitness(0.8);
+        ind1.set_cached_fitness(FitnessValue::new(0.8));
 
         let ind2 = ind1.clone();
 
         assert_eq!(ind1.id(), ind2.id());
-        assert_eq!(ind1.fitness(), ind2.fitness());
+        assert_eq!(ind1.cached_fitness(), ind2.cached_fitness());
         assert_eq!(ind1.haplotype1().len(), ind2.haplotype1().len());
         assert_eq!(ind1.haplotype2().len(), ind2.haplotype2().len());
     }
@@ -310,11 +326,11 @@ mod tests {
         let mut ind2 = ind1.clone();
 
         // Mutate ind2's fitness
-        ind2.set_fitness(0.5);
+        ind2.set_cached_fitness(FitnessValue::new(0.5));
 
         // ind1 should be unchanged
-        assert_eq!(ind1.fitness(), 0.0);
-        assert_eq!(ind2.fitness(), 0.5);
+        assert_eq!(ind1.cached_fitness(), None);
+        assert_eq!(ind2.cached_fitness(), Some(FitnessValue::new(0.5)));
 
         // Mutate ind2's haplotype
         ind2.haplotype1_mut().push(test_chromosome("chr3", 300));
@@ -370,17 +386,18 @@ mod tests {
         let mut ind = Individual::new("ind1", test_haplotype(1), test_haplotype(1));
 
         // Test various fitness values
-        ind.set_fitness(0.0);
-        assert_eq!(ind.fitness(), 0.0);
+        ind.set_cached_fitness(FitnessValue::new(0.0));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.0)));
 
-        ind.set_fitness(1.0);
-        assert_eq!(ind.fitness(), 1.0);
+        ind.set_cached_fitness(FitnessValue::new(1.0));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(1.0)));
 
-        ind.set_fitness(0.123456789);
-        assert_eq!(ind.fitness(), 0.123456789);
+        ind.set_cached_fitness(FitnessValue::new(0.123456789));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.123456789)));
 
-        ind.set_fitness(f64::MAX);
-        assert_eq!(ind.fitness(), f64::MAX);
+        // FitnessValue clamps to [0.0, 1.0], so f64::MAX gets clamped to 1.0
+        ind.set_cached_fitness(FitnessValue::new(f64::MAX));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(1.0)));
     }
 
     #[test]

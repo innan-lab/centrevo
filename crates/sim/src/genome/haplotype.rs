@@ -1,4 +1,6 @@
+use crate::base::FitnessValue;
 use crate::genome::Chromosome;
+
 // We store ids as `String` for locality and fast, non-atomic cloning.
 
 /// A haplotype: an ordered collection of chromosomes representing one set of
@@ -15,6 +17,8 @@ pub struct Haplotype {
     chromosomes: Vec<Chromosome>,
     /// Cached chromosome ids in the same order as `chromosomes`
     ids: Vec<String>,
+    /// Cached fitness for this haplotype. `None` indicates not memoized.
+    fitness: Option<FitnessValue>,
 }
 
 impl Haplotype {
@@ -23,6 +27,7 @@ impl Haplotype {
         Self {
             chromosomes: Vec::new(),
             ids: Vec::new(),
+            fitness: None,
         }
     }
 
@@ -31,6 +36,7 @@ impl Haplotype {
         Self {
             chromosomes: Vec::with_capacity(capacity),
             ids: Vec::with_capacity(capacity),
+            fitness: None,
         }
     }
 
@@ -38,7 +44,7 @@ impl Haplotype {
     pub fn from_chromosomes(chromosomes: Vec<Chromosome>) -> Self {
         // Build ids in the same order as the chromosomes
         let ids = chromosomes.iter().map(|c| c.id().to_string()).collect();
-        Self { chromosomes, ids }
+        Self { chromosomes, ids, fitness: None }
     }
 
     /// Return the number of chromosomes in this haplotype.
@@ -64,6 +70,8 @@ impl Haplotype {
     /// of bounds.
     #[inline]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut Chromosome> {
+        // Invalidate cached fitness when providing mutable access
+        self.fitness = None;
         self.chromosomes.get_mut(index)
     }
 
@@ -73,6 +81,26 @@ impl Haplotype {
         let id = chromosome.id().to_string();
         self.ids.push(id);
         self.chromosomes.push(chromosome);
+        // Invalidate cached fitness when haplotype changes
+        self.fitness = None;
+    }
+
+    /// Return the cached fitness value for this haplotype, or `None` if unset.
+    #[inline]
+    pub fn cached_fitness(&self) -> Option<FitnessValue> {
+        self.fitness
+    }
+
+    /// Set the cached fitness value for this haplotype.
+    #[inline]
+    pub fn set_cached_fitness(&mut self, fitness: impl Into<FitnessValue>) {
+        self.fitness = Some(fitness.into());
+    }
+
+    /// Clear the cached fitness value.
+    #[inline]
+    pub fn clear_cached_fitness(&mut self) {
+        self.fitness = None;
     }
 
     /// Borrow the slice of chromosomes.
@@ -84,6 +112,8 @@ impl Haplotype {
     /// Borrow the mutable slice of chromosomes.
     #[inline]
     pub fn chromosomes_mut(&mut self) -> &mut [Chromosome] {
+        // Invalidate cached fitness whenever mutating access is requested
+        self.fitness = None;
         &mut self.chromosomes
     }
 
@@ -94,6 +124,8 @@ impl Haplotype {
 
     /// Iterate mutably over chromosomes.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Chromosome> {
+        // Invalidate cached fitness when providing mutable iterators
+        self.fitness = None;
         self.chromosomes.iter_mut()
     }
 
@@ -159,6 +191,7 @@ mod tests {
         let hap = Haplotype::new();
         assert_eq!(hap.len(), 0);
         assert!(hap.is_empty());
+        assert_eq!(hap.cached_fitness(), None);
     }
 
     #[test]
@@ -183,11 +216,16 @@ mod tests {
         let hap = Haplotype::from_chromosomes(vec![chr1, chr2]);
         assert_eq!(hap.len(), 2);
         assert!(!hap.is_empty());
+        assert_eq!(hap.cached_fitness(), None);
     }
 
     #[test]
     fn test_haplotype_push() {
         let mut hap = Haplotype::new();
+
+        // Set a fitness and ensure it's invalidated by push
+        hap.set_cached_fitness(FitnessValue::new(0.42));
+        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new(0.42)));
 
         hap.push(test_chromosome("chr1", 100));
         assert_eq!(hap.len(), 1);
@@ -197,6 +235,36 @@ mod tests {
 
         hap.push(test_chromosome("chr3", 300));
         assert_eq!(hap.len(), 3);
+        assert_eq!(hap.cached_fitness(), None);
+    }
+
+    #[test]
+    fn test_haplotype_cached_fitness() {
+        let hap = Haplotype::new();
+
+        assert_eq!(hap.cached_fitness(), None);
+    }
+
+    #[test]
+    fn test_haplotype_set_cached_fitness() {
+        let mut hap = Haplotype::new();
+
+        hap.set_cached_fitness(FitnessValue::new(0.85));
+        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new(0.85)));
+
+        hap.set_cached_fitness(FitnessValue::new(0.95));
+        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new(0.95)));
+    }
+
+    #[test]
+    fn test_haplotype_set_clear_cached_fitness() {
+        let mut hap = Haplotype::new();
+        
+        hap.set_cached_fitness(FitnessValue::new(0.75));
+        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new(0.75)));
+
+        hap.clear_cached_fitness();
+        assert_eq!(hap.cached_fitness(), None);
     }
 
     #[test]
@@ -230,6 +298,8 @@ mod tests {
 
         let chr = hap.get(0).unwrap();
         assert_eq!(chr.sequence().get(0), Some(Nucleotide::T));
+        // Mutable access should invalidate cached fitness
+        assert_eq!(hap.cached_fitness(), None);
     }
 
     #[test]
@@ -253,6 +323,8 @@ mod tests {
         chrs[0].sequence_mut().set(0, Nucleotide::G).unwrap();
 
         assert_eq!(hap.get(0).unwrap().sequence().get(0), Some(Nucleotide::G));
+        // Mutable access should invalidate cached fitness
+        assert_eq!(hap.cached_fitness(), None);
     }
 
     #[test]
@@ -281,6 +353,8 @@ mod tests {
         for chr in hap.iter() {
             assert_eq!(chr.sequence().get(0), Some(Nucleotide::C));
         }
+        // Mutable iterator should clear cached fitness
+        assert_eq!(hap.cached_fitness(), None);
     }
 
     #[test]
@@ -332,6 +406,10 @@ mod tests {
         for (chr1, chr2) in hap1.iter().zip(hap2.iter()) {
             assert_eq!(chr1.id(), chr2.id());
         }
+        // Cached fitness should be cloned as well
+        hap1.set_cached_fitness(FitnessValue::new(0.33));
+        let hap2 = hap1.clone();
+        assert_eq!(hap1.cached_fitness(), hap2.cached_fitness());
     }
 
     #[test]

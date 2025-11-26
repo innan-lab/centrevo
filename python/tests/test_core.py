@@ -150,6 +150,24 @@ class TestHaplotype:
         assert len(hap) == 2
         assert "Haplotype" in repr(hap)
 
+    def test_haplotype_fitness_property(self):
+        base = centrevo.Nucleotide.A()
+
+        chrom = centrevo.Chromosome.uniform(
+            id="chr1", base=base, length=100,
+            ru_length=10, rus_per_hor=5
+        )
+
+        hap = centrevo.Haplotype.from_chromosomes([chrom])
+        # Default is None
+        assert hap.cached_fitness is None
+        # Set and get cached fitness
+        hap.cached_fitness = 0.25
+        assert hap.cached_fitness == 0.25
+        # Clear cached fitness
+        hap.clear_cached_fitness()
+        assert hap.cached_fitness is None
+
 
 class TestIndividual:
     """Tests for Individual class."""
@@ -184,13 +202,12 @@ class TestIndividual:
         hap = centrevo.Haplotype.from_chromosomes([chrom])
         ind = centrevo.Individual("ind1", hap, hap)
 
-        # Default fitness is 0.0
-        assert ind.fitness == 0.0
+        # Default fitness is None (not yet computed)
+        assert ind.cached_fitness is None
 
-        # Set and get fitness
-        ind.fitness = 0.5
-        assert ind.fitness == 0.5
-
+        # Set and get cached fitness
+        ind.cached_fitness = 0.5
+        assert ind.cached_fitness == 0.5
 
 class TestPopulation:
     """Tests for Population class."""

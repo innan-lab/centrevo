@@ -6,6 +6,7 @@
 use crate::base::Sequence;
 pub use crate::errors::RecombinationError;
 use rand::Rng;
+use rand_distr::Geometric;
 use serde::{Deserialize, Serialize};
 
 /// Type of recombination event that can occur on a sequence.
@@ -97,38 +98,83 @@ impl RecombinationParams {
         self.gc_extension_prob
     }
 
-    /// Sample a recombination event for a sequence of given length.
+    /// Sample recombination events for a sequence of given length.
     ///
-    /// Returns the type of event that occurred.
-    pub fn sample_event<R: Rng + ?Sized>(&self, length: usize, rng: &mut R) -> RecombinationType {
-        if length == 0 {
-            return RecombinationType::None;
+    /// Returns a list of events that occurred, sorted by position.
+    /// This uses a geometric distribution to correctly simulate the per-base
+    /// break probability, ensuring that the probability of at least one break
+    /// scales correctly with sequence length (unlike the previous implementation).
+    pub fn sample_events<R: Rng + ?Sized>(
+        &self,
+        length: usize,
+        rng: &mut R,
+    ) -> Vec<RecombinationType> {
+        let mut events = Vec::new();
+        if length == 0 || self.break_prob <= 0.0 {
+            return events;
         }
 
-        // Check if a break occurs using gen::<f64>() which is faster than random_bool
-        if rng.random::<f64>() >= self.break_prob {
-            return RecombinationType::None;
+        // If break_prob is 1.0, we have a break at every position.
+        // This is an edge case, but we should handle it.
+        if self.break_prob >= 1.0 {
+            for position in 0..length {
+                self.add_event_at(position, length, rng, &mut events);
+            }
+            return events;
         }
 
-        // Sample break position
-        let position = rng.random_range(0..length);
+        // Use geometric distribution to skip bases between breaks.
+        // Geometric(p) gives the number of failures (non-breaks) before the first success (break).
+        // So if we are at `current_pos`, the next break is at `current_pos + k` where k ~ Geometric(p).
+        // Note: rand_distr::Geometric is defined on k = 0, 1, 2... (failures before success).
+        // So if k=0, the break is at current_pos.
+        let geo = Geometric::new(self.break_prob).unwrap();
 
+        let mut current_pos = 0;
+        loop {
+            let skip: u64 = rng.sample(geo);
+            current_pos += skip as usize;
+
+            if current_pos >= length {
+                break;
+            }
+
+            self.add_event_at(current_pos, length, rng, &mut events);
+
+            // Move past the current break for the next iteration
+            current_pos += 1;
+        }
+
+        events
+    }
+
+    // Helper to add an event at a specific position
+    fn add_event_at<R: Rng + ?Sized>(
+        &self,
+        position: usize,
+        length: usize,
+        rng: &mut R,
+        events: &mut Vec<RecombinationType>,
+    ) {
         // Determine if crossover or gene conversion
         if rng.random::<f64>() < self.crossover_prob {
-            RecombinationType::Crossover { position }
+            events.push(RecombinationType::Crossover { position });
         } else {
             // Gene conversion: sample tract length
+            // Tract length starts at 1 and extends with probability gc_extension_prob
+            // This is effectively a geometric distribution on the extension (k failures before success of stopping?)
+            // Or just a loop as before.
             let mut tract_length = 1;
-            while tract_length < (length - position) && rng.random::<f64>() < self.gc_extension_prob
+            while (position + tract_length) < length && rng.random::<f64>() < self.gc_extension_prob
             {
                 tract_length += 1;
             }
 
-            let end = (position + tract_length).min(length);
-            RecombinationType::GeneConversion {
+            let end = position + tract_length;
+            events.push(RecombinationType::GeneConversion {
                 start: position,
                 end,
-            }
+            });
         }
     }
 
@@ -233,9 +279,9 @@ impl RecombinationParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
     use rand::SeedableRng;
     use rand_xoshiro::Xoshiro256PlusPlus;
+    use std::str::FromStr;
 
     #[test]
     fn test_recombination_params_new() {
@@ -258,8 +304,8 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         for _ in 0..100 {
-            let event = params.sample_event(100, &mut rng);
-            assert_eq!(event, RecombinationType::None);
+            let events = params.sample_events(100, &mut rng);
+            assert!(events.is_empty());
         }
     }
 
@@ -268,8 +314,8 @@ mod tests {
         let params = RecombinationParams::new(0.5, 0.5, 0.1).unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
-        let event = params.sample_event(0, &mut rng);
-        assert_eq!(event, RecombinationType::None);
+        let events = params.sample_events(0, &mut rng);
+        assert!(events.is_empty());
     }
 
     #[test]
@@ -278,8 +324,10 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         // With break_prob=1.0 and crossover_prob=1.0, should always get crossover
-        for _ in 0..10 {
-            let event = params.sample_event(100, &mut rng);
+        // For length 10, we expect 10 events (one at each position)
+        let events = params.sample_events(10, &mut rng);
+        assert_eq!(events.len(), 10);
+        for event in events {
             match event {
                 RecombinationType::Crossover { .. } => {}
                 _ => panic!("Expected crossover event"),
@@ -293,12 +341,14 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         // With break_prob=1.0, crossover_prob=0.0, should get gene conversion
-        for _ in 0..10 {
-            let event = params.sample_event(100, &mut rng);
+        let events = params.sample_events(10, &mut rng);
+        assert!(!events.is_empty());
+
+        for event in events {
             match event {
                 RecombinationType::GeneConversion { start, end } => {
                     assert!(start < end);
-                    assert!(end <= 100);
+                    assert!(end <= 10);
                 }
                 _ => panic!("Expected gene conversion event"),
             }
@@ -451,5 +501,58 @@ mod tests {
         assert_eq!(params1.break_prob(), params2.break_prob());
         assert_eq!(params1.crossover_prob(), params2.crossover_prob());
         assert_eq!(params1.gc_extension_prob(), params2.gc_extension_prob());
+    }
+
+    #[test]
+    fn test_sample_events_multiple() {
+        // High break prob, long sequence -> multiple events
+        let params = RecombinationParams::new(0.1, 0.5, 0.1).unwrap();
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+
+        let events = params.sample_events(1000, &mut rng);
+        // Expected events ~ 100
+        assert!(events.len() > 50);
+        assert!(events.len() < 150);
+
+        // Verify sorted positions
+        let mut last_pos = 0;
+        for event in events {
+            let pos = match event {
+                RecombinationType::Crossover { position } => position,
+                RecombinationType::GeneConversion { start, .. } => start,
+                RecombinationType::None => panic!("Should not have None in events list"),
+            };
+            assert!(pos >= last_pos);
+            last_pos = pos;
+        }
+    }
+
+    #[test]
+    fn test_sample_event_probability_scaling() {
+        // break_prob is 0.01 per base.
+        // For length 100, expected breaks = 1.
+        // Probability of at least one break = 1 - (0.99)^100 ≈ 0.63
+
+        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+
+        let mut event_count = 0;
+        let trials = 10000;
+        for _ in 0..trials {
+            let events = params.sample_events(100, &mut rng);
+            if !events.is_empty() {
+                event_count += 1;
+            }
+        }
+
+        let frequency = event_count as f64 / trials as f64;
+        println!("Frequency of events for L=100, p=0.01: {}", frequency);
+
+        // Now we expect correct scaling
+        assert!(
+            frequency > 0.60 && frequency < 0.66,
+            "Frequency {} should be around 0.63",
+            frequency
+        );
     }
 }

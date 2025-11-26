@@ -4,8 +4,8 @@
 //! recombination, selection, and reproduction across generations.
 
 use crate::base::Sequence;
-use crate::genome::{Chromosome, Haplotype, Individual};
 use crate::genome::repeat_map::RepeatMap;
+use crate::genome::{Chromosome, Haplotype, Individual};
 use crate::simulation::{
     FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure,
     SimulationConfig,
@@ -367,19 +367,15 @@ impl Simulation {
             }
 
             // Create map
-            let map = RepeatMap::uniform(structure.ru_length, structure.rus_per_hor, structure.hors_per_chr);
+            let map = RepeatMap::uniform(
+                structure.ru_length,
+                structure.rus_per_hor,
+                structure.hors_per_chr,
+            );
 
             // Create chromosomes
-            let chr1 = Chromosome::new(
-                format!("chr{chr_idx}"),
-                seq1,
-                map.clone(),
-            );
-            let chr2 = Chromosome::new(
-                format!("chr{chr_idx}"),
-                seq2,
-                map,
-            );
+            let chr1 = Chromosome::new(format!("chr{chr_idx}"), seq1, map.clone());
+            let chr2 = Chromosome::new(format!("chr{chr_idx}"), seq2, map);
 
             hap1.push(chr1);
             hap2.push(chr2);
@@ -498,35 +494,54 @@ impl Simulation {
                 for chr_idx in 0..hap1.len().min(hap2.len()) {
                     if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx))
                     {
-                        // Sample recombination event
-                        let event = self
+                        // Sample recombination events
+                        let events = self
                             .recombination
                             .params
-                            .sample_event(chr1.len(), &mut local_rng);
+                            .sample_events(chr1.len(), &mut local_rng);
 
-                        // Apply the recombination event
-                        match event {
-                            crate::evolution::RecombinationType::None => {
-                                // No recombination
-                            }
-                            crate::evolution::RecombinationType::Crossover { position } => {
-                                // Perform crossover
-                                let (new1, new2) = chr1
-                                    .crossover(chr2, position)
-                                    .map_err(|e| format!("Crossover failed: {e}"))?;
+                        // Apply the recombination events sequentially
+                        for event in events {
+                            match event {
+                                crate::evolution::RecombinationType::None => {
+                                    // Should not be in the list, but handle just in case
+                                }
+                                crate::evolution::RecombinationType::Crossover { position } => {
+                                    // Perform crossover
+                                    // Note: This consumes the current state and produces new chromosomes
+                                    // We need to be careful because crossover takes &Chromosome, not &mut
+                                    // But we have &mut references.
+                                    // We can clone to pass to crossover (expensive?) or refactor crossover to take &mut?
+                                    // The current crossover signature is:
+                                    // pub fn crossover(&self, other: &Self, position: usize) -> Result<(Self, Self), RecombinationError>
+                                    // It takes &self and &other.
 
-                                *chr1 = new1;
-                                *chr2 = new2;
-                            }
-                            crate::evolution::RecombinationType::GeneConversion { start, end } => {
-                                // Perform gene conversion (chr1 -> chr2)
-                                let new2 = self
-                                    .recombination
-                                    .params
-                                    .gene_conversion(chr2.sequence(), chr1.sequence(), start, end)
-                                    .map_err(|e| format!("Gene conversion failed: {e}"))?;
+                                    let (new1, new2) = chr1
+                                        .crossover(chr2, position)
+                                        .map_err(|e| format!("Crossover failed: {e}"))?;
 
-                                *chr2.sequence_mut() = new2;
+                                    *chr1 = new1;
+                                    *chr2 = new2;
+                                }
+                                crate::evolution::RecombinationType::GeneConversion {
+                                    start,
+                                    end,
+                                } => {
+                                    // Perform gene conversion (chr1 -> chr2)
+                                    // gene_conversion takes &Sequence, &Sequence.
+                                    let new2 = self
+                                        .recombination
+                                        .params
+                                        .gene_conversion(
+                                            chr2.sequence(),
+                                            chr1.sequence(),
+                                            start,
+                                            end,
+                                        )
+                                        .map_err(|e| format!("Gene conversion failed: {e}"))?;
+
+                                    *chr2.sequence_mut() = new2;
+                                }
                             }
                         }
                     }

@@ -10,9 +10,8 @@ pub mod recombination;
 pub mod selection;
 
 pub use mutation::SubstitutionModel;
-pub use recombination::{RecombinationParams, RecombinationType};
+pub use recombination::{RecombinationModel, RecombinationType};
 pub use selection::{
-    HaplotypeFitness, IndividualFitness,
-    GCContentFitness, LengthFitness,
-    SequenceSimilarityFitness, LengthSimilarityFitness,
+    GCContentFitness, HaplotypeFitness, IndividualFitness, LengthFitness, LengthSimilarityFitness,
+    SequenceSimilarityFitness,
 };

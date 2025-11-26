@@ -495,10 +495,15 @@ impl Simulation {
                     if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx))
                     {
                         // Sample recombination events
-                        let events = self
-                            .recombination
-                            .params
-                            .sample_events(chr1.len(), &mut local_rng);
+                        let mut events =
+                            self.recombination
+                                .params
+                                .sample_events(chr1, chr2, &mut local_rng);
+
+                        // Process events from right to left (descending position)
+                        // This ensures that changes to the tail (right side) do not invalidate
+                        // indices for subsequent events on the left side.
+                        events.reverse();
 
                         // Apply the recombination events sequentially
                         for event in events {
@@ -506,7 +511,7 @@ impl Simulation {
                                 crate::evolution::RecombinationType::None => {
                                     // Should not be in the list, but handle just in case
                                 }
-                                crate::evolution::RecombinationType::Crossover { position } => {
+                                crate::evolution::RecombinationType::Crossover { pos1, pos2 } => {
                                     // Perform crossover
                                     // Note: This consumes the current state and produces new chromosomes
                                     // We need to be careful because crossover takes &Chromosome, not &mut
@@ -516,31 +521,29 @@ impl Simulation {
                                     // pub fn crossover(&self, other: &Self, position: usize) -> Result<(Self, Self), RecombinationError>
                                     // It takes &self and &other.
 
-                                    let (new1, new2) = chr1
-                                        .crossover(chr2, position)
+                                    let (new1, new2) = self
+                                        .recombination
+                                        .params
+                                        .crossover(chr1, chr2, pos1, pos2)
                                         .map_err(|e| format!("Crossover failed: {e}"))?;
 
                                     *chr1 = new1;
                                     *chr2 = new2;
                                 }
                                 crate::evolution::RecombinationType::GeneConversion {
-                                    start,
-                                    end,
+                                    start1,
+                                    start2,
+                                    length,
                                 } => {
                                     // Perform gene conversion (chr1 -> chr2)
                                     // gene_conversion takes &Sequence, &Sequence.
                                     let new2 = self
                                         .recombination
                                         .params
-                                        .gene_conversion(
-                                            chr2.sequence(),
-                                            chr1.sequence(),
-                                            start,
-                                            end,
-                                        )
+                                        .gene_conversion(chr2, chr1, start2, start1, length)
                                         .map_err(|e| format!("Gene conversion failed: {e}"))?;
 
-                                    *chr2.sequence_mut() = new2;
+                                    *chr2 = new2;
                                 }
                             }
                         }

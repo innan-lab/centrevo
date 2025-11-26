@@ -1,14 +1,14 @@
+use super::repeat_map::RepeatMap;
 use crate::base::{Nucleotide, Sequence, SharedSequence};
 use crate::errors::{ChromosomeError, InvalidNucleotide};
 use std::sync::Arc;
-use super::repeat_map::RepeatMap;
 
 /// A chromosome: a named sequence organized into repeat units (RUs) and
 /// higher-order repeats (HORs).
 ///
 /// A `Chromosome` owns a mutable `Sequence` and provides helpers that expose
-/// the repeat structure via `RepeatMap`. 
-/// For parallel/read-only operations prefer `SharedChromosome` 
+/// the repeat structure via `RepeatMap`.
+/// For parallel/read-only operations prefer `SharedChromosome`
 /// which shares sequence storage.
 #[derive(Debug, Clone)]
 pub struct Chromosome {
@@ -23,11 +23,7 @@ pub struct Chromosome {
 
 impl Chromosome {
     /// Create a new chromosome
-    pub fn new(
-        id: impl Into<Arc<str>>,
-        sequence: Sequence,
-        map: RepeatMap,
-    ) -> Self {
+    pub fn new(id: impl Into<Arc<str>>, sequence: Sequence, map: RepeatMap) -> Self {
         Self {
             id: id.into(),
             sequence,
@@ -39,7 +35,7 @@ impl Chromosome {
     ///
     /// This is a convenience constructor often used in tests and for creating
     /// deterministic initial populations.
-    /// 
+    ///
     /// # Arguments
     /// - `id`: Chromosome identifier
     /// - `base`: Nucleotide base to fill the sequence with
@@ -59,12 +55,12 @@ impl Chromosome {
             sequence.push(base);
         }
         let map = RepeatMap::uniform(ru_length, rus_per_hor, num_hors);
-        
+
         Self::new(id, sequence, map)
     }
 
     /// Create a chromosome from a nested vector structure `Vec<Vec<Vec<u8>>>`.
-    /// 
+    ///
     /// The structure is:
     /// - Outer Vec `Vec<_>`: List of Higher-Order Repeats (HORs)
     /// - Middle Vec `Vec<Vec<_>>`: List of Repeat Units (RUs) within an HOR
@@ -81,8 +77,7 @@ impl Chromosome {
         for hor in nested {
             for ru in hor {
                 for byte in ru {
-                    let nuc = Nucleotide::from_ascii(byte)
-                        .ok_or(InvalidNucleotide(byte))?;
+                    let nuc = Nucleotide::from_ascii(byte).ok_or(InvalidNucleotide(byte))?;
                     sequence_vec.push(nuc);
                 }
                 ru_offsets.push(sequence_vec.len());
@@ -92,8 +87,8 @@ impl Chromosome {
         }
 
         let sequence = Sequence::from_nucleotides(sequence_vec);
-        let map = RepeatMap::new(ru_offsets, hor_idx_offsets)
-            .map_err(ChromosomeError::RepeatMapError)?;
+        let map =
+            RepeatMap::new(ru_offsets, hor_idx_offsets).map_err(ChromosomeError::RepeatMapError)?;
 
         Ok(Self::new(id, sequence, map))
     }
@@ -109,13 +104,9 @@ impl Chromosome {
     ) -> Result<Self, ChromosomeError> {
         let nested_bytes: Vec<Vec<Vec<u8>>> = nested
             .into_iter()
-            .map(|hor| {
-                hor.into_iter()
-                    .map(|ru| ru.into_bytes())
-                    .collect()
-            })
+            .map(|hor| hor.into_iter().map(|ru| ru.into_bytes()).collect())
             .collect();
-        
+
         Self::from_nested_vec(id, nested_bytes)
     }
 
@@ -137,7 +128,7 @@ impl Chromosome {
 
         for hor_str in hor_strings {
             if hor_str.is_empty() {
-                continue; 
+                continue;
             }
             let ru_strings: Vec<&str> = hor_str.split(ru_delim).collect();
             let mut hor_vec = Vec::new();
@@ -232,9 +223,9 @@ impl Chromosome {
             .collect();
 
         let mut result = String::with_capacity(chars.len() * 2);
-        
+
         // We iterate through the sequence and insert delimiters based on the map.
-        
+
         let num_rus = self.map.num_rus();
         for r in 0..num_rus {
             let (start, end) = self.map.get_ru_interval(r).unwrap();
@@ -242,42 +233,42 @@ impl Chromosome {
             for c in seq_slice {
                 result.push(*c);
             }
-            
+
             if r < num_rus - 1 {
                 // Check if r+1 is a start of an HOR.
                 // We need to check if `r+1` is in `hor_offsets`.
                 // Since `hor_offsets` is sorted, we can check efficiently or just check if `r+1` matches any.
                 // But `hor_offsets` contains RU indices.
                 // If `r+1` is in `hor_offsets` (excluding 0), then it's an HOR boundary.
-                
+
                 // We can't easily check "contains" on Vec without iteration.
                 // But we can iterate HORs.
-                
+
                 // Optimization: Pre-calculate boundary set? Or just iterate.
                 // Since this is for display, performance is not critical.
-                
+
                 let mut is_hor_boundary = false;
                 // hor_offsets[0] is 0. hor_offsets[1] is start of HOR 1 (end of HOR 0).
                 // If r+1 == hor_offsets[k], then we are at boundary between HOR k-1 and HOR k.
-                
+
                 // We can iterate hor_offsets starting from 1.
                 // But we don't have direct access to hor_offsets field here (it's private in RepeatMap).
                 // We should add a method `is_hor_boundary(ru_index)` to RepeatMap.
                 // For now, I'll assume I can add it.
-                
+
                 // Wait, I can't modify RepeatMap in this tool call.
                 // I'll use `get_hor_interval` to check.
                 // If `get_hor_interval(h).start == start of RU r+1`, then it's a boundary.
-                
+
                 for h in 1..self.map.num_hors() {
-                     let (h_start, _) = self.map.get_hor_interval(h).unwrap();
-                     let (next_ru_start, _) = self.map.get_ru_interval(r+1).unwrap();
-                     if h_start == next_ru_start {
-                         is_hor_boundary = true;
-                         break;
-                     }
+                    let (h_start, _) = self.map.get_hor_interval(h).unwrap();
+                    let (next_ru_start, _) = self.map.get_ru_interval(r + 1).unwrap();
+                    if h_start == next_ru_start {
+                        is_hor_boundary = true;
+                        break;
+                    }
                 }
-                
+
                 if is_hor_boundary {
                     result.push(hor_delim);
                 } else {
@@ -299,37 +290,202 @@ impl Chromosome {
         }
     }
 
+    /// Get the sequence slice corresponding to the RU at `index`.
+    pub fn get_ru_slice(&self, index: usize) -> Option<&[Nucleotide]> {
+        let (start, end) = self.map.get_ru_interval(index)?;
+        Some(&self.sequence.as_slice()[start..end])
+    }
+
+    /// Calculate the Jaccard similarity of K-mers between an RU in this chromosome
+    /// and an RU in another chromosome.
+    ///
+    /// # Arguments
+    /// * `ru_index_self` - Index of RU in this chromosome
+    /// * `other` - The other chromosome
+    /// * `ru_index_other` - Index of RU in the other chromosome
+    /// * `k` - K-mer size (e.g., 5 or 7)
+    ///
+    /// # Returns
+    /// Similarity score in [0.0, 1.0]. Returns 0.0 if indices are invalid.
+    pub fn calculate_similarity(
+        &self,
+        ru_index_self: usize,
+        other: &Self,
+        ru_index_other: usize,
+        k: usize,
+    ) -> f64 {
+        let slice1 = match self.get_ru_slice(ru_index_self) {
+            Some(s) => s,
+            None => return 0.0,
+        };
+        let slice2 = match other.get_ru_slice(ru_index_other) {
+            Some(s) => s,
+            None => return 0.0,
+        };
+
+        // Optimization: Exact match check
+        if slice1 == slice2 {
+            return 1.0;
+        }
+
+        if slice1.len() < k || slice2.len() < k {
+            return 0.0;
+        }
+
+        // Simple K-mer counting using a HashSet is standard, but for performance
+        // with small alphabet (ACGT) and small K, we could use a fixed-size array or bit packing.
+        // However, for clarity and "good enough" performance given the window size,
+        // we'll use a HashSet of u64 hashes or just the bytes if K is small.
+        // Since K is small (e.g. 5-7), we can pack into u16 or u32.
+        // A = 00, C = 01, G = 10, T = 11.
+        // K=8 fits in u16.
+
+        // Let's use a simple HashSet approach first for correctness.
+        // We can optimize to bit-packing if needed.
+
+        use std::collections::HashSet;
+
+        let mut kmers1 = HashSet::with_capacity(slice1.len() - k + 1);
+        for window in slice1.windows(k) {
+            kmers1.insert(window);
+        }
+
+        let mut kmers2 = HashSet::with_capacity(slice2.len() - k + 1);
+        for window in slice2.windows(k) {
+            kmers2.insert(window);
+        }
+
+        let intersection = kmers1.intersection(&kmers2).count();
+        let union = kmers1.len() + kmers2.len() - intersection;
+
+        if union == 0 {
+            0.0
+        } else {
+            intersection as f64 / union as f64
+        }
+    }
+
     /// Perform crossover with another chromosome at the given position.
     /// Returns two new chromosomes.
     pub fn crossover(&self, other: &Self, position: usize) -> Result<(Self, Self), String> {
-        if position > self.len() || position > other.len() {
-            return Err(format!("Position {position} out of bounds"));
+        // Legacy wrapper for backward compatibility if needed, or we can update it.
+        // But the plan says we update crossover to accept (pos1, pos2).
+        // Let's keep this one for now but mark it as deprecated or just update it to use same pos?
+        // Actually, the previous implementation assumed same length.
+        // We will replace this with the generalized version.
+        self.crossover_generalized(other, position, position)
+    }
+
+    /// Generalized crossover between two chromosomes at potentially different positions.
+    ///
+    /// `pos1` is the break point in `self`.
+    /// `pos2` is the break point in `other`.
+    pub fn crossover_generalized(
+        &self,
+        other: &Self,
+        pos1: usize,
+        pos2: usize,
+    ) -> Result<(Self, Self), String> {
+        if pos1 > self.len() {
+            return Err(format!(
+                "Position {pos1} out of bounds for self (len {})",
+                self.len()
+            ));
+        }
+        if pos2 > other.len() {
+            return Err(format!(
+                "Position {pos2} out of bounds for other (len {})",
+                other.len()
+            ));
         }
 
         // Create new sequences
-        // Seq1 New = Self[..pos] + Other[pos..]
-        let mut seq1_vec = Vec::with_capacity(position + (other.len() - position));
-        seq1_vec.extend_from_slice(&self.sequence.as_slice()[..position]);
-        seq1_vec.extend_from_slice(&other.sequence.as_slice()[position..]);
+        // Seq1 New = Self[..pos1] + Other[pos2..]
+        let mut seq1_vec = Vec::with_capacity(pos1 + (other.len() - pos2));
+        seq1_vec.extend_from_slice(&self.sequence.as_slice()[..pos1]);
+        seq1_vec.extend_from_slice(&other.sequence.as_slice()[pos2..]);
         let seq1_new = Sequence::from_nucleotides(seq1_vec);
 
-        // Seq2 New = Other[..pos] + Self[pos..]
-        let mut seq2_vec = Vec::with_capacity(position + (self.len() - position));
-        seq2_vec.extend_from_slice(&other.sequence.as_slice()[..position]);
-        seq2_vec.extend_from_slice(&self.sequence.as_slice()[position..]);
+        // Seq2 New = Other[..pos2] + Self[pos1..]
+        let mut seq2_vec = Vec::with_capacity(pos2 + (self.len() - pos1));
+        seq2_vec.extend_from_slice(&other.sequence.as_slice()[..pos2]);
+        seq2_vec.extend_from_slice(&self.sequence.as_slice()[pos1..]);
         let seq2_new = Sequence::from_nucleotides(seq2_vec);
-        
+
         // Map crossover
-        let (map1_left, map1_right) = self.map.split_at(position).map_err(|e| e.to_string())?;
-        let (map2_left, map2_right) = other.map.split_at(position).map_err(|e| e.to_string())?;
-        
+        let (map1_left, map1_right) = self.map.split_at(pos1).map_err(|e| e.to_string())?;
+        let (map2_left, map2_right) = other.map.split_at(pos2).map_err(|e| e.to_string())?;
+
         let map1_new = map1_left.merge(&map2_right).map_err(|e| e.to_string())?;
         let map2_new = map2_left.merge(&map1_right).map_err(|e| e.to_string())?;
-        
+
         Ok((
             Self::new(self.id.clone(), seq1_new, map1_new),
-            Self::new(other.id.clone(), seq2_new, map2_new)
+            Self::new(other.id.clone(), seq2_new, map2_new),
         ))
+    }
+
+    /// Perform generalized gene conversion.
+    ///
+    /// Replaces a tract in `self` (recipient) starting at `start1` of length `length`
+    /// with a tract from `other` (donor) starting at `start2` of length `length`.
+    ///
+    /// Note: Currently assumes length is same for both, but logic supports different lengths if needed.
+    pub fn gene_conversion_generalized(
+        &self,
+        other: &Self,
+        start1: usize,
+        start2: usize,
+        length: usize,
+    ) -> Result<Self, String> {
+        let end1 = start1 + length;
+        let end2 = start2 + length;
+
+        if end1 > self.len() {
+            return Err(format!(
+                "Recipient range {start1}..{end1} out of bounds (len {})",
+                self.len()
+            ));
+        }
+        if end2 > other.len() {
+            return Err(format!(
+                "Donor range {start2}..{end2} out of bounds (len {})",
+                other.len()
+            ));
+        }
+
+        // 1. Split Recipient: Left | Tract | Right
+        // Split at start1 -> (Left, MidRight)
+        let (map_left, map_mid_right) = self.map.split_at(start1).map_err(|e| e.to_string())?;
+        // Split MidRight at length -> (OldTract, Right)
+        let (_map_old_tract, map_right) =
+            map_mid_right.split_at(length).map_err(|e| e.to_string())?;
+
+        // 2. Split Donor: DLeft | NewTract | DRight
+        // Split at start2 -> (DLeft, DMidRight)
+        let (_map_d_left, map_d_mid_right) =
+            other.map.split_at(start2).map_err(|e| e.to_string())?;
+        // Split DMidRight at length -> (NewTract, DRight)
+        let (map_new_tract, _map_d_right) = map_d_mid_right
+            .split_at(length)
+            .map_err(|e| e.to_string())?;
+
+        // 3. Construct New Map: Left + NewTract + Right
+        let map_temp = map_left.merge(&map_new_tract).map_err(|e| e.to_string())?;
+        let map_final = map_temp.merge(&map_right).map_err(|e| e.to_string())?;
+
+        // 4. Construct New Sequence
+        // Left part
+        let mut new_seq_vec = Vec::with_capacity(self.len()); // Approx capacity
+        new_seq_vec.extend_from_slice(&self.sequence.as_slice()[..start1]);
+        // New Tract
+        new_seq_vec.extend_from_slice(&other.sequence.as_slice()[start2..end2]);
+        // Right part
+        new_seq_vec.extend_from_slice(&self.sequence.as_slice()[end1..]);
+
+        let new_seq = Sequence::from_nucleotides(new_seq_vec);
+
+        Ok(Self::new(self.id.clone(), new_seq, map_final))
     }
 }
 
@@ -419,7 +575,7 @@ mod tests {
     fn test_sequence() -> Sequence {
         Sequence::from_str("ACGTACGTACGTACGT").unwrap()
     }
-    
+
     fn test_map(ru_len: usize, rus_per_hor: usize, num_hors: usize) -> RepeatMap {
         RepeatMap::uniform(ru_len, rus_per_hor, num_hors)
     }
@@ -727,9 +883,9 @@ mod tests {
         let chr = Chromosome::uniform(
             "chr1",
             Nucleotide::A,
-            171,  // ru_length
-            12,   // rus_per_hor
-            10,   // num_hors
+            171, // ru_length
+            12,  // rus_per_hor
+            10,  // num_hors
         );
 
         assert_eq!(chr.num_hors(), 10);
@@ -777,9 +933,9 @@ mod tests {
         let chr = Chromosome::uniform(
             "chr1",
             Nucleotide::A,
-            171,  // ru_length
-            12,   // rus_per_hor
-            487,  // num_hors -> 171*12*487 = 999,324 bp
+            171, // ru_length
+            12,  // rus_per_hor
+            487, // num_hors -> 171*12*487 = 999,324 bp
         );
 
         assert_eq!(chr.len(), 999_324);
@@ -794,21 +950,21 @@ mod tests {
             vec![b"AC".to_vec(), b"GT".to_vec()],
             vec![b"AA".to_vec(), b"TT".to_vec()],
         ];
-        
+
         let chr = Chromosome::from_nested_vec("chr1", nested).unwrap();
-        
+
         assert_eq!(chr.len(), 8);
         assert_eq!(chr.num_hors(), 2);
         assert_eq!(chr.map().num_rus(), 4);
         assert_eq!(chr.to_string(), "ACGTAATT");
-        
+
         // Check structure
         // HOR 0: RUs 0, 1.
         // HOR 1: RUs 2, 3.
         let (start, end) = chr.map().get_hor_interval(0).unwrap();
         assert_eq!(start, 0);
         assert_eq!(end, 4); // "ACGT"
-        
+
         let (start, end) = chr.map().get_hor_interval(1).unwrap();
         assert_eq!(start, 4);
         assert_eq!(end, 8); // "AATT"
@@ -820,7 +976,7 @@ mod tests {
             vec!["AC".to_string(), "GT".to_string()],
             vec!["AA".to_string(), "TT".to_string()],
         ];
-        
+
         let chr = Chromosome::from_nested_strings("chr1", nested).unwrap();
         assert_eq!(chr.to_string(), "ACGTAATT");
         assert_eq!(chr.num_hors(), 2);
@@ -830,7 +986,7 @@ mod tests {
     fn test_from_string_with_delimiters() {
         let input = "AC-GT=AA-TT";
         let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
-        
+
         assert_eq!(chr.to_string(), "ACGTAATT");
         assert_eq!(chr.num_hors(), 2);
         assert_eq!(chr.map().num_rus(), 4);
@@ -841,7 +997,7 @@ mod tests {
         // "AC-GT=" -> 1 HOR with 2 RUs. Trailing delimiter creates empty string which should be ignored.
         let input = "AC-GT=";
         let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
-        
+
         assert_eq!(chr.to_string(), "ACGT");
         assert_eq!(chr.num_hors(), 1);
         assert_eq!(chr.map().num_rus(), 2);
@@ -892,11 +1048,11 @@ mod tests {
         let chr = Chromosome::from_nested_vec("chr1", nested).unwrap();
         assert_eq!(chr.map().num_rus(), 2);
         assert_eq!(chr.to_string(), "AC");
-        
+
         let (start, end) = chr.map().get_ru_interval(0).unwrap();
         assert_eq!(start, 0);
         assert_eq!(end, 0);
-        
+
         let (start, end) = chr.map().get_ru_interval(1).unwrap();
         assert_eq!(start, 0);
         assert_eq!(end, 2);

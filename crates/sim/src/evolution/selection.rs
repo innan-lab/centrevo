@@ -3,13 +3,13 @@
 //! This module provides fitness scoring capabilities including GC content,
 //! length-based, and sequence similarity fitness functions.
 
-use serde::{Deserialize, Serialize};
-use crate::base::{fitness, FitnessValue, Nucleotide};
-use crate::genome::{Chromosome, Individual};
+use crate::base::{FitnessValue, Nucleotide, fitness};
 use crate::errors::FitnessError;
+use crate::genome::{Chromosome, Individual};
+use serde::{Deserialize, Serialize};
 
 /// Trait for scoring fitness of a single haplotype (chromosome).
-/// 
+///
 /// Implementors should provide a `haplotype_fitness` method that computes a
 /// non-negative fitness value for the haplotype. The default implementation
 /// returns neutral fitness of 1.0.
@@ -37,10 +37,14 @@ pub trait HaplotypeFitness {
 /// ```rust
 /// # use centrevo_sim::evolution::IndividualFitness;
 /// # use centrevo_sim::genome::Individual;
+/// use centrevo_sim::base::{FitnessValue, fitness::Normalized};
+///
 /// struct MyFitness;
 /// impl centrevo_sim::evolution::HaplotypeFitness for MyFitness {}
 /// impl IndividualFitness for MyFitness {
-///     fn individual_fitness(&self, _ind: &Individual) -> f64 { 42.0 }
+///     fn individual_fitness(&self, _ind: &Individual) -> FitnessValue<Normalized> {
+///         FitnessValue::new_normalized(0.42)
+///     }
 /// }
 /// ```
 pub trait IndividualFitness: HaplotypeFitness {
@@ -308,8 +312,8 @@ impl IndividualFitness for LengthSimilarityFitness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
     use crate::genome::{Haplotype, RepeatMap};
+    use std::str::FromStr;
 
     fn test_chromosome(seq: &str) -> Chromosome {
         let sequence = crate::base::Sequence::from_str(seq).unwrap();

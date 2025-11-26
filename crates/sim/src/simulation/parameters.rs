@@ -4,10 +4,10 @@
 //! including mutation rates, recombination rates, fitness parameters, and
 //! simulation settings.
 
-use crate::errors::FitnessError;
 use crate::base::Nucleotide;
+use crate::errors::FitnessError;
 use crate::evolution::{
-    GCContentFitness, LengthFitness, LengthSimilarityFitness, RecombinationParams,
+    GCContentFitness, LengthFitness, LengthSimilarityFitness, RecombinationModel,
     SequenceSimilarityFitness, SubstitutionModel,
 };
 use serde::{Deserialize, Serialize};
@@ -76,12 +76,12 @@ impl MutationConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecombinationConfig {
     /// Recombination parameters
-    pub params: RecombinationParams,
+    pub params: RecombinationModel,
 }
 
 impl RecombinationConfig {
     /// Create new recombination configuration.
-    pub fn new(params: RecombinationParams) -> Self {
+    pub fn new(params: RecombinationModel) -> Self {
         Self { params }
     }
 
@@ -91,7 +91,15 @@ impl RecombinationConfig {
         crossover_prob: f64,
         gc_extension_prob: f64,
     ) -> Result<Self, String> {
-        let params = RecombinationParams::new(break_prob, crossover_prob, gc_extension_prob)
+        // Default homology parameters: no homology preference (random), no window, k=1 (ignored)
+        let params = RecombinationModel::builder()
+            .break_prob(break_prob)
+            .crossover_prob(crossover_prob)
+            .gc_extension_prob(gc_extension_prob)
+            .homology_strength(0.0)
+            .search_window(0)
+            .kmer_size(1)
+            .build()
             .map_err(|e| format!("{e}"))?;
         Ok(Self { params })
     }

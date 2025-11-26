@@ -1,5 +1,5 @@
-use std::fmt;
 use std::error;
+use std::fmt;
 
 /// Error returned when attempting to convert an invalid byte/character into
 /// a `Nucleotide`.
@@ -8,7 +8,11 @@ pub struct InvalidNucleotide(pub u8);
 
 impl fmt::Display for InvalidNucleotide {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid nucleotide byte: {} ('{}')", self.0, self.0 as char)
+        write!(
+            f,
+            "Invalid nucleotide byte: {} ('{}')",
+            self.0, self.0 as char
+        )
     }
 }
 
@@ -83,6 +87,10 @@ pub enum RecombinationError {
     InvalidPosition { position: usize, length: usize },
     /// Invalid range for gene conversion
     InvalidRange { start: usize, end: usize },
+    /// Invalid homology strength
+    InvalidHomologyStrength(f64),
+    /// Invalid kmer size
+    InvalidKmerSize(usize),
 }
 
 impl fmt::Display for RecombinationError {
@@ -105,6 +113,12 @@ impl fmt::Display for RecombinationError {
             }
             RecombinationError::InvalidRange { start, end } => {
                 write!(f, "Invalid range [{start}, {end}) for gene conversion")
+            }
+            RecombinationError::InvalidHomologyStrength(val) => {
+                write!(f, "Invalid homology strength: {val} (must be >= 0.0)")
+            }
+            RecombinationError::InvalidKmerSize(size) => {
+                write!(f, "Invalid kmer size: {size} (must be > 0)")
             }
         }
     }
@@ -241,8 +255,13 @@ pub enum RepeatMapError {
 impl fmt::Display for RepeatMapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RepeatMapError::InvalidOffsets => write!(f, "Invalid RU offsets (must be sorted and start with 0)"),
-            RepeatMapError::InvalidHorOffsets => write!(f, "Invalid HOR offsets (must be sorted and within RU range)"),
+            RepeatMapError::InvalidOffsets => {
+                write!(f, "Invalid RU offsets (must be sorted and start with 0)")
+            }
+            RepeatMapError::InvalidHorOffsets => write!(
+                f,
+                "Invalid HOR offsets (must be sorted and within RU range)"
+            ),
             RepeatMapError::IndexOutOfBounds => write!(f, "Index out of bounds"),
             RepeatMapError::SplitError => write!(f, "Error splitting map"),
         }

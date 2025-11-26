@@ -3,7 +3,6 @@
 //! This module provides recombination functionality including crossover
 //! and gene conversion events.
 
-use crate::base::Sequence;
 pub use crate::errors::RecombinationError;
 use rand::Rng;
 use rand_distr::Geometric;
@@ -17,67 +16,190 @@ use serde::{Deserialize, Serialize};
 pub enum RecombinationType {
     /// No recombination occurs
     None,
-    /// Crossover (recombination) at a specific position
-    Crossover { position: usize },
+    /// Crossover (recombination) at specific positions in both chromosomes
+    Crossover { pos1: usize, pos2: usize },
     /// Gene conversion from start to end position
-    GeneConversion { start: usize, end: usize },
+    GeneConversion {
+        start1: usize,
+        start2: usize,
+        length: usize,
+    },
 }
 
 /// Parameters controlling recombination behavior.
 ///
 /// These parameters determine the per-base break probability and how breaks
 /// are resolved (crossover vs gene conversion) as well as the extension
-/// behavior of gene conversion tracts. Use `RecombinationParams::new` to
-/// validate values before using sampling/operation helpers.
+/// behavior of gene conversion tracts. Use `RecombinationModel::builder()` to
+/// construct a new instance with validation.
+///
+/// # Examples
+///
+/// ```
+/// use centrevo_sim::evolution::RecombinationModel;
+///
+/// // Create a model with custom parameters
+/// let model = RecombinationModel::builder()
+///     .break_prob(0.01)
+///     .crossover_prob(0.8)
+///     .gc_extension_prob(0.5)
+///     .build()
+///     .unwrap();
+///
+/// assert_eq!(model.break_prob(), 0.01);
+/// assert_eq!(model.crossover_prob(), 0.8);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecombinationParams {
+pub struct RecombinationModel {
     /// Probability of a double-strand break per base per generation
     break_prob: f64,
     /// Probability that a break is repaired via crossover (vs gene conversion)
     crossover_prob: f64,
     /// Probability that gene conversion extends by one more base
     gc_extension_prob: f64,
+    /// Strength of homology preference [0.0, infinity).
+    /// 0.0 = Random selection within window.
+    /// High = Deterministic best match.
+    homology_strength: f64,
+    /// Window size (in RUs) to search for homologous sites around the syntenic position.
+    search_window: usize,
+    /// K-mer size for similarity calculation.
+    kmer_size: usize,
 }
 
-impl RecombinationParams {
-    /// Create new recombination parameters.
-    ///
-    /// # Arguments
-    /// * `break_prob` - Probability of break per base per generation [0.0, 1.0]
-    /// * `crossover_prob` - Probability break is crossover vs gene conversion [0.0, 1.0]
-    /// * `gc_extension_prob` - Probability gene conversion extends one more base [0.0, 1.0]
+impl Default for RecombinationModel {
+    fn default() -> Self {
+        Self::builder().build().unwrap()
+    }
+}
+
+/// Builder for `RecombinationModel`.
+///
+/// Allows constructing a `RecombinationModel` with validation.
+///
+/// # Examples
+///
+/// ```
+/// use centrevo_sim::evolution::RecombinationModel;
+///
+/// let model = RecombinationModel::builder()
+///     .break_prob(0.05)
+///     .homology_strength(2.0)
+///     .build()
+///     .expect("Valid parameters");
+/// ```
+#[derive(Debug, Clone)]
+pub struct RecombinationModelBuilder {
+    break_prob: f64,
+    crossover_prob: f64,
+    gc_extension_prob: f64,
+    homology_strength: f64,
+    search_window: usize,
+    kmer_size: usize,
+}
+
+impl Default for RecombinationModelBuilder {
+    fn default() -> Self {
+        Self {
+            break_prob: 0.0,
+            crossover_prob: 0.5,
+            gc_extension_prob: 0.5,
+            homology_strength: 0.0,
+            search_window: 100,
+            kmer_size: 7,
+        }
+    }
+}
+
+impl RecombinationModelBuilder {
+    /// Create a new builder with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the break probability per base per generation [0.0, 1.0].
+    pub fn break_prob(mut self, prob: f64) -> Self {
+        self.break_prob = prob;
+        self
+    }
+
+    /// Set the crossover probability (vs gene conversion) [0.0, 1.0].
+    pub fn crossover_prob(mut self, prob: f64) -> Self {
+        self.crossover_prob = prob;
+        self
+    }
+
+    /// Set the gene conversion extension probability [0.0, 1.0].
+    pub fn gc_extension_prob(mut self, prob: f64) -> Self {
+        self.gc_extension_prob = prob;
+        self
+    }
+
+    /// Set the homology strength (>= 0.0).
+    pub fn homology_strength(mut self, strength: f64) -> Self {
+        self.homology_strength = strength;
+        self
+    }
+
+    /// Set the search window size in RUs.
+    pub fn search_window(mut self, window: usize) -> Self {
+        self.search_window = window;
+        self
+    }
+
+    /// Set the k-mer size for similarity calculation (> 0).
+    pub fn kmer_size(mut self, size: usize) -> Self {
+        self.kmer_size = size;
+        self
+    }
+
+    /// Build the `RecombinationModel` with validation.
     ///
     /// # Errors
-    /// Returns an error if any probability is outside [0.0, 1.0].
-    pub fn new(
-        break_prob: f64,
-        crossover_prob: f64,
-        gc_extension_prob: f64,
-    ) -> Result<Self, RecombinationError> {
-        if !(0.0..=1.0).contains(&break_prob) {
+    /// Returns an error if any probability is outside [0.0, 1.0] or other params invalid.
+    pub fn build(self) -> Result<RecombinationModel, RecombinationError> {
+        if !(0.0..=1.0).contains(&self.break_prob) {
             return Err(RecombinationError::InvalidProbability(
                 "break_prob",
-                break_prob,
+                self.break_prob,
             ));
         }
-        if !(0.0..=1.0).contains(&crossover_prob) {
+        if !(0.0..=1.0).contains(&self.crossover_prob) {
             return Err(RecombinationError::InvalidProbability(
                 "crossover_prob",
-                crossover_prob,
+                self.crossover_prob,
             ));
         }
-        if !(0.0..=1.0).contains(&gc_extension_prob) {
+        if !(0.0..=1.0).contains(&self.gc_extension_prob) {
             return Err(RecombinationError::InvalidProbability(
                 "gc_extension_prob",
-                gc_extension_prob,
+                self.gc_extension_prob,
             ));
         }
+        if self.homology_strength < 0.0 {
+            return Err(RecombinationError::InvalidHomologyStrength(
+                self.homology_strength,
+            ));
+        }
+        if self.kmer_size == 0 {
+            return Err(RecombinationError::InvalidKmerSize(0));
+        }
 
-        Ok(Self {
-            break_prob,
-            crossover_prob,
-            gc_extension_prob,
+        Ok(RecombinationModel {
+            break_prob: self.break_prob,
+            crossover_prob: self.crossover_prob,
+            gc_extension_prob: self.gc_extension_prob,
+            homology_strength: self.homology_strength,
+            search_window: self.search_window,
+            kmer_size: self.kmer_size,
         })
+    }
+}
+
+impl RecombinationModel {
+    /// Create a new builder for `RecombinationModel`.
+    pub fn builder() -> RecombinationModelBuilder {
+        RecombinationModelBuilder::default()
     }
 
     /// Get the break probability.
@@ -98,36 +220,79 @@ impl RecombinationParams {
         self.gc_extension_prob
     }
 
+    /// Get homology strength.
+    #[inline]
+    pub fn homology_strength(&self) -> f64 {
+        self.homology_strength
+    }
+
+    /// Get search window size.
+    #[inline]
+    pub fn search_window(&self) -> usize {
+        self.search_window
+    }
+
+    /// Get kmer size.
+    #[inline]
+    pub fn kmer_size(&self) -> usize {
+        self.kmer_size
+    }
+
     /// Sample recombination events for a sequence of given length.
     ///
     /// Returns a list of events that occurred, sorted by position.
     /// This uses a geometric distribution to correctly simulate the per-base
     /// break probability, ensuring that the probability of at least one break
-    /// scales correctly with sequence length (unlike the previous implementation).
+    /// scales correctly with sequence length.
+    ///
+    /// # Arguments
+    /// * `seq1` - The first chromosome (recipient/break source)
+    /// * `seq2` - The second chromosome (donor/repair template)
+    /// * `rng` - Random number generator
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use centrevo_sim::evolution::RecombinationModel;
+    /// use centrevo_sim::genome::{Chromosome, RepeatMap};
+    /// use centrevo_sim::base::Sequence;
+    /// use rand::SeedableRng;
+    /// use rand_xoshiro::Xoshiro256PlusPlus;
+    /// use std::str::FromStr;
+    ///
+    /// let model = RecombinationModel::builder()
+    ///     .break_prob(0.1) // High probability for example
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// let seq = Sequence::from_str("AAAAA").unwrap();
+    /// let map = RepeatMap::uniform(1, 1, 5);
+    /// let chr1 = Chromosome::new("chr1", seq.clone(), map.clone());
+    /// let chr2 = Chromosome::new("chr2", seq, map);
+    ///
+    /// let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+    /// let events = model.sample_events(&chr1, &chr2, &mut rng);
+    /// ```
     pub fn sample_events<R: Rng + ?Sized>(
         &self,
-        length: usize,
+        seq1: &crate::genome::Chromosome,
+        seq2: &crate::genome::Chromosome,
         rng: &mut R,
     ) -> Vec<RecombinationType> {
         let mut events = Vec::new();
+        let length = seq1.len();
         if length == 0 || self.break_prob <= 0.0 {
             return events;
         }
 
         // If break_prob is 1.0, we have a break at every position.
-        // This is an edge case, but we should handle it.
         if self.break_prob >= 1.0 {
             for position in 0..length {
-                self.add_event_at(position, length, rng, &mut events);
+                self.add_event_at(position, seq1, seq2, rng, &mut events);
             }
             return events;
         }
 
-        // Use geometric distribution to skip bases between breaks.
-        // Geometric(p) gives the number of failures (non-breaks) before the first success (break).
-        // So if we are at `current_pos`, the next break is at `current_pos + k` where k ~ Geometric(p).
-        // Note: rand_distr::Geometric is defined on k = 0, 1, 2... (failures before success).
-        // So if k=0, the break is at current_pos.
         let geo = Geometric::new(self.break_prob).unwrap();
 
         let mut current_pos = 0;
@@ -139,7 +304,7 @@ impl RecombinationParams {
                 break;
             }
 
-            self.add_event_at(current_pos, length, rng, &mut events);
+            self.add_event_at(current_pos, seq1, seq2, rng, &mut events);
 
             // Move past the current break for the next iteration
             current_pos += 1;
@@ -151,31 +316,119 @@ impl RecombinationParams {
     // Helper to add an event at a specific position
     fn add_event_at<R: Rng + ?Sized>(
         &self,
-        position: usize,
-        length: usize,
+        pos1: usize,
+        seq1: &crate::genome::Chromosome,
+        seq2: &crate::genome::Chromosome,
         rng: &mut R,
         events: &mut Vec<RecombinationType>,
     ) {
+        // Find homologous position in seq2
+        let pos2 = self.find_homologous_site(seq1, pos1, seq2, rng);
+
         // Determine if crossover or gene conversion
         if rng.random::<f64>() < self.crossover_prob {
-            events.push(RecombinationType::Crossover { position });
+            events.push(RecombinationType::Crossover { pos1, pos2 });
         } else {
             // Gene conversion: sample tract length
-            // Tract length starts at 1 and extends with probability gc_extension_prob
-            // This is effectively a geometric distribution on the extension (k failures before success of stopping?)
-            // Or just a loop as before.
             let mut tract_length = 1;
-            while (position + tract_length) < length && rng.random::<f64>() < self.gc_extension_prob
+            // Check boundaries for both chromosomes
+            while (pos1 + tract_length) < seq1.len()
+                && (pos2 + tract_length) < seq2.len()
+                && rng.random::<f64>() < self.gc_extension_prob
             {
                 tract_length += 1;
             }
 
-            let end = position + tract_length;
             events.push(RecombinationType::GeneConversion {
-                start: position,
-                end,
+                start1: pos1,
+                start2: pos2,
+                length: tract_length,
             });
         }
+    }
+
+    /// Find a homologous site in the target chromosome.
+    fn find_homologous_site<R: Rng + ?Sized>(
+        &self,
+        source: &crate::genome::Chromosome,
+        source_pos: usize,
+        target: &crate::genome::Chromosome,
+        rng: &mut R,
+    ) -> usize {
+        // 1. Identify Source RU
+        let source_ru_idx = match source.map().find_ru_index(source_pos) {
+            Some(idx) => idx,
+            None => return (source_pos * target.len()) / source.len(), // Fallback: proportional mapping
+        };
+
+        // 2. Calculate Syntenic Center in Target
+        // Map source RU index to target RU index proportionally
+        let source_num_rus = source.map().num_rus();
+        let target_num_rus = target.map().num_rus();
+
+        if source_num_rus == 0 || target_num_rus == 0 {
+            return 0;
+        }
+
+        let syntenic_ru_idx = (source_ru_idx * target_num_rus) / source_num_rus;
+
+        // 3. Define Window
+        let window = self.search_window;
+        let start_idx = syntenic_ru_idx.saturating_sub(window);
+        let end_idx = (syntenic_ru_idx + window).min(target_num_rus - 1);
+
+        // 4. Score Candidates
+        let mut candidates = Vec::with_capacity(end_idx - start_idx + 1);
+        let mut total_weight = 0.0;
+
+        for idx in start_idx..=end_idx {
+            let similarity =
+                source.calculate_similarity(source_ru_idx, target, idx, self.kmer_size);
+
+            // Weight = Similarity ^ Strength
+            let weight = if self.homology_strength == 0.0 {
+                1.0 // Uniform
+            } else {
+                similarity.powf(self.homology_strength)
+            };
+
+            if weight > 0.0 {
+                candidates.push((idx, weight));
+                total_weight += weight;
+            }
+        }
+
+        // 5. Sample Target RU
+        let target_ru_idx = if candidates.is_empty() {
+            syntenic_ru_idx // Fallback
+        } else {
+            let mut choice = rng.random::<f64>() * total_weight;
+            let mut selected = candidates.last().unwrap().0;
+            for (idx, weight) in candidates {
+                choice -= weight;
+                if choice <= 0.0 {
+                    selected = idx;
+                    break;
+                }
+            }
+            selected
+        };
+
+        // 6. Map offset within Source RU to Target RU
+        let (s_start, s_end) = source.map().get_ru_interval(source_ru_idx).unwrap();
+        let (t_start, t_end) = target.map().get_ru_interval(target_ru_idx).unwrap();
+
+        let offset = source_pos - s_start;
+        let s_len = s_end - s_start;
+        let t_len = t_end - t_start;
+
+        if s_len == 0 {
+            return t_start;
+        }
+
+        // Proportional offset mapping
+        let t_offset = (offset * t_len) / s_len;
+        t_start + t_offset
     }
 
     /// Perform crossover between two sequences at the given position.
@@ -189,40 +442,17 @@ impl RecombinationParams {
     /// Returns an error if the sequences have different lengths.
     pub fn crossover(
         &self,
-        seq1: &Sequence,
-        seq2: &Sequence,
-        position: usize,
-    ) -> Result<(Sequence, Sequence), RecombinationError> {
-        if seq1.len() != seq2.len() {
-            return Err(RecombinationError::LengthMismatch {
-                len1: seq1.len(),
-                len2: seq2.len(),
-            });
-        }
-
-        if position >= seq1.len() {
-            return Err(RecombinationError::InvalidPosition {
-                position,
+        seq1: &crate::genome::Chromosome,
+        seq2: &crate::genome::Chromosome,
+        pos1: usize,
+        pos2: usize,
+    ) -> Result<(crate::genome::Chromosome, crate::genome::Chromosome), RecombinationError> {
+        seq1.crossover_generalized(seq2, pos1, pos2).map_err(|_| {
+            RecombinationError::InvalidPosition {
+                position: pos1,
                 length: seq1.len(),
-            });
-        }
-
-        // Create offspring by combining parts
-        let mut offspring1_data = Vec::with_capacity(seq1.len());
-        let mut offspring2_data = Vec::with_capacity(seq2.len());
-
-        // Copy first part
-        offspring1_data.extend_from_slice(&seq1.as_slice()[..position]);
-        offspring2_data.extend_from_slice(&seq2.as_slice()[..position]);
-
-        // Copy second part (swapped)
-        offspring1_data.extend_from_slice(&seq2.as_slice()[position..]);
-        offspring2_data.extend_from_slice(&seq1.as_slice()[position..]);
-
-        Ok((
-            Sequence::from_nucleotides(offspring1_data),
-            Sequence::from_nucleotides(offspring2_data),
-        ))
+            }
+        }) // Simplified error mapping
     }
 
     /// Perform gene conversion by copying a tract from donor to recipient.
@@ -236,41 +466,18 @@ impl RecombinationParams {
     /// Returns an error if sequences have different lengths or indices are invalid.
     pub fn gene_conversion(
         &self,
-        recipient: &Sequence,
-        donor: &Sequence,
-        start: usize,
-        end: usize,
-    ) -> Result<Sequence, RecombinationError> {
-        if recipient.len() != donor.len() {
-            return Err(RecombinationError::LengthMismatch {
-                len1: recipient.len(),
-                len2: donor.len(),
-            });
-        }
-
-        if start >= recipient.len() {
-            return Err(RecombinationError::InvalidPosition {
-                position: start,
-                length: recipient.len(),
-            });
-        }
-
-        if end > recipient.len() {
-            return Err(RecombinationError::InvalidPosition {
-                position: end,
-                length: recipient.len(),
-            });
-        }
-
-        if start >= end {
-            return Err(RecombinationError::InvalidRange { start, end });
-        }
-
-        // Create new sequence with converted tract
-        let mut new_data = recipient.as_slice().to_vec();
-        new_data[start..end].copy_from_slice(&donor.as_slice()[start..end]);
-
-        Ok(Sequence::from_nucleotides(new_data))
+        recipient: &crate::genome::Chromosome,
+        donor: &crate::genome::Chromosome,
+        start1: usize,
+        start2: usize,
+        length: usize,
+    ) -> Result<crate::genome::Chromosome, RecombinationError> {
+        recipient
+            .gene_conversion_generalized(donor, start1, start2, length)
+            .map_err(|_| RecombinationError::InvalidRange {
+                start: start1,
+                end: start1 + length,
+            }) // Simplified error mapping
     }
 }
 
@@ -279,57 +486,123 @@ impl RecombinationParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::base::Sequence;
+    use crate::genome::{Chromosome, RepeatMap};
     use rand::SeedableRng;
     use rand_xoshiro::Xoshiro256PlusPlus;
     use std::str::FromStr;
 
-    #[test]
-    fn test_recombination_params_new() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        assert_eq!(params.break_prob(), 0.01);
-        assert_eq!(params.crossover_prob(), 0.5);
-        assert_eq!(params.gc_extension_prob(), 0.1);
+    fn make_test_chr(seq_str: &str) -> Chromosome {
+        let seq = Sequence::from_str(seq_str).unwrap();
+        // Uniform map 1bp RUs for simplicity
+        let map = RepeatMap::uniform(1, 1, seq_str.len());
+        Chromosome::new("chr1", seq, map)
     }
 
     #[test]
-    fn test_recombination_params_invalid() {
-        assert!(RecombinationParams::new(-0.1, 0.5, 0.1).is_err());
-        assert!(RecombinationParams::new(0.01, 1.5, 0.1).is_err());
-        assert!(RecombinationParams::new(0.01, 0.5, -0.1).is_err());
+    fn test_recombination_model_builder() {
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.5)
+            .gc_extension_prob(0.1)
+            .homology_strength(1.0)
+            .search_window(5)
+            .kmer_size(7)
+            .build()
+            .unwrap();
+
+        assert_eq!(model.break_prob(), 0.01);
+        assert_eq!(model.crossover_prob(), 0.5);
+        assert_eq!(model.gc_extension_prob(), 0.1);
+        assert_eq!(model.homology_strength(), 1.0);
+        assert_eq!(model.search_window(), 5);
+        assert_eq!(model.kmer_size(), 7);
+    }
+
+    #[test]
+    fn test_recombination_model_invalid() {
+        assert!(
+            RecombinationModel::builder()
+                .break_prob(-0.1)
+                .build()
+                .is_err()
+        );
+        assert!(
+            RecombinationModel::builder()
+                .crossover_prob(1.5)
+                .build()
+                .is_err()
+        );
+        assert!(
+            RecombinationModel::builder()
+                .gc_extension_prob(-0.1)
+                .build()
+                .is_err()
+        );
+        assert!(
+            RecombinationModel::builder()
+                .homology_strength(-1.0)
+                .build()
+                .is_err()
+        );
+        assert!(RecombinationModel::builder().kmer_size(0).build().is_err());
     }
 
     #[test]
     fn test_sample_event_zero_break_prob() {
-        let params = RecombinationParams::new(0.0, 0.5, 0.1).unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.0)
+            .crossover_prob(0.5)
+            .gc_extension_prob(0.1)
+            .build()
+            .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let chr1 = make_test_chr("A".repeat(100).as_str());
+        let chr2 = make_test_chr("T".repeat(100).as_str());
 
         for _ in 0..100 {
-            let events = params.sample_events(100, &mut rng);
+            let events = model.sample_events(&chr1, &chr2, &mut rng);
             assert!(events.is_empty());
         }
     }
 
     #[test]
     fn test_sample_event_empty_sequence() {
-        let params = RecombinationParams::new(0.5, 0.5, 0.1).unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.5)
+            .build()
+            .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let chr1 = make_test_chr("");
+        let chr2 = make_test_chr("");
 
-        let events = params.sample_events(0, &mut rng);
+        let events = model.sample_events(&chr1, &chr2, &mut rng);
         assert!(events.is_empty());
     }
 
     #[test]
     fn test_sample_event_types() {
-        let params = RecombinationParams::new(1.0, 1.0, 0.0).unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(1.0)
+            .crossover_prob(1.0)
+            .build()
+            .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let chr1 = make_test_chr("AAAAAAAAAA"); // Len 10
+        let chr2 = make_test_chr("TTTTTTTTTT");
 
         // With break_prob=1.0 and crossover_prob=1.0, should always get crossover
         // For length 10, we expect 10 events (one at each position)
-        let events = params.sample_events(10, &mut rng);
+        let events = model.sample_events(&chr1, &chr2, &mut rng);
         assert_eq!(events.len(), 10);
         for event in events {
             match event {
-                RecombinationType::Crossover { .. } => {}
+                RecombinationType::Crossover { pos1, pos2 } => {
+                    // With homology_strength=0, pos2 is random or proportional.
+                    // Here lengths are same, so likely pos1==pos2 or close.
+                    assert!(pos1 < 10);
+                    assert!(pos2 < 10);
+                }
                 _ => panic!("Expected crossover event"),
             }
         }
@@ -337,18 +610,28 @@ mod tests {
 
     #[test]
     fn test_sample_event_gene_conversion() {
-        let params = RecombinationParams::new(1.0, 0.0, 0.0).unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(1.0)
+            .crossover_prob(0.0)
+            .build()
+            .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let chr1 = make_test_chr("AAAAAAAAAA");
+        let chr2 = make_test_chr("TTTTTTTTTT");
 
         // With break_prob=1.0, crossover_prob=0.0, should get gene conversion
-        let events = params.sample_events(10, &mut rng);
+        let events = model.sample_events(&chr1, &chr2, &mut rng);
         assert!(!events.is_empty());
 
         for event in events {
             match event {
-                RecombinationType::GeneConversion { start, end } => {
-                    assert!(start < end);
-                    assert!(end <= 10);
+                RecombinationType::GeneConversion {
+                    start1,
+                    start2,
+                    length,
+                } => {
+                    assert!(start1 + length <= 10);
+                    assert!(start2 + length <= 10);
                 }
                 _ => panic!("Expected gene conversion event"),
             }
@@ -357,11 +640,15 @@ mod tests {
 
     #[test]
     fn test_crossover_basic() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let seq1 = Sequence::from_str("AAAA").unwrap();
-        let seq2 = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.5)
+            .build()
+            .unwrap();
+        let chr1 = make_test_chr("AAAA");
+        let chr2 = make_test_chr("TTTT");
 
-        let (offspring1, offspring2) = params.crossover(&seq1, &seq2, 2).unwrap();
+        let (offspring1, offspring2) = model.crossover(&chr1, &chr2, 2, 2).unwrap();
 
         assert_eq!(offspring1.to_string(), "AATT");
         assert_eq!(offspring2.to_string(), "TTAA");
@@ -369,11 +656,15 @@ mod tests {
 
     #[test]
     fn test_crossover_at_start() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let seq1 = Sequence::from_str("AAAA").unwrap();
-        let seq2 = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.5)
+            .build()
+            .unwrap();
+        let chr1 = make_test_chr("AAAA");
+        let chr2 = make_test_chr("TTTT");
 
-        let (offspring1, offspring2) = params.crossover(&seq1, &seq2, 0).unwrap();
+        let (offspring1, offspring2) = model.crossover(&chr1, &chr2, 0, 0).unwrap();
 
         assert_eq!(offspring1.to_string(), "TTTT");
         assert_eq!(offspring2.to_string(), "AAAA");
@@ -381,91 +672,143 @@ mod tests {
 
     #[test]
     fn test_crossover_length_mismatch() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let seq1 = Sequence::from_str("AAA").unwrap();
-        let seq2 = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(1.0)
+            .build()
+            .unwrap();
+        let seq1 = make_test_chr("AAAAA"); // 5
+        let seq2 = make_test_chr("TTTTTTTTTT"); // 10
 
-        let result = params.crossover(&seq1, &seq2, 1);
-        assert!(result.is_err());
+        // Crossover at 2 in seq1 and 2 in seq2
+        // seq1: AA|AAA, seq2: TT|TTTTTTTT
+        // new1: AA|TTTTTTTT (10)
+        // new2: TT|AAA (5)
+        let result = model.crossover(&seq1, &seq2, 2, 2);
+        assert!(result.is_ok());
+        let (new1, new2) = result.unwrap();
+        assert_eq!(new1.len(), 10);
+        assert_eq!(new2.len(), 5);
+        assert_eq!(new1.sequence().to_string(), "AATTTTTTTT");
+        assert_eq!(new2.sequence().to_string(), "TTAAA");
     }
 
     #[test]
     fn test_crossover_invalid_position() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let seq1 = Sequence::from_str("AAAA").unwrap();
-        let seq2 = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.5)
+            .build()
+            .unwrap();
+        let chr1 = make_test_chr("AAAA");
+        let chr2 = make_test_chr("TTTT");
 
-        let result = params.crossover(&seq1, &seq2, 10);
+        let result = model.crossover(&chr1, &chr2, 10, 10);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_gene_conversion_basic() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA").unwrap();
-        let donor = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.0)
+            .build()
+            .unwrap();
+        let recipient = make_test_chr("AAAAA");
+        let donor = make_test_chr("TTTTT");
 
-        let result = params.gene_conversion(&recipient, &donor, 1, 3).unwrap();
-
-        assert_eq!(result.to_string(), "ATTA");
+        // Replace index 1 (len 2) with donor's index 1
+        // Recipient: A|AA|AA -> A|TT|AA
+        let result = model.gene_conversion(&recipient, &donor, 1, 1, 2);
+        assert!(result.is_ok());
+        let new_seq = result.unwrap();
+        assert_eq!(new_seq.sequence().to_string(), "ATTAA");
     }
 
     #[test]
     fn test_gene_conversion_full() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA").unwrap();
-        let donor = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.0)
+            .build()
+            .unwrap();
+        let recipient = make_test_chr("AAAAA");
+        let donor = make_test_chr("TTTTT");
 
-        let result = params.gene_conversion(&recipient, &donor, 0, 4).unwrap();
-
-        assert_eq!(result.to_string(), "TTTT");
+        let result = model.gene_conversion(&recipient, &donor, 0, 0, 5);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().sequence().to_string(), "TTTTT");
     }
 
     #[test]
     fn test_gene_conversion_single_base() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA").unwrap();
-        let donor = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.0)
+            .build()
+            .unwrap();
+        let recipient = make_test_chr("AAAAA");
+        let donor = make_test_chr("TTTTT");
 
-        let result = params.gene_conversion(&recipient, &donor, 2, 3).unwrap();
-
-        assert_eq!(result.to_string(), "AATA");
+        let result = model.gene_conversion(&recipient, &donor, 2, 2, 1);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().sequence().to_string(), "AATAA");
     }
 
     #[test]
     fn test_gene_conversion_length_mismatch() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAA").unwrap();
-        let donor = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.0)
+            .build()
+            .unwrap();
+        let recipient = make_test_chr("AAAAA"); // 5
+        let donor = make_test_chr("TTTTTTTTTT"); // 10
 
-        let result = params.gene_conversion(&recipient, &donor, 1, 2);
-        assert!(result.is_err());
+        // Replace index 1 (len 2) in recipient with index 5 (len 2) from donor
+        // Recipient: A|AA|AA -> A|TT|AA
+        // Donor: TTTTT|TT|TTT
+        let result = model.gene_conversion(&recipient, &donor, 1, 5, 2);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().sequence().to_string(), "ATTAA");
     }
 
     #[test]
     fn test_gene_conversion_invalid_range() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA").unwrap();
-        let donor = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.0)
+            .build()
+            .unwrap();
+        let recipient = make_test_chr("AAAAA"); // len 5
+        let donor = make_test_chr("TTTTT"); // len 5
 
-        // start >= end
-        let result = params.gene_conversion(&recipient, &donor, 2, 2);
+        // start + length > recipient.len()
+        // 4 + 2 = 6 > 5
+        let result = model.gene_conversion(&recipient, &donor, 4, 0, 2);
         assert!(result.is_err());
 
-        let result = params.gene_conversion(&recipient, &donor, 3, 2);
+        // start + length > donor.len()
+        let recipient_long = make_test_chr("AAAAA");
+        let donor_short = make_test_chr("TTT");
+        let result = model.gene_conversion(&recipient_long, &donor_short, 1, 1, 3);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_gene_conversion_invalid_position() {
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let recipient = Sequence::from_str("AAAA").unwrap();
-        let donor = Sequence::from_str("TTTT").unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.5)
+            .build()
+            .unwrap();
+        let recipient = make_test_chr("AAAA");
+        let donor = make_test_chr("TTTT");
 
-        let result = params.gene_conversion(&recipient, &donor, 10, 11);
+        let result = model.gene_conversion(&recipient, &donor, 10, 10, 1);
         assert!(result.is_err());
 
-        let result = params.gene_conversion(&recipient, &donor, 0, 10);
+        let result = model.gene_conversion(&recipient, &donor, 0, 10, 1);
         assert!(result.is_err());
     }
 
@@ -473,12 +816,36 @@ mod tests {
     fn test_recombination_type_equality() {
         assert_eq!(RecombinationType::None, RecombinationType::None);
         assert_eq!(
-            RecombinationType::Crossover { position: 10 },
-            RecombinationType::Crossover { position: 10 }
+            RecombinationType::Crossover { pos1: 10, pos2: 10 },
+            RecombinationType::Crossover { pos1: 10, pos2: 10 }
         );
         assert_ne!(
-            RecombinationType::Crossover { position: 10 },
-            RecombinationType::Crossover { position: 20 }
+            RecombinationType::Crossover { pos1: 10, pos2: 10 },
+            RecombinationType::Crossover { pos1: 10, pos2: 20 }
+        );
+        assert_eq!(
+            RecombinationType::GeneConversion {
+                start1: 1,
+                start2: 1,
+                length: 5
+            },
+            RecombinationType::GeneConversion {
+                start1: 1,
+                start2: 1,
+                length: 5
+            }
+        );
+        assert_ne!(
+            RecombinationType::GeneConversion {
+                start1: 1,
+                start2: 1,
+                length: 5
+            },
+            RecombinationType::GeneConversion {
+                start1: 1,
+                start2: 2,
+                length: 5
+            }
         );
     }
 
@@ -495,21 +862,35 @@ mod tests {
 
     #[test]
     fn test_params_clone() {
-        let params1 = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
-        let params2 = params1.clone();
+        let model1 = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.5)
+            .gc_extension_prob(0.1)
+            .homology_strength(1.0)
+            .search_window(5)
+            .kmer_size(7)
+            .build()
+            .unwrap();
+        let model2 = model1.clone();
 
-        assert_eq!(params1.break_prob(), params2.break_prob());
-        assert_eq!(params1.crossover_prob(), params2.crossover_prob());
-        assert_eq!(params1.gc_extension_prob(), params2.gc_extension_prob());
+        assert_eq!(model1.break_prob(), model2.break_prob());
+        assert_eq!(model1.crossover_prob(), model2.crossover_prob());
+        assert_eq!(model1.gc_extension_prob(), model2.gc_extension_prob());
     }
 
     #[test]
     fn test_sample_events_multiple() {
         // High break prob, long sequence -> multiple events
-        let params = RecombinationParams::new(0.1, 0.5, 0.1).unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.1)
+            .crossover_prob(0.5)
+            .build()
+            .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let chr1 = make_test_chr("A".repeat(1000).as_str());
+        let chr2 = make_test_chr("T".repeat(1000).as_str());
 
-        let events = params.sample_events(1000, &mut rng);
+        let events = model.sample_events(&chr1, &chr2, &mut rng);
         // Expected events ~ 100
         assert!(events.len() > 50);
         assert!(events.len() < 150);
@@ -518,8 +899,8 @@ mod tests {
         let mut last_pos = 0;
         for event in events {
             let pos = match event {
-                RecombinationType::Crossover { position } => position,
-                RecombinationType::GeneConversion { start, .. } => start,
+                RecombinationType::Crossover { pos1, .. } => pos1,
+                RecombinationType::GeneConversion { start1, .. } => start1,
                 RecombinationType::None => panic!("Should not have None in events list"),
             };
             assert!(pos >= last_pos);
@@ -533,26 +914,31 @@ mod tests {
         // For length 100, expected breaks = 1.
         // Probability of at least one break = 1 - (0.99)^100 ≈ 0.63
 
-        let params = RecombinationParams::new(0.01, 0.5, 0.1).unwrap();
+        let model = RecombinationModel::builder()
+            .break_prob(0.01)
+            .crossover_prob(0.5)
+            .build()
+            .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let chr1 = make_test_chr("A".repeat(100).as_str());
+        let chr2 = make_test_chr("T".repeat(100).as_str());
 
         let mut event_count = 0;
         let trials = 10000;
         for _ in 0..trials {
-            let events = params.sample_events(100, &mut rng);
+            let events = model.sample_events(&chr1, &chr2, &mut rng);
             if !events.is_empty() {
                 event_count += 1;
             }
         }
 
         let frequency = event_count as f64 / trials as f64;
-        println!("Frequency of events for L=100, p=0.01: {}", frequency);
+        println!("Frequency of events for L=100, p=0.01: {frequency}");
 
         // Now we expect correct scaling
         assert!(
             frequency > 0.60 && frequency < 0.66,
-            "Frequency {} should be around 0.63",
-            frequency
+            "Frequency {frequency} should be around 0.63"
         );
     }
 }

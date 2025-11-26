@@ -58,7 +58,7 @@ impl FitnessValue<Normalized> {
         // Panic on NaN to maintain the invariant that FitnessValue contains only finite numeric values.
         assert!(!value.is_nan(), "FitnessValue cannot be NaN");
         // Panic on values outside [0.0, 1.0] to maintain the invariant that Normalized FitnessValue is in [0.0, 1.0]
-        assert!(value >= 0.0 && value <= 1.0, "Normalized FitnessValue must be in [0.0, 1.0]");
+        assert!((0.0..=1.0).contains(&value), "Normalized FitnessValue must be in [0.0, 1.0]");
         Self(value, PhantomData)
     }
 

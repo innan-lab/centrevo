@@ -532,7 +532,7 @@ mod tests {
             .build();
 
         if let Err(e) = &sim {
-            eprintln!("Builder error: {:?}", e);
+            eprintln!("Builder error: {e:?}");
         }
         assert!(sim.is_ok());
     }

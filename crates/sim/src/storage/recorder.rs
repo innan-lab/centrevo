@@ -483,8 +483,8 @@ mod tests {
     fn create_test_individual(id: &str, length: usize) -> Individual {
         // Convert total length to num_hors: ru_length=20, rus_per_hor=5, so one HOR = 100 bp
         let num_hors = length / 100;
-        let chr1 = Chromosome::uniform(format!("{}_h1_chr1", id), Nucleotide::A, 20, 5, num_hors);
-        let chr2 = Chromosome::uniform(format!("{}_h2_chr1", id), Nucleotide::C, 20, 5, num_hors);
+        let chr1 = Chromosome::uniform(format!("{id}_h1_chr1"), Nucleotide::A, 20, 5, num_hors);
+        let chr2 = Chromosome::uniform(format!("{id}_h2_chr1"), Nucleotide::C, 20, 5, num_hors);
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);
@@ -495,7 +495,7 @@ mod tests {
     fn create_test_population(size: usize, chr_length: usize) -> Population {
         let mut individuals = Vec::new();
         for i in 0..size {
-            let mut ind = create_test_individual(&format!("ind_{}", i), chr_length);
+            let mut ind = create_test_individual(&format!("ind_{i}"), chr_length);
             ind.set_cached_fitness(FitnessValue::new_normalized(i as f64 / size as f64));
             individuals.push(ind);
         }

@@ -4,7 +4,6 @@
 //! allowing simulations to continue without waiting for I/O. The system uses a bounded channel
 //! to buffer snapshots, only blocking the simulation when the buffer is full.
 
-use crate::base::FitnessValue;
 use crate::errors::DatabaseError;
 use crate::simulation::Population;
 use crate::storage::IndividualSnapshot;
@@ -590,15 +589,15 @@ fn write_compressed_snapshots(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::Nucleotide;
+    use crate::base::{Nucleotide, FitnessValue};
     use crate::genome::{Chromosome, Haplotype, Individual};
     use crate::simulation::Population;
 
     fn create_test_individual(id: &str, length: usize) -> Individual {
         // Convert total length to num_hors: ru_length=20, rus_per_hor=5, so one HOR = 100 bp
         let num_hors = length / 100;
-        let chr1 = Chromosome::uniform(format!("{}_h1_chr1", id), Nucleotide::A, 20, 5, num_hors);
-        let chr2 = Chromosome::uniform(format!("{}_h2_chr1", id), Nucleotide::C, 20, 5, num_hors);
+        let chr1 = Chromosome::uniform(format!("{id}_h1_chr1"), Nucleotide::A, 20, 5, num_hors);
+        let chr2 = Chromosome::uniform(format!("{id}_h2_chr1"), Nucleotide::C, 20, 5, num_hors);
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);
@@ -609,7 +608,7 @@ mod tests {
     fn create_test_population(size: usize, chr_length: usize) -> Population {
         let mut individuals = Vec::new();
         for i in 0..size {
-            let mut ind = create_test_individual(&format!("ind_{}", i), chr_length);
+            let mut ind = create_test_individual(&format!("ind_{i}"), chr_length);
             ind.set_cached_fitness(FitnessValue::new_normalized(i as f64 / size as f64));
             individuals.push(ind);
         }
@@ -737,7 +736,7 @@ mod tests {
 
         // Buffer should have 1 item (or be processed already)
         let fill = recorder.buffer_fill();
-        assert!(fill <= 1, "Buffer fill should be 0 or 1, got {}", fill);
+        assert!(fill <= 1, "Buffer fill should be 0 or 1, got {fill}");
 
         let stats = recorder.close().await.expect("Failed to close");
         assert_eq!(stats.generations_recorded, 1);

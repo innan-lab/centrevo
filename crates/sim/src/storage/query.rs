@@ -395,8 +395,10 @@ mod tests {
     use crate::storage::Recorder;
 
     fn create_test_individual(id: &str, length: usize) -> Individual {
-        let chr1 = Chromosome::uniform(format!("{}_h1_chr1", id), Nucleotide::A, length, 20, 5);
-        let chr2 = Chromosome::uniform(format!("{}_h2_chr1", id), Nucleotide::C, length, 20, 5);
+        // Convert total length to num_hors: ru_length=20, rus_per_hor=5, so one HOR = 100 bp
+        let num_hors = length / 100;
+        let chr1 = Chromosome::uniform(format!("{}_h1_chr1", id), Nucleotide::A, 20, 5, num_hors);
+        let chr2 = Chromosome::uniform(format!("{}_h2_chr1", id), Nucleotide::C, 20, 5, num_hors);
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);

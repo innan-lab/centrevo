@@ -210,8 +210,16 @@ impl SharedSequence {
     /// This performs a copy of the underlying data into owned `Vec<Nucleotide>` so
     /// the returned `Sequence` can be mutated independently of the shared
     /// view.
+    #[inline]
     pub fn to_mutable(&self) -> Sequence {
         Sequence(self.0.to_vec())
+    }
+
+    /// Clone the shared data into a new `Sequence` struct.
+    /// 
+    /// This is an alias for `to_mutable`.
+    pub fn to_sequence(&self) -> Sequence {
+        self.to_mutable()
     }
 
     /// Return the current strong reference count to the shared data (useful
@@ -263,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_sequence_from_indices() {
-        let indices = vec![0, 1, 2, 3]; // A, C, G, T
+        let indices = vec![1, 2, 3, 4]; // A, C, G, T
         let seq = Sequence::from_indices(indices).unwrap();
         assert_eq!(seq.len(), 4);
         assert_eq!(seq.get(0), Some(Nucleotide::A));
@@ -274,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_sequence_from_indices_with_invalid() {
-        let indices = vec![0, 1, 4, 3]; // A, C, A(default), T
+        let indices = vec![1, 2, 5, 4]; // A, C, A(default), T
         let result = Sequence::from_indices(indices);
         assert!(result.is_err());
     }
@@ -408,6 +416,7 @@ mod tests {
     fn test_sequence_remove_out_of_bounds() {
         let mut seq = Sequence::from_str("ACGT").unwrap();
         seq.remove(10);
+
     }
 
     #[test]

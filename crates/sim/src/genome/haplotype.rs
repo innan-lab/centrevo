@@ -115,7 +115,11 @@ mod tests {
     use crate::base::Nucleotide;
 
     fn test_chromosome(id: &str, length: usize) -> Chromosome {
-        Chromosome::uniform(id, Nucleotide::A, length, 10, 5)
+        // Convert total length to num_hors
+        // ru_length=10, rus_per_hor=10, so one HOR = 100 bp
+        let hor_length = 100;
+        let num_hors = length / hor_length;
+        Chromosome::uniform(id, Nucleotide::A, 10, 10, num_hors)
     }
 
     // ===== Haplotype Tests =====

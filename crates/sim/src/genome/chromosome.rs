@@ -1,5 +1,5 @@
 use crate::base::{Nucleotide, Sequence, SharedSequence};
-use crate::errors::ChromosomeError;
+use crate::errors::{ChromosomeError, InvalidNucleotide};
 use std::sync::Arc;
 use super::repeat_map::RepeatMap;
 
@@ -7,12 +7,13 @@ use super::repeat_map::RepeatMap;
 /// higher-order repeats (HORs).
 ///
 /// A `Chromosome` owns a mutable `Sequence` and provides helpers that expose
-/// the repeat structure via `RepeatMap`. For parallel/read-only
-/// operations prefer `SharedChromosome` which shares sequence storage.
+/// the repeat structure via `RepeatMap`. 
+/// For parallel/read-only operations prefer `SharedChromosome` 
+/// which shares sequence storage.
 #[derive(Debug, Clone)]
 pub struct Chromosome {
-    /// Type identifier. Unique in a haplotype, but not unique in a population
-    /// (shared across clones)
+    /// Type identifier. E.g., "chr1", "chr2", etc.
+    /// Unique in a haplotype, but not unique in a population
     id: Arc<str>,
     /// The sequence data (mutable during simulation)
     sequence: Sequence,
@@ -38,74 +39,60 @@ impl Chromosome {
     ///
     /// This is a convenience constructor often used in tests and for creating
     /// deterministic initial populations.
+    /// 
+    /// # Arguments
+    /// - `id`: Chromosome identifier
+    /// - `base`: Nucleotide base to fill the sequence with
+    /// - `ru_length`: Length of each repeat unit in bases
+    /// - `rus_per_hor`: Number of repeat units per higher-order repeat
+    /// - `num_hors`: Number of higher-order repeats in the chromosome
     pub fn uniform(
         id: impl Into<Arc<str>>,
         base: Nucleotide,
-        length: usize,
         ru_length: usize,
         rus_per_hor: usize,
+        num_hors: usize,
     ) -> Self {
+        let length = ru_length * rus_per_hor * num_hors;
         let mut sequence = Sequence::with_capacity(length);
         for _ in 0..length {
             sequence.push(base);
         }
-
-        // Calculate number of HORs based on length
-        // Note: This assumes the length is exactly divisible, or we truncate/pad?
-        // The original implementation just filled the sequence.
-        // We need to create a valid map.
-        // If length is not a multiple of ru_length, we might have a partial RU?
-        // RepeatMap::uniform expects exact counts.
-        
-        let num_rus = length / ru_length;
-        let num_hors = num_rus / rus_per_hor;
-        
-        // We might have leftover bases. RepeatMap::uniform assumes exact.
-        // Let's use RepeatMap::uniform for the "main" part and maybe handle leftovers?
-        // Or just assume the user provides consistent values (which they usually do in tests).
-        // If length != ru_length * num_rus, we have a problem.
-        // But let's try to be robust.
-        
         let map = RepeatMap::uniform(ru_length, rus_per_hor, num_hors);
-        
-        // If the map total length != sequence length, we should probably adjust the map or sequence.
-        // For now, let's assume uniform creates a map that matches the sequence length if parameters align.
-        // If length is 100, ru=10, rus_per_hor=5. num_rus=10. num_hors=2.
-        // Map length = 100. Matches.
         
         Self::new(id, sequence, map)
     }
 
-    /// Create a chromosome from a nested vector structure.
-    ///
-    /// The structure is `Vec<Vec<Vec<u8>>>`:
-    /// - Outer Vec: List of Higher-Order Repeats (HORs)
-    /// - Middle Vec: List of Repeat Units (RUs) within an HOR
-    /// - Inner Vec: Sequence of bytes (nucleotides) for an RU
+    /// Create a chromosome from a nested vector structure `Vec<Vec<Vec<u8>>>`.
+    /// 
+    /// The structure is:
+    /// - Outer Vec `Vec<_>`: List of Higher-Order Repeats (HORs)
+    /// - Middle Vec `Vec<Vec<_>>`: List of Repeat Units (RUs) within an HOR
+    /// - Inner Vec `Vec<u8>`: Sequence of bytes (nucleotides) for an RU
     pub fn from_nested_vec(
         id: impl Into<Arc<str>>,
         nested: Vec<Vec<Vec<u8>>>,
     ) -> Result<Self, ChromosomeError> {
         let mut sequence_vec = Vec::new();
         let mut ru_offsets = vec![0];
-        let mut hor_offsets = vec![0];
+        let mut hor_idx_offsets = vec![0];
         let mut current_ru_index = 0;
 
         for hor in nested {
             for ru in hor {
                 for byte in ru {
-                    let nuc = Nucleotide::try_from(byte)
-                        .map_err(ChromosomeError::InvalidNucleotide)?;
+                    let nuc = Nucleotide::from_ascii(byte)
+                        .ok_or(InvalidNucleotide(byte))?;
                     sequence_vec.push(nuc);
                 }
                 ru_offsets.push(sequence_vec.len());
                 current_ru_index += 1;
             }
-            hor_offsets.push(current_ru_index);
+            hor_idx_offsets.push(current_ru_index);
         }
 
         let sequence = Sequence::from_nucleotides(sequence_vec);
-        let map = RepeatMap::new(ru_offsets, hor_offsets)
+        let map = RepeatMap::new(ru_offsets, hor_idx_offsets)
             .map_err(ChromosomeError::RepeatMapError)?;
 
         Ok(Self::new(id, sequence, map))
@@ -454,12 +441,13 @@ mod tests {
 
     #[test]
     fn test_chromosome_uniform() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=1 -> total length = 10*10*1 = 100
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 1);
 
         assert_eq!(chr.len(), 100);
         assert_eq!(chr.to_string(), "A".repeat(100));
         assert_eq!(chr.map().num_rus(), 10);
-        assert_eq!(chr.map().num_hors(), 2);
+        assert_eq!(chr.map().num_hors(), 1);
     }
 
     #[test]
@@ -498,7 +486,8 @@ mod tests {
 
     #[test]
     fn test_chromosome_len() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=1 -> total length = 100
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 1);
         assert_eq!(chr.len(), 100);
     }
 
@@ -515,8 +504,9 @@ mod tests {
 
     #[test]
     fn test_chromosome_num_hors() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
-        assert_eq!(chr.num_hors(), 2); // 100 / 50
+        // ru_length=10, rus_per_hor=10, num_hors=5 -> total length = 500
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 5);
+        assert_eq!(chr.num_hors(), 5);
     }
 
     #[test]
@@ -625,7 +615,8 @@ mod tests {
 
     #[test]
     fn test_chromosome_to_shared() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=1 -> total length = 100
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 1);
         let shared = chr.to_shared();
 
         assert_eq!(shared.id(), "chr1");
@@ -652,7 +643,8 @@ mod tests {
 
     #[test]
     fn test_shared_chromosome_len() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=1 -> total length = 100
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 1);
         let shared = chr.to_shared();
         assert_eq!(shared.len(), 100);
     }
@@ -677,7 +669,8 @@ mod tests {
 
     #[test]
     fn test_shared_chromosome_clone_is_cheap() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 1000, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=10 -> total length = 1000
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 10);
         let shared1 = chr.to_shared();
         let shared2 = shared1.clone();
 
@@ -688,7 +681,8 @@ mod tests {
 
     #[test]
     fn test_shared_chromosome_to_mutable() {
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=1 -> total length = 100
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 1);
         let shared = chr1.to_shared();
         let chr2 = shared.to_mutable();
 
@@ -700,7 +694,8 @@ mod tests {
 
     #[test]
     fn test_roundtrip_mutable_to_shared_to_mutable() {
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=1 -> total length = 100
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 1);
         let original_str = chr1.to_string();
 
         let shared = chr1.to_shared();
@@ -712,7 +707,8 @@ mod tests {
 
     #[test]
     fn test_shared_chromosome_immutability() {
-        let chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=1 -> total length = 100
+        let chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 1);
         let shared = chr.to_shared();
 
         // Clone it
@@ -727,13 +723,13 @@ mod tests {
     #[test]
     fn test_chromosome_complex_structure() {
         // Create a chromosome with realistic parameters
-        // RU = 171 bp, 12 RUs per HOR = 2052 bp HOR
+        // RU = 171 bp, 12 RUs per HOR = 2052 bp HOR, 10 HORs = 20520 bp total
         let chr = Chromosome::uniform(
             "chr1",
             Nucleotide::A,
-            20520, // 10 HORs
-            171,
-            12,
+            171,  // ru_length
+            12,   // rus_per_hor
+            10,   // num_hors
         );
 
         assert_eq!(chr.num_hors(), 10);
@@ -741,7 +737,8 @@ mod tests {
 
     #[test]
     fn test_chromosome_mutation_scenario() {
-        let mut chr = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
+        // ru_length=10, rus_per_hor=10, num_hors=1 -> total length = 100
+        let mut chr = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 1);
 
         // Mutate some bases
         chr.sequence_mut().set(0, Nucleotide::T).unwrap();
@@ -754,37 +751,39 @@ mod tests {
 
     #[test]
     fn test_chromosome_different_ru_configurations() {
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5);
-        let chr2 = Chromosome::uniform("chr2", Nucleotide::A, 100, 5, 10);
-        let chr3 = Chromosome::uniform("chr3", Nucleotide::A, 100, 20, 2);
+        // All create chromosomes with 4000 bp total length but different structures
+        // chr1: ru_length=10, rus_per_hor=10, num_hors=40 -> 10*10*40 = 4000
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 10, 10, 40);
+        // chr2: ru_length=5, rus_per_hor=10, num_hors=80 -> 5*10*80 = 4000
+        let chr2 = Chromosome::uniform("chr2", Nucleotide::A, 5, 10, 80);
+        // chr3: ru_length=20, rus_per_hor=2, num_hors=100 -> 20*2*100 = 4000
+        let chr3 = Chromosome::uniform("chr3", Nucleotide::A, 20, 2, 100);
 
         // All same length but different HOR structures
         assert_eq!(chr1.len(), chr2.len());
         assert_eq!(chr2.len(), chr3.len());
+        assert_eq!(chr1.len(), 4000);
 
-        // But different HOR lengths
-        // chr1: 10*5 = 50.
-        // chr2: 5*10 = 50.
-        // chr3: 20*2 = 40.
-        // We can check num_hors
-        assert_eq!(chr1.num_hors(), 2);
-        assert_eq!(chr2.num_hors(), 2);
-        assert_eq!(chr3.num_hors(), 2); // 100 / 40 = 2.5 -> 2
+        // But different num_hors
+        assert_eq!(chr1.num_hors(), 40);
+        assert_eq!(chr2.num_hors(), 80);
+        assert_eq!(chr3.num_hors(), 100);
     }
 
     #[test]
     fn test_chromosome_large() {
         // Test with larger, more realistic sizes
+        // RU = 171 bp, 12 RUs per HOR = 2052 bp per HOR, 487 HORs ~ 1 Mbp
         let chr = Chromosome::uniform(
             "chr1",
             Nucleotide::A,
-            1_000_000, // 1 Mbp
-            171,
-            12,
+            171,  // ru_length
+            12,   // rus_per_hor
+            487,  // num_hors -> 171*12*487 = 999,324 bp
         );
 
-        assert_eq!(chr.len(), 1_000_000);
-        assert!(chr.num_hors() > 0);
+        assert_eq!(chr.len(), 999_324);
+        assert_eq!(chr.num_hors(), 487);
     }
 
     #[test]

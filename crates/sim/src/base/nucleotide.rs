@@ -7,31 +7,31 @@ use crate::errors::InvalidNucleotide;
 ///
 /// `Nucleotide` is a compact, Copyable representation of DNA bases backed by
 /// a single byte (u8). The mapping of variants to integers is stable and used
-/// throughout the crate (A=0, C=1, G=2, T=3). Use the convenience conversion
+/// throughout the crate (A=1, C=2, G=3, T=4). Use the convenience conversion
 /// functions to go between bytes/chars and `Nucleotide`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Nucleotide {
-    A = 0,
-    C = 1,
-    G = 2,
-    T = 3,
+    A = 1,
+    C = 2,
+    G = 3,
+    T = 4,
 }
 
 impl Nucleotide {
-    /// Convert from u8 index (0-3)
+    /// Convert from u8 index (1-4)
     #[inline(always)]
     pub const fn from_index(idx: u8) -> Option<Self> {
         match idx {
-            0 => Some(Self::A),
-            1 => Some(Self::C),
-            2 => Some(Self::G),
-            3 => Some(Self::T),
+            1 => Some(Self::A),
+            2 => Some(Self::C),
+            3 => Some(Self::G),
+            4 => Some(Self::T),
             _ => None,
         }
     }
 
-    /// Convert to the compact u8 index (0-3).
+    /// Convert to the compact u8 index (1-4).
     #[inline(always)]
     pub const fn to_index(self) -> u8 {
         self as u8
@@ -99,6 +99,15 @@ impl TryFrom<u8> for Nucleotide {
     }
 }
 
+impl TryFrom<char> for Nucleotide {
+    type Error = InvalidNucleotide;
+
+    fn try_from(c: char) -> Result<Self, Self::Error> {
+        let byte = c as u8;
+        Self::from_ascii(byte).ok_or(InvalidNucleotide(byte))
+    }
+}
+
 impl From<Nucleotide> for u8 {
     #[inline(always)]
     fn from(nuc: Nucleotide) -> u8 {
@@ -126,20 +135,20 @@ mod tests {
 
     #[test]
     fn test_nucleotide_from_index() {
-        assert_eq!(Nucleotide::from_index(0), Some(Nucleotide::A));
-        assert_eq!(Nucleotide::from_index(1), Some(Nucleotide::C));
-        assert_eq!(Nucleotide::from_index(2), Some(Nucleotide::G));
-        assert_eq!(Nucleotide::from_index(3), Some(Nucleotide::T));
-        assert_eq!(Nucleotide::from_index(4), None);
+        assert_eq!(Nucleotide::from_index(1), Some(Nucleotide::A));
+        assert_eq!(Nucleotide::from_index(2), Some(Nucleotide::C));
+        assert_eq!(Nucleotide::from_index(3), Some(Nucleotide::G));
+        assert_eq!(Nucleotide::from_index(4), Some(Nucleotide::T));
+        assert_eq!(Nucleotide::from_index(5), None);
         assert_eq!(Nucleotide::from_index(255), None);
     }
 
     #[test]
     fn test_nucleotide_to_index() {
-        assert_eq!(Nucleotide::A.to_index(), 0);
-        assert_eq!(Nucleotide::C.to_index(), 1);
-        assert_eq!(Nucleotide::G.to_index(), 2);
-        assert_eq!(Nucleotide::T.to_index(), 3);
+        assert_eq!(Nucleotide::A.to_index(), 1);
+        assert_eq!(Nucleotide::C.to_index(), 2);
+        assert_eq!(Nucleotide::G.to_index(), 3);
+        assert_eq!(Nucleotide::T.to_index(), 4);
     }
 
     #[test]
@@ -208,6 +217,16 @@ mod tests {
     }
 
     #[test]
+    fn test_nucleotide_try_from_char() {
+        assert_eq!(Nucleotide::try_from('A'), Ok(Nucleotide::A));
+        assert_eq!(Nucleotide::try_from('g'), Ok(Nucleotide::G));
+        assert!(Nucleotide::try_from('N').is_err());
+        
+        let err = Nucleotide::try_from('X').unwrap_err();
+        assert_eq!(err.0, b'X');
+    }
+
+    #[test]
     fn test_nucleotide_try_from_u8() {
         assert_eq!(Nucleotide::try_from(b'A'), Ok(Nucleotide::A));
         assert_eq!(Nucleotide::try_from(b'c'), Ok(Nucleotide::C));
@@ -220,10 +239,10 @@ mod tests {
     #[test]
     fn test_nucleotide_into_u8() {
         let idx: u8 = Nucleotide::A.into();
-        assert_eq!(idx, 0);
+        assert_eq!(idx, 1);
         
         let idx: u8 = Nucleotide::T.into();
-        assert_eq!(idx, 3);
+        assert_eq!(idx, 4);
     }
 
     #[test]

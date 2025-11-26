@@ -2,8 +2,8 @@
 resolver = "2"
 members = [
     "crates/sim",
-    "crates/analysis",
-    "crates/python",
+    # "crates/analysis",
+    # "crates/python",
     "crates/cli",
 ]
 

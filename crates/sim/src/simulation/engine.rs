@@ -304,8 +304,6 @@ impl Simulation {
         id: impl Into<Arc<str>>,
         structure: &RepeatStructure,
     ) -> Result<Individual, String> {
-        let chr_length = structure.chr_length();
-
         // Create haplotypes with uniform chromosomes
         let mut hap1 = Haplotype::with_capacity(structure.chrs_per_hap);
         let mut hap2 = Haplotype::with_capacity(structure.chrs_per_hap);
@@ -315,16 +313,16 @@ impl Simulation {
             let chr1 = Chromosome::uniform(
                 format!("chr{chr_idx}"),
                 structure.init_base,
-                chr_length,
                 structure.ru_length,
                 structure.rus_per_hor,
+                structure.hors_per_chr,
             );
             let chr2 = Chromosome::uniform(
                 format!("chr{chr_idx}"),
                 structure.init_base,
-                chr_length,
                 structure.ru_length,
                 structure.rus_per_hor,
+                structure.hors_per_chr,
             );
 
             hap1.push(chr1);
@@ -353,7 +351,7 @@ impl Simulation {
             // Create random sequence for haplotype 1
             let mut seq1 = Sequence::with_capacity(chr_length);
             for _ in 0..chr_length {
-                let idx = rng.random_range(0..alphabet_size);
+                let idx = rng.random_range(1..=alphabet_size);
                 let base = Nucleotide::from_index(idx as u8)
                     .ok_or_else(|| format!("Invalid nucleotide index: {idx}"))?;
                 seq1.push(base);
@@ -362,7 +360,7 @@ impl Simulation {
             // Create random sequence for haplotype 2
             let mut seq2 = Sequence::with_capacity(chr_length);
             for _ in 0..chr_length {
-                let idx = rng.random_range(0..alphabet_size);
+                let idx = rng.random_range(1..=alphabet_size);
                 let base = Nucleotide::from_index(idx as u8)
                     .ok_or_else(|| format!("Invalid nucleotide index: {idx}"))?;
                 seq2.push(base);

@@ -94,7 +94,11 @@ mod tests {
     use crate::genome::Chromosome;
 
     fn test_chromosome(id: &str, length: usize) -> Chromosome {
-        Chromosome::uniform(id, Nucleotide::A, length, 10, 5)
+        // Convert total length to num_hors
+        // ru_length=10, rus_per_hor=10, so one HOR = 100 bp
+        let hor_length = 100;
+        let num_hors = length / hor_length;
+        Chromosome::uniform(id, Nucleotide::A, 10, 10, num_hors)
     }
 
     fn test_haplotype(num_chrs: usize) -> Haplotype {
@@ -327,20 +331,29 @@ mod tests {
         let mut hap2 = Haplotype::new();
 
         // Add multiple chromosomes with different structures
+        // Chromosome::uniform(id, base, ru_length, rus_per_hor, num_hors)
+        // Total length = ru_length * rus_per_hor * num_hors
         for i in 1..=5 {
+            // Create chromosomes with varying lengths: 1000, 2000, 3000, 4000, 5000 bases
+            // Using small repeat structures for simplicity
+            let total_length = i * 1000;
+            let ru_length = 10;
+            let rus_per_hor = 10;
+            let num_hors = total_length / (ru_length * rus_per_hor);
+            
             hap1.push(Chromosome::uniform(
                 format!("chr{i}"),
                 Nucleotide::A,
-                i * 1000,
-                171,
-                12,
+                ru_length,
+                rus_per_hor,
+                num_hors,
             ));
             hap2.push(Chromosome::uniform(
                 format!("chr{i}"),
                 Nucleotide::C,
-                i * 1000,
-                171,
-                12,
+                ru_length,
+                rus_per_hor,
+                num_hors,
             ));
         }
 

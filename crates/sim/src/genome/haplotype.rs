@@ -1,4 +1,5 @@
 use crate::genome::Chromosome;
+// We store ids as `String` for locality and fast, non-atomic cloning.
 
 /// A haplotype: an ordered collection of chromosomes representing one set of
 /// genetic material for an individual.
@@ -12,6 +13,8 @@ use crate::genome::Chromosome;
 pub struct Haplotype {
     /// Chromosomes in this haplotype
     chromosomes: Vec<Chromosome>,
+    /// Cached chromosome ids in the same order as `chromosomes`
+    ids: Vec<String>,
 }
 
 impl Haplotype {
@@ -19,6 +22,7 @@ impl Haplotype {
     pub fn new() -> Self {
         Self {
             chromosomes: Vec::new(),
+            ids: Vec::new(),
         }
     }
 
@@ -26,12 +30,15 @@ impl Haplotype {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             chromosomes: Vec::with_capacity(capacity),
+            ids: Vec::with_capacity(capacity),
         }
     }
 
     /// Create a `Haplotype` from an existing vector of `Chromosome`s.
     pub fn from_chromosomes(chromosomes: Vec<Chromosome>) -> Self {
-        Self { chromosomes }
+        // Build ids in the same order as the chromosomes
+        let ids = chromosomes.iter().map(|c| c.id().to_string()).collect();
+        Self { chromosomes, ids }
     }
 
     /// Return the number of chromosomes in this haplotype.
@@ -62,6 +69,9 @@ impl Haplotype {
 
     /// Append a `Chromosome` to this haplotype.
     pub fn push(&mut self, chromosome: Chromosome) {
+        // Capture the id before moving the chromosome into the vector
+        let id = chromosome.id().to_string();
+        self.ids.push(id);
         self.chromosomes.push(chromosome);
     }
 
@@ -85,6 +95,26 @@ impl Haplotype {
     /// Iterate mutably over chromosomes.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Chromosome> {
         self.chromosomes.iter_mut()
+    }
+
+    /// Get a reference to a chromosome by its id, or `None` if not found.
+    ///
+    /// Uses the internal `ids` cache to find the index and returns the
+    /// chromosome at the same position.
+    #[inline]
+    pub fn get_by_id(&self, id: &str) -> Option<&Chromosome> {
+        self.ids.iter().position(|s| s == id).map(|i| &self.chromosomes[i])
+    }
+
+    /// Get a mutable reference to a chromosome by its id, or `None` if not
+    /// found.
+    #[inline]
+    pub fn get_by_id_mut(&mut self, id: &str) -> Option<&mut Chromosome> {
+        if let Some(pos) = self.ids.iter().position(|s| s == id) {
+            self.chromosomes.get_mut(pos)
+        } else {
+            None
+        }
     }
 
     /// Return the total number of bases across all chromosomes in this

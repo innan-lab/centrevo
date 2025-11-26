@@ -1,7 +1,8 @@
 //! Centrevo CLI - Command-line interface for centromeric evolution simulations.
 
 use anyhow::{Context, Result};
-use centrevo_sim::base::Nucleotide;
+use centrevo_sim::base::fitness::Normalized;
+use centrevo_sim::base::{FitnessValue, Nucleotide};
 use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 use centrevo_sim::simulation::{
     FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure, Simulation,
@@ -906,7 +907,8 @@ fn analyze_data(
         // Avoid division by zero if length is 0 (though unlikely for valid sim)
         let hors_per_chr = if hor_len > 0 { seq1.len() / hor_len } else { 0 };
 
-        let map = centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+        let map =
+            centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
 
         let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, map.clone());
         let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, map);
@@ -916,7 +918,7 @@ fn analyze_data(
 
         let mut ind = Individual::new(snap.individual_id, h1, h2);
         if let Some(f) = snap.fitness {
-            ind.set_cached_fitness(f);
+            ind.set_cached_fitness(FitnessValue::<Normalized>::new_normalized(f));
         }
         individuals.push(ind);
     }

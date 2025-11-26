@@ -9,7 +9,7 @@ pub mod mutation;
 pub mod recombination;
 pub mod selection;
 
-pub use mutation::SubstitutionModel;
+pub use mutation::{IndelModel, SubstitutionModel};
 pub use recombination::{RecombinationModel, RecombinationType};
 pub use selection::{
     GCContentFitness, HaplotypeFitness, IndividualFitness, LengthFitness, LengthSimilarityFitness,

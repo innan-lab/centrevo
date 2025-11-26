@@ -3,11 +3,11 @@
 //! This module provides mutation functionality including point substitutions
 //! based on substitution models (e.g., JC69, uniform).
 
+use crate::base::{Nucleotide, Sequence};
+pub use crate::errors::MutationError;
 use rand::Rng;
 use rand_distr::{Distribution, Poisson};
 use serde::{Deserialize, Serialize};
-use crate::base::{Nucleotide, Sequence};
-pub use crate::errors::MutationError;
 
 /// Substitution model for nucleotide mutations.
 ///
@@ -30,7 +30,7 @@ pub struct SubstitutionModel {
     rate_c_t: f64,
     /// Rate for G <-> T substitutions
     rate_g_t: f64,
-    
+
     /// Total mutation rate for each base (cached for performance)
     /// Index corresponds to nucleotide index: [0]=A, [1]=C, [2]=G, [3]=T
     total_rates: [f64; 4],
@@ -57,14 +57,14 @@ impl SubstitutionModel {
                 return Err(MutationError::InvalidMutationRate(row[i]));
             }
         }
-        
+
         // Validate symmetry and rates are in valid range
         for i in 0..4 {
             for j in (i + 1)..4 {
                 check_matrix_values(matrix[i][j], matrix[j][i])?;
             }
         }
-        
+
         // Extract unique rates (upper triangle)
         // Matrix indices: A=0, C=1, G=2, T=3
         let rate_a_c = matrix[0][1]; // A->C
@@ -73,7 +73,7 @@ impl SubstitutionModel {
         let rate_c_g = matrix[1][2]; // C->G
         let rate_c_t = matrix[1][3]; // C->T
         let rate_g_t = matrix[2][3]; // G->T
-        
+
         // Compute total mutation rate for each base
         let mut total_rates = [0.0; 4];
         // A (index 0): sum of A->C, A->G, A->T
@@ -84,14 +84,14 @@ impl SubstitutionModel {
         total_rates[2] = rate_a_g + rate_c_g + rate_g_t;
         // T (index 3): sum of T->A, T->C, T->G
         total_rates[3] = rate_a_t + rate_c_t + rate_g_t;
-        
+
         // Validate that total rates don't exceed 1.0
         for &total in total_rates.iter() {
             if total > 1.0 {
                 return Err(MutationError::InvalidMutationRate(total));
             }
         }
-        
+
         Ok(Self {
             rate_a_c,
             rate_a_g,
@@ -116,16 +116,16 @@ impl SubstitutionModel {
             return Err(MutationError::InvalidMutationRate(mu));
         }
         let rate = mu / 3.0;
-        
+
         // Create symmetric matrix with equal off-diagonal rates
         // Rows/columns: [A, C, G, T]
         let matrix = [
-            [0.0,  rate, rate, rate], // A -> [A, C, G, T]
-            [rate, 0.0,  rate, rate], // C -> [A, C, G, T]
-            [rate, rate, 0.0,  rate], // G -> [A, C, G, T]
-            [rate, rate, rate, 0.0 ], // T -> [A, C, G, T]
+            [0.0, rate, rate, rate], // A -> [A, C, G, T]
+            [rate, 0.0, rate, rate], // C -> [A, C, G, T]
+            [rate, rate, 0.0, rate], // G -> [A, C, G, T]
+            [rate, rate, rate, 0.0], // T -> [A, C, G, T]
         ];
-        
+
         Self::new(matrix)
     }
 
@@ -150,13 +150,13 @@ impl SubstitutionModel {
             self.rate_g_t,
         ]
     }
-    
+
     /// Get the total mutation rate for a specific base.
     #[inline]
     pub fn total_rate(&self, base: Nucleotide) -> f64 {
         self.total_rates[base.to_index() as usize]
     }
-    
+
     /// Get the rate for a specific substitution.
     ///
     /// # Arguments
@@ -170,11 +170,11 @@ impl SubstitutionModel {
         // Use individual fields for clarity
         match (from, to) {
             // Self-mutations have zero rate
-            (Nucleotide::A, Nucleotide::A) |
-            (Nucleotide::C, Nucleotide::C) |
-            (Nucleotide::G, Nucleotide::G) |
-            (Nucleotide::T, Nucleotide::T) => 0.0,
-            
+            (Nucleotide::A, Nucleotide::A)
+            | (Nucleotide::C, Nucleotide::C)
+            | (Nucleotide::G, Nucleotide::G)
+            | (Nucleotide::T, Nucleotide::T) => 0.0,
+
             // Symmetric substitutions
             (Nucleotide::A, Nucleotide::C) | (Nucleotide::C, Nucleotide::A) => self.rate_a_c,
             (Nucleotide::A, Nucleotide::G) | (Nucleotide::G, Nucleotide::A) => self.rate_a_g,
@@ -193,7 +193,7 @@ impl SubstitutionModel {
     pub fn mutate_base<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
         let base_idx = base.to_index() as usize;
         let total_rate = self.total_rates[base_idx];
-        
+
         // Check if mutation occurs
         if rng.random::<f64>() >= total_rate {
             return base; // No mutation
@@ -201,10 +201,10 @@ impl SubstitutionModel {
 
         // Mutation occurs - select target base proportional to rates
         let r = rng.random::<f64>() * total_rate;
-        
+
         // Get the three possible target bases and their rates
         let (targets, rates) = self.get_target_bases_and_rates(base);
-        
+
         // Select target based on cumulative probabilities
         let mut cumulative = 0.0;
         for i in 0..3 {
@@ -213,11 +213,11 @@ impl SubstitutionModel {
                 return targets[i];
             }
         }
-        
+
         // Fallback (should not reach here due to floating point precision)
         targets[2]
     }
-    
+
     /// Get the three possible target bases and their rates for a given source base.
     #[inline]
     fn get_target_bases_and_rates(&self, base: Nucleotide) -> ([Nucleotide; 3], [f64; 3]) {
@@ -265,14 +265,14 @@ impl SubstitutionModel {
             let base = indices[i];
             let base_idx = base.to_index() as usize;
             let total_rate = self.total_rates[base_idx];
-            
+
             // Check if mutation occurs using pre-generated random float
             if random_floats[i] < total_rate {
                 // Mutation occurs - select target base
                 let r = random_floats[len + i] * total_rate;
-                
+
                 let (targets, rates) = self.get_target_bases_and_rates(base);
-                
+
                 // Select target based on cumulative probabilities
                 let mut cumulative = 0.0;
                 let mut new_base = targets[2]; // Default fallback
@@ -283,7 +283,7 @@ impl SubstitutionModel {
                         break;
                     }
                 }
-                
+
                 indices[i] = new_base;
                 mutation_count += 1;
             }
@@ -339,7 +339,12 @@ impl SubstitutionModel {
             if positions.is_empty() {
                 continue;
             }
-            total_mutations += self.apply_poisson_for_base(seq_indices, positions, self.total_rates[base_idx], rng);
+            total_mutations += self.apply_poisson_for_base(
+                seq_indices,
+                positions,
+                self.total_rates[base_idx],
+                rng,
+            );
         }
 
         total_mutations
@@ -350,12 +355,12 @@ impl SubstitutionModel {
     fn mutate_base_direct<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
         let base_idx = base.to_index() as usize;
         let total_rate = self.total_rates[base_idx];
-        
+
         // Select target base proportional to rates
         let r = rng.random::<f64>() * total_rate;
-        
+
         let (targets, rates) = self.get_target_bases_and_rates(base);
-        
+
         let mut cumulative = 0.0;
         for i in 0..3 {
             cumulative += rates[i];
@@ -363,13 +368,19 @@ impl SubstitutionModel {
                 return targets[i];
             }
         }
-        
+
         targets[2]
     }
 
     /// Process a list of positions individually using the standard per-base check.
     #[inline]
-    fn process_positions_standard<R: Rng + ?Sized>(&self, seq_indices: &mut [Nucleotide], positions: &[usize], rate: f64, rng: &mut R) -> usize {
+    fn process_positions_standard<R: Rng + ?Sized>(
+        &self,
+        seq_indices: &mut [Nucleotide],
+        positions: &[usize],
+        rate: f64,
+        rng: &mut R,
+    ) -> usize {
         let mut count = 0;
         for &pos in positions {
             if rng.random::<f64>() < rate {
@@ -384,7 +395,13 @@ impl SubstitutionModel {
     /// Apply Poisson-sampled mutation logic for a specific base group.
     /// Returns the number of mutations applied.
     #[inline]
-    fn apply_poisson_for_base<R: Rng + ?Sized>(&self, seq_indices: &mut [Nucleotide], positions: &[usize], rate: f64, rng: &mut R) -> usize {
+    fn apply_poisson_for_base<R: Rng + ?Sized>(
+        &self,
+        seq_indices: &mut [Nucleotide],
+        positions: &[usize],
+        rate: f64,
+        rng: &mut R,
+    ) -> usize {
         let count = positions.len();
         if count == 0 {
             return 0;
@@ -428,9 +445,185 @@ impl SubstitutionModel {
     /// Compute the average of total mutation rates across A, C, G, T
     #[inline]
     fn avg_total_rate(&self) -> f64 {
-        (self.total_rates[0] + self.total_rates[1] + self.total_rates[2] + self.total_rates[3]) / 4.0
+        (self.total_rates[0] + self.total_rates[1] + self.total_rates[2] + self.total_rates[3])
+            / 4.0
+    }
+}
+
+/// Model for insertion and deletion (indel) mutations.
+///
+/// This model handles small-scale insertions and deletions, typically
+/// caused by replication slippage or polymerase errors.
+///
+/// - Insertions: Add random bases at random positions.
+/// - Deletions: Remove bases at random positions.
+///
+/// Indel lengths follow a Geometric distribution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndelModel {
+    /// Rate of insertion per base per generation
+    insertion_rate: f64,
+    /// Rate of deletion per base per generation
+    deletion_rate: f64,
+    /// Parameter p for Geometric distribution of indel lengths (0.0 < p <= 1.0).
+    /// P(X=k) = (1-p)^(k-1) * p
+    /// Mean length = 1/p
+    length_p: f64,
+}
+
+impl IndelModel {
+    /// Create a new indel model.
+    ///
+    /// # Arguments
+    /// * `insertion_rate` - Rate of insertion per base per generation (0.0 to 1.0)
+    /// * `deletion_rate` - Rate of deletion per base per generation (0.0 to 1.0)
+    /// * `length_p` - Parameter for Geometric distribution of lengths (0.0 < p <= 1.0).
+    ///   Higher p means shorter indels. Mean length is 1/p.
+    ///
+    /// # Errors
+    /// Returns an error if rates are invalid or length_p is out of range.
+    pub fn new(
+        insertion_rate: f64,
+        deletion_rate: f64,
+        length_p: f64,
+    ) -> Result<Self, MutationError> {
+        if !(0.0..=1.0).contains(&insertion_rate) {
+            return Err(MutationError::InvalidMutationRate(insertion_rate));
+        }
+        if !(0.0..=1.0).contains(&deletion_rate) {
+            return Err(MutationError::InvalidMutationRate(deletion_rate));
+        }
+        if !(0.0..=1.0).contains(&length_p) || length_p == 0.0 {
+            return Err(MutationError::InvalidMutationRate(length_p));
+        }
+
+        Ok(Self {
+            insertion_rate,
+            deletion_rate,
+            length_p,
+        })
     }
 
+    /// Apply indels to a sequence.
+    ///
+    /// # Returns
+    /// The number of indel events (insertions + deletions) applied.
+    pub fn apply_indels<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize {
+        let len = sequence.len();
+        if len == 0 {
+            return 0;
+        }
+
+        let mut events = 0;
+
+        // 1. Calculate expected number of insertions and deletions
+        // Using Poisson approximation for number of events
+        let expected_insertions = len as f64 * self.insertion_rate;
+        let expected_deletions = len as f64 * self.deletion_rate;
+
+        let num_insertions = if expected_insertions > 0.0 {
+            match Poisson::new(expected_insertions) {
+                Ok(p) => p.sample(rng) as usize,
+                Err(_) => 0,
+            }
+        } else {
+            0
+        };
+
+        let num_deletions = if expected_deletions > 0.0 {
+            match Poisson::new(expected_deletions) {
+                Ok(p) => p.sample(rng) as usize,
+                Err(_) => 0,
+            }
+        } else {
+            0
+        };
+
+        if num_insertions == 0 && num_deletions == 0 {
+            return 0;
+        }
+
+        // 2. Generate events
+        // We need to be careful about applying events so that indices remain valid.
+        // Strategy: Generate all events, sort by position descending, and apply.
+
+        #[derive(Debug)]
+        enum IndelEvent {
+            Insertion { pos: usize, len: usize },
+            Deletion { pos: usize, len: usize },
+        }
+
+        let mut event_list = Vec::with_capacity(num_insertions + num_deletions);
+        let geo = rand_distr::Geometric::new(self.length_p).unwrap(); // p validated in new()
+
+        // Generate insertions
+        for _ in 0..num_insertions {
+            // Insertions can happen at any position from 0 to len (inclusive)
+            let pos = rng.random_range(0..=len);
+            // Geometric gives values >= 0, we want length >= 1
+            let len = (geo.sample(rng) + 1) as usize;
+            event_list.push(IndelEvent::Insertion { pos, len });
+        }
+
+        // Generate deletions
+        for _ in 0..num_deletions {
+            // Deletions happen at existing positions 0 to len-1
+            if len == 0 {
+                break;
+            }
+            let pos = rng.random_range(0..len);
+            let len = (geo.sample(rng) + 1) as usize;
+            event_list.push(IndelEvent::Deletion { pos, len });
+        }
+
+        // Sort events by position descending
+        // For same position, process deletions before insertions (arbitrary choice, but consistent)
+        event_list.sort_by(|a, b| {
+            let pos_a = match a {
+                IndelEvent::Insertion { pos, .. } => *pos,
+                IndelEvent::Deletion { pos, .. } => *pos,
+            };
+            let pos_b = match b {
+                IndelEvent::Insertion { pos, .. } => *pos,
+                IndelEvent::Deletion { pos, .. } => *pos,
+            };
+            pos_b.cmp(&pos_a)
+        });
+
+        // Apply events
+        for event in event_list {
+            match event {
+                IndelEvent::Insertion { pos, len } => {
+                    // Generate random sequence to insert
+                    for _ in 0..len {
+                        let base = Nucleotide::from_index(rng.random_range(0..4)).unwrap();
+                        // If pos is beyond current length (due to previous deletions), clamp it
+                        let current_len = sequence.len();
+                        let insert_pos = pos.min(current_len);
+                        sequence.insert(insert_pos, base);
+                    }
+                    events += 1;
+                }
+                IndelEvent::Deletion { pos, len } => {
+                    let current_len = sequence.len();
+                    if current_len == 0 {
+                        continue;
+                    }
+
+                    let start_pos = pos.min(current_len - 1);
+                    // Don't delete more than available
+                    let delete_len = len.min(current_len - start_pos);
+
+                    for _ in 0..delete_len {
+                        sequence.remove(start_pos);
+                    }
+                    events += 1;
+                }
+            }
+        }
+
+        events
+    }
 }
 
 /// Sample k positions from [0, n) without replacement using reservoir sampling.
@@ -517,12 +710,12 @@ fn collect_base_positions(sequence: &Sequence) -> [Vec<usize>; 4] {
     base_positions
 }
 
-fn check_matrix_values(rate_ij: f64, rate_ji: f64) -> Result<(), MutationError> {   
+fn check_matrix_values(rate_ij: f64, rate_ji: f64) -> Result<(), MutationError> {
     // Check symmetry
     if (rate_ij - rate_ji).abs() > 1e-10 {
         return Err(MutationError::InvalidMutationRate(rate_ij));
     }
-    
+
     // Check valid range
     if !(0.0..=1.0).contains(&rate_ij) {
         return Err(MutationError::InvalidMutationRate(rate_ij));
@@ -531,22 +724,21 @@ fn check_matrix_values(rate_ij: f64, rate_ji: f64) -> Result<(), MutationError> 
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
     use rand::SeedableRng;
     use rand_xoshiro::Xoshiro256PlusPlus;
+    use std::str::FromStr;
 
     #[test]
     fn test_substitution_model_new() {
         let rate = 0.01;
         let matrix = [
-            [0.0,  rate, rate, rate],
-            [rate, 0.0,  rate, rate],
-            [rate, rate, 0.0,  rate],
-            [rate, rate, rate, 0.0 ],
+            [0.0, rate, rate, rate],
+            [rate, 0.0, rate, rate],
+            [rate, rate, 0.0, rate],
+            [rate, rate, rate, 0.0],
         ];
         let model = SubstitutionModel::new(matrix).unwrap();
         let expected_rates = [rate, rate, rate, rate, rate, rate];
@@ -557,31 +749,31 @@ mod tests {
     fn test_substitution_model_invalid_rate() {
         // Negative rate
         let invalid_matrix = [
-            [0.0,  -0.1, 0.01, 0.01],
-            [-0.1, 0.0,  0.01, 0.01],
-            [0.01, 0.01, 0.0,  0.01],
-            [0.01, 0.01, 0.01, 0.0 ],
+            [0.0, -0.1, 0.01, 0.01],
+            [-0.1, 0.0, 0.01, 0.01],
+            [0.01, 0.01, 0.0, 0.01],
+            [0.01, 0.01, 0.01, 0.0],
         ];
         assert!(SubstitutionModel::new(invalid_matrix).is_err());
-        
+
         // Rate > 1.0
         let invalid_matrix2 = [
-            [0.0, 1.5,  0.01, 0.01],
-            [1.5, 0.0,  0.01, 0.01],
+            [0.0, 1.5, 0.01, 0.01],
+            [1.5, 0.0, 0.01, 0.01],
             [0.01, 0.01, 0.0, 0.01],
             [0.01, 0.01, 0.01, 0.0],
         ];
         assert!(SubstitutionModel::new(invalid_matrix2).is_err());
-        
+
         // Total rate exceeds 1.0 for a base
         let invalid_matrix3 = [
-            [0.0, 0.4,  0.4,  0.4 ],
-            [0.4, 0.0,  0.01, 0.01],
-            [0.4, 0.01, 0.0,  0.01],
-            [0.4, 0.01, 0.01, 0.0 ],
+            [0.0, 0.4, 0.4, 0.4],
+            [0.4, 0.0, 0.01, 0.01],
+            [0.4, 0.01, 0.0, 0.01],
+            [0.4, 0.01, 0.01, 0.0],
         ];
         assert!(SubstitutionModel::new(invalid_matrix3).is_err());
-        
+
         // Non-zero diagonal
         let invalid_matrix4 = [
             [0.5, 0.01, 0.01, 0.01],
@@ -590,13 +782,13 @@ mod tests {
             [0.01, 0.01, 0.01, 0.0],
         ];
         assert!(SubstitutionModel::new(invalid_matrix4).is_err());
-        
+
         // Non-symmetric matrix
         let invalid_matrix5 = [
-            [0.0,  0.01, 0.01, 0.01],
-            [0.02, 0.0,  0.01, 0.01], // Different from [0][1]
-            [0.01, 0.01, 0.0,  0.01],
-            [0.01, 0.01, 0.01, 0.0 ],
+            [0.0, 0.01, 0.01, 0.01],
+            [0.02, 0.0, 0.01, 0.01], // Different from [0][1]
+            [0.01, 0.01, 0.0, 0.01],
+            [0.01, 0.01, 0.01, 0.0],
         ];
         assert!(SubstitutionModel::new(invalid_matrix5).is_err());
     }
@@ -607,7 +799,7 @@ mod tests {
         // JC69 with mu=0.03 gives rate=0.01 for each substitution
         let expected = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01];
         assert_eq!(model.rates(), expected);
-        
+
         // Total rate for each base should be 0.03
         assert!((model.total_rate(Nucleotide::A) - 0.03).abs() < 1e-10);
         assert!((model.total_rate(Nucleotide::C) - 0.03).abs() < 1e-10);
@@ -751,27 +943,36 @@ mod tests {
         let model2 = model1.clone();
 
         assert_eq!(model1.rates(), model2.rates());
-        assert_eq!(model1.total_rate(Nucleotide::A), model2.total_rate(Nucleotide::A));
+        assert_eq!(
+            model1.total_rate(Nucleotide::A),
+            model2.total_rate(Nucleotide::A)
+        );
     }
-    
+
     #[test]
     fn test_substitution_model_rate_query() {
         let model = SubstitutionModel::jc69(0.03).unwrap();
-        
+
         // All non-diagonal rates should be 0.01
         assert!((model.rate(Nucleotide::A, Nucleotide::C) - 0.01).abs() < 1e-10);
         assert!((model.rate(Nucleotide::A, Nucleotide::G) - 0.01).abs() < 1e-10);
         assert!((model.rate(Nucleotide::C, Nucleotide::T) - 0.01).abs() < 1e-10);
-        
+
         // Diagonal rates should be 0
         assert_eq!(model.rate(Nucleotide::A, Nucleotide::A), 0.0);
         assert_eq!(model.rate(Nucleotide::C, Nucleotide::C), 0.0);
-        
+
         // Symmetric rates
-        assert_eq!(model.rate(Nucleotide::A, Nucleotide::C), model.rate(Nucleotide::C, Nucleotide::A));
-        assert_eq!(model.rate(Nucleotide::G, Nucleotide::T), model.rate(Nucleotide::T, Nucleotide::G));
+        assert_eq!(
+            model.rate(Nucleotide::A, Nucleotide::C),
+            model.rate(Nucleotide::C, Nucleotide::A)
+        );
+        assert_eq!(
+            model.rate(Nucleotide::G, Nucleotide::T),
+            model.rate(Nucleotide::T, Nucleotide::G)
+        );
     }
-    
+
     #[test]
     fn test_substitution_model_asymmetric() {
         // Create a transition/transversion model where transitions are more common
@@ -779,20 +980,27 @@ mod tests {
         // Transversions: all others
         // Matrix rows/columns: [A, C, G, T]
         let matrix = [
-            [0.0,   0.005, 0.02,  0.005], // A -> [A, C, G, T]
-            [0.005, 0.0,   0.005, 0.02 ], // C -> [A, C, G, T]
-            [0.02,  0.005, 0.0,   0.005], // G -> [A, C, G, T]
-            [0.005, 0.02,  0.005, 0.0  ], // T -> [A, C, G, T]
+            [0.0, 0.005, 0.02, 0.005], // A -> [A, C, G, T]
+            [0.005, 0.0, 0.005, 0.02], // C -> [A, C, G, T]
+            [0.02, 0.005, 0.0, 0.005], // G -> [A, C, G, T]
+            [0.005, 0.02, 0.005, 0.0], // T -> [A, C, G, T]
         ];
-        
+
         let model = SubstitutionModel::new(matrix).unwrap();
-        
+
         // Check transitions are higher than transversions
-        assert!(model.rate(Nucleotide::A, Nucleotide::G) > model.rate(Nucleotide::A, Nucleotide::C));
-        assert!(model.rate(Nucleotide::C, Nucleotide::T) > model.rate(Nucleotide::C, Nucleotide::G));
-        
+        assert!(
+            model.rate(Nucleotide::A, Nucleotide::G) > model.rate(Nucleotide::A, Nucleotide::C)
+        );
+        assert!(
+            model.rate(Nucleotide::C, Nucleotide::T) > model.rate(Nucleotide::C, Nucleotide::G)
+        );
+
         // Check symmetry
-        assert_eq!(model.rate(Nucleotide::A, Nucleotide::G), model.rate(Nucleotide::G, Nucleotide::A));
+        assert_eq!(
+            model.rate(Nucleotide::A, Nucleotide::G),
+            model.rate(Nucleotide::G, Nucleotide::A)
+        );
     }
 
     // Tests for Poisson-based mutation
@@ -971,5 +1179,69 @@ mod tests {
         let mut sorted = samples.clone();
         sorted.sort();
         assert_eq!(sorted, vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    }
+
+    #[test]
+    fn test_indel_model_new() {
+        let model = IndelModel::new(0.1, 0.1, 0.5);
+        assert!(model.is_ok());
+    }
+
+    #[test]
+    fn test_indel_model_invalid() {
+        assert!(IndelModel::new(-0.1, 0.1, 0.5).is_err());
+        assert!(IndelModel::new(0.1, 1.5, 0.5).is_err());
+        assert!(IndelModel::new(0.1, 0.1, 0.0).is_err()); // p must be > 0
+        assert!(IndelModel::new(0.1, 0.1, 1.1).is_err());
+    }
+
+    #[test]
+    fn test_indel_model_apply_no_events() {
+        let model = IndelModel::new(0.0, 0.0, 0.5).unwrap();
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let mut seq = Sequence::from_str("ACGT").unwrap();
+        let original = seq.to_string();
+
+        let events = model.apply_indels(&mut seq, &mut rng);
+        assert_eq!(events, 0);
+        assert_eq!(seq.to_string(), original);
+    }
+
+    #[test]
+    fn test_indel_model_insertions() {
+        // High insertion rate
+        let model = IndelModel::new(1.0, 0.0, 0.5).unwrap();
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let mut seq = Sequence::from_str("AAAA").unwrap();
+
+        let events = model.apply_indels(&mut seq, &mut rng);
+
+        assert!(events > 0);
+        assert!(seq.len() > 4);
+    }
+
+    #[test]
+    fn test_indel_model_deletions() {
+        // High deletion rate
+        let model = IndelModel::new(0.0, 0.5, 0.5).unwrap();
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let mut seq = Sequence::from_str("ACGTACGTACGT").unwrap(); // Length 12
+
+        let events = model.apply_indels(&mut seq, &mut rng);
+
+        assert!(events > 0);
+        assert!(seq.len() < 12);
+    }
+
+    #[test]
+    fn test_indel_model_mixed() {
+        let model = IndelModel::new(0.1, 0.1, 0.5).unwrap();
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
+        let mut seq = Sequence::from_str("ACGT".repeat(100).as_str()).unwrap();
+
+        let events = model.apply_indels(&mut seq, &mut rng);
+
+        // Should have some events
+        assert!(events > 0);
     }
 }

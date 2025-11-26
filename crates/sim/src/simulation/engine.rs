@@ -457,17 +457,29 @@ impl Simulation {
                 // Mutate first haplotype using Poisson pre-sampling
                 for chr in individual.haplotype1_mut().chromosomes_mut() {
                     let seq = chr.sequence_mut();
+                    // Apply substitutions
                     self.mutation
-                        .model
+                        .substitution
                         .mutate_sequence_poisson(seq, &mut local_rng);
+
+                    // Apply indels if configured
+                    if let Some(indel_model) = &self.mutation.indel {
+                        indel_model.apply_indels(seq, &mut local_rng);
+                    }
                 }
 
                 // Mutate second haplotype using Poisson pre-sampling
                 for chr in individual.haplotype2_mut().chromosomes_mut() {
                     let seq = chr.sequence_mut();
+                    // Apply substitutions
                     self.mutation
-                        .model
+                        .substitution
                         .mutate_sequence_poisson(seq, &mut local_rng);
+
+                    // Apply indels if configured
+                    if let Some(indel_model) = &self.mutation.indel {
+                        indel_model.apply_indels(seq, &mut local_rng);
+                    }
                 }
             });
 
@@ -653,6 +665,7 @@ impl Simulation {
 mod tests {
     use super::*;
     use crate::base::Nucleotide;
+    use crate::evolution::SubstitutionModel;
 
     fn create_test_config() -> (
         RepeatStructure,
@@ -712,6 +725,13 @@ mod tests {
 
         assert_eq!(sim.generation(), 1);
         assert_eq!(sim.population().size(), 10);
+    }
+
+    #[test]
+    fn test_mutation_config_uniform() {
+        let config = MutationConfig::uniform(0.001).unwrap();
+        // Just check it was created successfully
+        assert!(matches!(config.substitution, SubstitutionModel { .. }));
     }
 
     #[test]

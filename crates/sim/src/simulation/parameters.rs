@@ -7,7 +7,7 @@
 use crate::base::Nucleotide;
 use crate::errors::FitnessError;
 use crate::evolution::{
-    GCContentFitness, LengthFitness, LengthSimilarityFitness, RecombinationModel,
+    GCContentFitness, IndelModel, LengthFitness, LengthSimilarityFitness, RecombinationModel,
     SequenceSimilarityFitness, SubstitutionModel,
 };
 use serde::{Deserialize, Serialize};
@@ -56,19 +56,37 @@ impl RepeatStructure {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MutationConfig {
     /// Substitution model for point mutations
-    pub model: SubstitutionModel,
+    #[serde(rename = "substitution")]
+    pub substitution: SubstitutionModel,
+    /// Indel model for insertions and deletions
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indel: Option<IndelModel>,
 }
 
 impl MutationConfig {
     /// Create new mutation configuration.
-    pub fn new(model: SubstitutionModel) -> Self {
-        Self { model }
+    pub fn new(substitution: SubstitutionModel) -> Self {
+        Self {
+            substitution,
+            indel: None,
+        }
+    }
+
+    /// Create new mutation configuration with indels.
+    pub fn with_indels(substitution: SubstitutionModel, indel: IndelModel) -> Self {
+        Self {
+            substitution,
+            indel: Some(indel),
+        }
     }
 
     /// Create with uniform mutation rate.
     pub fn uniform(rate: f64) -> Result<Self, String> {
-        let model = SubstitutionModel::uniform(rate).map_err(|e| format!("{e}"))?;
-        Ok(Self { model })
+        let substitution = SubstitutionModel::uniform(rate).map_err(|e| format!("{e}"))?;
+        Ok(Self {
+            substitution,
+            indel: None,
+        })
     }
 }
 
@@ -410,7 +428,8 @@ mod tests {
     fn test_mutation_config_uniform() {
         let config = MutationConfig::uniform(0.001).unwrap();
         // Just check it was created successfully
-        assert!(matches!(config.model, SubstitutionModel { .. }));
+        assert!(matches!(config.substitution, SubstitutionModel { .. }));
+        assert!(config.indel.is_none());
     }
 
     #[test]

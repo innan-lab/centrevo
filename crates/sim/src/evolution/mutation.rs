@@ -15,7 +15,7 @@ pub use crate::errors::MutationError;
 /// The matrix is symmetric (rate from A->C equals rate from C->A) and has
 /// no diagonal elements (no self-mutations).
 ///
-/// Nucleotides are indexed as: A=1, C=2, G=3, T=4
+/// Nucleotides are indexed as: A=0, C=1, G=2, T=3
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubstitutionModel {
     /// Rate for A <-> C substitutions
@@ -32,8 +32,8 @@ pub struct SubstitutionModel {
     rate_g_t: f64,
     
     /// Total mutation rate for each base (cached for performance)
-    /// Index corresponds to nucleotide index: [0]=unused, [1]=A, [2]=C, [3]=G, [4]=T
-    total_rates: [f64; 5],
+    /// Index corresponds to nucleotide index: [0]=A, [1]=C, [2]=G, [3]=T
+    total_rates: [f64; 4],
 }
 
 impl SubstitutionModel {
@@ -75,18 +75,18 @@ impl SubstitutionModel {
         let rate_g_t = matrix[2][3]; // G->T
         
         // Compute total mutation rate for each base
-        let mut total_rates = [0.0; 5];
-        // A (index 1): sum of A->C, A->G, A->T
-        total_rates[1] = rate_a_c + rate_a_g + rate_a_t;
-        // C (index 2): sum of C->A, C->G, C->T
-        total_rates[2] = rate_a_c + rate_c_g + rate_c_t;
-        // G (index 3): sum of G->A, G->C, G->T
-        total_rates[3] = rate_a_g + rate_c_g + rate_g_t;
-        // T (index 4): sum of T->A, T->C, T->G
-        total_rates[4] = rate_a_t + rate_c_t + rate_g_t;
+        let mut total_rates = [0.0; 4];
+        // A (index 0): sum of A->C, A->G, A->T
+        total_rates[0] = rate_a_c + rate_a_g + rate_a_t;
+        // C (index 1): sum of C->A, C->G, C->T
+        total_rates[1] = rate_a_c + rate_c_g + rate_c_t;
+        // G (index 2): sum of G->A, G->C, G->T
+        total_rates[2] = rate_a_g + rate_c_g + rate_g_t;
+        // T (index 3): sum of T->A, T->C, T->G
+        total_rates[3] = rate_a_t + rate_c_t + rate_g_t;
         
         // Validate that total rates don't exceed 1.0
-        for &total in total_rates.iter().skip(1) {
+        for &total in total_rates.iter() {
             if total > 1.0 {
                 return Err(MutationError::InvalidMutationRate(total));
             }
@@ -335,7 +335,7 @@ impl SubstitutionModel {
         let seq_indices = sequence.as_mut_slice();
 
         // For each base type, sample mutations using Poisson
-        for (base_idx, positions) in base_positions.iter().enumerate().skip(1) {
+        for (base_idx, positions) in base_positions.iter().enumerate() {
             if positions.is_empty() {
                 continue;
             }
@@ -428,7 +428,7 @@ impl SubstitutionModel {
     /// Compute the average of total mutation rates across A, C, G, T
     #[inline]
     fn avg_total_rate(&self) -> f64 {
-        (self.total_rates[1] + self.total_rates[2] + self.total_rates[3] + self.total_rates[4]) / 4.0
+        (self.total_rates[0] + self.total_rates[1] + self.total_rates[2] + self.total_rates[3]) / 4.0
     }
 
 }
@@ -503,10 +503,10 @@ fn sample_without_replacement<R: Rng + ?Sized>(n: usize, k: usize, rng: &mut R) 
 }
 
 /// Collect positions for each base type in the sequence.
-/// Returns an array where indices 1..=4 correspond to A,C,G,T positions.
+/// Returns an array where indices 0..=3 correspond to A,C,G,T positions.
 #[inline]
-fn collect_base_positions(sequence: &Sequence) -> [Vec<usize>; 5] {
-    let mut base_positions: [Vec<usize>; 5] = Default::default();
+fn collect_base_positions(sequence: &Sequence) -> [Vec<usize>; 4] {
+    let mut base_positions: [Vec<usize>; 4] = Default::default();
     let indices = sequence.as_slice();
 
     for (pos, &base) in indices.iter().enumerate() {
@@ -653,17 +653,17 @@ mod tests {
         let model = SubstitutionModel::jc69(1.0).unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
-        let mut counts = [0; 5]; // Indices 1-4 for A,C,G,T (index 0 unused)
+        let mut counts = [0; 4]; // Indices 0-3 for A,C,G,T
         for _ in 0..1000 {
             let mutated = model.mutate_base(Nucleotide::A, &mut rng);
             counts[mutated.to_index() as usize] += 1;
         }
 
-        // A (index 1) should never appear (always mutates)
-        assert_eq!(counts[1], 0);
+        // A (index 0) should never appear (always mutates)
+        assert_eq!(counts[0], 0);
 
-        // C, G, T (indices 2-4) should be roughly equally distributed
-        for &count in &counts[2..5] {
+        // C, G, T (indices 1-3) should be roughly equally distributed
+        for &count in &counts[1..4] {
             assert!(count > 250);
             assert!(count < 450);
         }

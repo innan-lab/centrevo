@@ -236,7 +236,7 @@ impl AsyncRecorder {
             .individuals()
             .iter()
             .filter_map(|ind| ind.cached_fitness())
-            .map(|f| f.get())
+            .map(|f| *f)
             .collect();
 
         let (mean_fitness, min_fitness, max_fitness, std_fitness) = if fitnesses.is_empty() {
@@ -610,7 +610,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{}", i), chr_length);
-            ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
+            ind.set_cached_fitness(FitnessValue::new_normalized(i as f64 / size as f64));
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)

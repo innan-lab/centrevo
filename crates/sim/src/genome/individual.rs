@@ -1,4 +1,4 @@
-use crate::base::FitnessValue;
+use crate::base::{fitness, FitnessValue};
 use crate::genome::Haplotype;
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ pub struct Individual {
     haplotype2: Haplotype,
     /// Cached fitness value. `None` indicates that the fitness has not
     /// been computed/memoized yet.
-    fitness: Option<FitnessValue>,
+    fitness: Option<FitnessValue<fitness::Normalized>>,
 }
 
 impl Individual {
@@ -70,13 +70,13 @@ impl Individual {
     ///
     /// Returns `None` if the fitness has not yet been computed.
     #[inline]
-    pub fn cached_fitness(&self) -> Option<FitnessValue> {
+    pub fn cached_fitness(&self) -> Option<FitnessValue<fitness::Normalized>> {
         self.fitness
     }
 
     /// Set the cached fitness value for this individual.
     #[inline]
-    pub fn set_cached_fitness(&mut self, fitness: impl Into<FitnessValue>) {
+    pub fn set_cached_fitness(&mut self, fitness: impl Into<FitnessValue<fitness::Normalized>>) {
         self.fitness = Some(fitness.into());
     }
 
@@ -209,18 +209,18 @@ mod tests {
     fn test_individual_set_cached_fitness() {
         let mut ind = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
 
-        ind.set_cached_fitness(FitnessValue::new(0.75));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.75)));
+        ind.set_cached_fitness(FitnessValue::<fitness::Normalized>::new_normalized(0.75));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new_normalized(0.75)));
 
-        ind.set_cached_fitness(FitnessValue::new(1.0));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(1.0)));
+        ind.set_cached_fitness(FitnessValue::new_normalized(1.0));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new_normalized(1.0)));
     }
 
     #[test]
     fn test_individual_clear_cached_fitness() {
         let mut ind = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
-        ind.set_cached_fitness(FitnessValue::new(0.9));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.9)));
+        ind.set_cached_fitness(FitnessValue::new_normalized(0.9));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new_normalized(0.9)));
         ind.clear_cached_fitness();
         assert_eq!(ind.cached_fitness(), None);
     }
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn test_individual_clone() {
         let mut ind1 = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
-        ind1.set_cached_fitness(FitnessValue::new(0.8));
+        ind1.set_cached_fitness(FitnessValue::new_normalized(0.8));
 
         let ind2 = ind1.clone();
 
@@ -326,12 +326,11 @@ mod tests {
         let mut ind2 = ind1.clone();
 
         // Mutate ind2's fitness
-        ind2.set_cached_fitness(FitnessValue::new(0.5));
+        ind2.set_cached_fitness(FitnessValue::new_normalized(0.5));
 
         // ind1 should be unchanged
         assert_eq!(ind1.cached_fitness(), None);
-        assert_eq!(ind2.cached_fitness(), Some(FitnessValue::new(0.5)));
-
+        assert_eq!(ind2.cached_fitness(), Some(FitnessValue::new_normalized(0.5)));
         // Mutate ind2's haplotype
         ind2.haplotype1_mut().push(test_chromosome("chr3", 300));
 
@@ -383,20 +382,20 @@ mod tests {
 
     #[test]
     fn test_individual_fitness_range() {
-        let mut ind = Individual::new("ind1", test_haplotype(1), test_haplotype(1));
+        let mut ind = Individual::new(
+            "ind1", 
+            test_haplotype(1), 
+            test_haplotype(1)
+        );
 
         // Test various fitness values
-        ind.set_cached_fitness(FitnessValue::new(0.0));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.0)));
+        ind.set_cached_fitness(FitnessValue::new_normalized(0.0));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new_normalized(0.0)));
 
-        ind.set_cached_fitness(FitnessValue::new(1.0));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(1.0)));
-
-        ind.set_cached_fitness(FitnessValue::new(0.123456789));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.123456789)));
-
-        ind.set_cached_fitness(FitnessValue::new(f64::MAX));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(f64::MAX)));
+        ind.set_cached_fitness(FitnessValue::new_normalized(1.0));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new_normalized(1.0)));
+        ind.set_cached_fitness(FitnessValue::new_normalized(0.123456789));
+        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new_normalized(0.123456789)));
     }
 
     #[test]

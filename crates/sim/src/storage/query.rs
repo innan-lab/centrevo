@@ -1,5 +1,6 @@
 //! Query interface for analyzing recorded simulation data.
 
+use crate::base::FitnessValue;
 use crate::errors::DatabaseError;
 use crate::storage::{Database, FitnessStats, IndividualSnapshot};
 use rusqlite::params;
@@ -410,7 +411,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{}", i), chr_length);
-                ind.set_cached_fitness(i as f64 / size as f64);
+                ind.set_cached_fitness(FitnessValue::new_normalized(i as f64 / size as f64));
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)

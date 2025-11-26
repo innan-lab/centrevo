@@ -13,6 +13,7 @@
 //! ```
 
 pub use crate::errors;
+pub use crate::base::fitness::{self, FitnessValue, LogFitnessValue};
 pub use crate::base::{Nucleotide, Sequence, SharedSequence};
 pub use crate::genome::{Chromosome, Haplotype, Individual};
 pub use crate::simulation::Population;

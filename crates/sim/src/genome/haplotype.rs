@@ -1,4 +1,4 @@
-use crate::base::FitnessValue;
+use crate::base::{fitness, FitnessValue};
 use crate::genome::Chromosome;
 
 // We store ids as `String` for locality and fast, non-atomic cloning.
@@ -18,7 +18,7 @@ pub struct Haplotype {
     /// Cached chromosome ids in the same order as `chromosomes`
     ids: Vec<String>,
     /// Cached fitness for this haplotype. `None` indicates not memoized.
-    fitness: Option<FitnessValue>,
+    fitness: Option<FitnessValue<fitness::Normalized>>,
 }
 
 impl Haplotype {
@@ -87,13 +87,13 @@ impl Haplotype {
 
     /// Return the cached fitness value for this haplotype, or `None` if unset.
     #[inline]
-    pub fn cached_fitness(&self) -> Option<FitnessValue> {
+    pub fn cached_fitness(&self) -> Option<FitnessValue<fitness::Normalized>> {
         self.fitness
     }
 
     /// Set the cached fitness value for this haplotype.
     #[inline]
-    pub fn set_cached_fitness(&mut self, fitness: impl Into<FitnessValue>) {
+    pub fn set_cached_fitness(&mut self, fitness: impl Into<FitnessValue<fitness::Normalized>>) {
         self.fitness = Some(fitness.into());
     }
 
@@ -224,8 +224,8 @@ mod tests {
         let mut hap = Haplotype::new();
 
         // Set a fitness and ensure it's invalidated by push
-        hap.set_cached_fitness(FitnessValue::new(0.42));
-        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new(0.42)));
+        hap.set_cached_fitness(FitnessValue::new_normalized(0.42));
+        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new_normalized(0.42)));
 
         hap.push(test_chromosome("chr1", 100));
         assert_eq!(hap.len(), 1);
@@ -249,19 +249,19 @@ mod tests {
     fn test_haplotype_set_cached_fitness() {
         let mut hap = Haplotype::new();
 
-        hap.set_cached_fitness(FitnessValue::new(0.85));
-        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new(0.85)));
+        hap.set_cached_fitness(FitnessValue::new_normalized(0.85));
+        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new_normalized(0.85)));
 
-        hap.set_cached_fitness(FitnessValue::new(0.95));
-        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new(0.95)));
+        hap.set_cached_fitness(FitnessValue::new_normalized(0.95));
+        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new_normalized(0.95)));
     }
 
     #[test]
     fn test_haplotype_set_clear_cached_fitness() {
         let mut hap = Haplotype::new();
         
-        hap.set_cached_fitness(FitnessValue::new(0.75));
-        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new(0.75)));
+        hap.set_cached_fitness(FitnessValue::new_normalized(0.75));
+        assert_eq!(hap.cached_fitness(), Some(FitnessValue::new_normalized(0.75)));
 
         hap.clear_cached_fitness();
         assert_eq!(hap.cached_fitness(), None);
@@ -407,7 +407,7 @@ mod tests {
             assert_eq!(chr1.id(), chr2.id());
         }
         // Cached fitness should be cloned as well
-        hap1.set_cached_fitness(FitnessValue::new(0.33));
+        hap1.set_cached_fitness(FitnessValue::new_normalized(0.33));
         let hap2 = hap1.clone();
         assert_eq!(hap1.cached_fitness(), hap2.cached_fitness());
     }

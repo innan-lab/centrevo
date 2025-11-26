@@ -3,7 +3,7 @@
 //! This module provides structures and functions for managing populations
 //! of individuals during evolutionary simulations.
 
-use crate::base::FitnessValue;
+use crate::base::{fitness, FitnessValue};
 use crate::evolution::IndividualFitness;
 use crate::genome::Individual;
 use crate::simulation::FitnessConfig;
@@ -83,7 +83,7 @@ impl Population {
     }
 
     /// Compute fitness values for all individuals.
-    pub fn compute_fitness(&self, config: &FitnessConfig) -> Vec<FitnessValue> {
+    pub fn compute_fitness(&self, config: &FitnessConfig) -> Vec<FitnessValue<fitness::Normalized>> {
         self.individuals
             .par_iter()
             .map(|ind| {
@@ -116,14 +116,15 @@ impl Population {
     pub fn select_parents<R: Rng + ?Sized>(
         &self,
         rng: &mut R,
-        fitness_values: &[FitnessValue],
+        fitness_values: &[FitnessValue<fitness::Normalized>],
         n_pairs: usize,
     ) -> Vec<(usize, usize)> {
         // Create cumulative distribution for weighted sampling
-        let total_fitness: f64 = fitness_values.iter().sum::<FitnessValue>().into();
-
-        if total_fitness == 0.0 {
-            // All fitness values are zero - use uniform selection
+        let total_fitness: FitnessValue<fitness::Unnormalized> = fitness_values.iter()
+            .map(|&f| f.unnormalize()).sum();
+        let total_fitness_val = *total_fitness;
+        if (total_fitness == FitnessValue::LETHAL_FITNESS) || ((total_fitness_val / fitness_values.len() as f64) == 1.0) {
+            // Fitness values are all zeros/all ones - use uniform selection
             return (0..n_pairs)
                 .map(|_| {
                     let parent1 = rng.random_range(0..self.size());
@@ -140,7 +141,7 @@ impl Population {
         let cumulative: Vec<f64> = fitness_values
             .iter()
             .scan(0.0, |acc, &f| {
-                *acc += f.get();
+                *acc += *f;
                 Some(*acc)
             })
             .collect();
@@ -148,7 +149,7 @@ impl Population {
         (0..n_pairs)
             .map(|_| {
                 // Select first parent
-                let r1 = rng.random_range(0.0..total_fitness);
+                let r1 = rng.random_range(0.0..total_fitness_val);
                 let parent1 = cumulative
                     .iter()
                     .position(|&c| c >= r1)
@@ -157,7 +158,7 @@ impl Population {
                 // Select second parent (different from first)
                 let mut parent2 = parent1;
                 while parent2 == parent1 && self.size() > 1 {
-                    let r2 = rng.random_range(0.0..total_fitness);
+                    let r2 = rng.random_range(0.0..total_fitness_val);
                     parent2 = cumulative
                         .iter()
                         .position(|&c| c >= r2)
@@ -298,8 +299,8 @@ mod tests {
         pop.update_fitness(&config);
 
         // After update, should be Some(1.0) (neutral)
-        assert_eq!(pop.get(0).unwrap().cached_fitness(), Some(FitnessValue::new(1.0)));
-        assert_eq!(pop.get(1).unwrap().cached_fitness(), Some(FitnessValue::new(1.0)));
+        assert_eq!(pop.get(0).unwrap().cached_fitness(), Some(FitnessValue::new_normalized(1.0)));
+        assert_eq!(pop.get(1).unwrap().cached_fitness(), Some(FitnessValue::new_normalized(1.0)));
     }
 
     #[test]
@@ -339,10 +340,11 @@ mod tests {
         ];
 
         let pop = Population::new("pop1", individuals);
+        let total_fitness = FitnessValue::new(6.0);
         let fitness_values = vec![
-            FitnessValue::new(1.0),
-            FitnessValue::new(2.0),
-            FitnessValue::new(3.0),
+            FitnessValue::new(1.0).normalize(total_fitness),
+            FitnessValue::new(2.0).normalize(total_fitness),
+            FitnessValue::new(3.0).normalize(total_fitness),
         ]; // Weighted selection
 
         let mut rng = StdRng::seed_from_u64(42);

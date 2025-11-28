@@ -10,6 +10,29 @@ use std::sync::Arc;
 /// the repeat structure via `RepeatMap`.
 /// For parallel/read-only operations prefer `SharedChromosome`
 /// which shares sequence storage.
+///
+/// # Overview
+///
+/// `Chromosome` is a lightweight container for a sequence of
+/// `Nucleotide`s together with a `RepeatMap` that describes the logical
+/// boundaries of repeat units (RUs) and higher-order repeats (HORs). It
+/// intentionally separates the raw sequence storage from the repeat
+/// structure so consumers can modify sequences in-place while preserving
+/// metadata.
+///
+/// # Examples
+///
+/// Create a short uniform chromosome, inspect its sequence and formatted
+/// representation:
+///
+/// ```rust
+/// # use centrevo_sim::genome::Chromosome;
+/// # use centrevo_sim::base::Nucleotide;
+/// let chr = Chromosome::uniform("chr1", Nucleotide::A, 2, 2, 1); // AA|AA
+/// assert_eq!(chr.len(), 4);
+/// assert_eq!(chr.to_string(), "AAAA");
+/// assert_eq!(chr.to_formatted_string('-', '='), "AA-AA");
+/// ```
 #[derive(Debug, Clone)]
 pub struct Chromosome {
     /// Type identifier. E.g., "chr1", "chr2", etc.
@@ -42,6 +65,17 @@ impl Chromosome {
     /// - `ru_length`: Length of each repeat unit in bases
     /// - `rus_per_hor`: Number of repeat units per higher-order repeat
     /// - `num_hors`: Number of higher-order repeats in the chromosome
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// // Two RUs per HOR (2 * 2 * 1 = 4 bases, all `A`)
+    /// let chr = Chromosome::uniform("chr1", Nucleotide::A, 2, 2, 1);
+    /// assert_eq!(chr.len(), 4);
+    /// assert_eq!(chr.to_string(), "AAAA");
+    /// ```
     pub fn uniform(
         id: impl Into<Arc<str>>,
         base: Nucleotide,
@@ -65,6 +99,15 @@ impl Chromosome {
     /// - Outer Vec `Vec<_>`: List of Higher-Order Repeats (HORs)
     /// - Middle Vec `Vec<Vec<_>>`: List of Repeat Units (RUs) within an HOR
     /// - Inner Vec `Vec<u8>`: Sequence of bytes (nucleotides) for an RU
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// let nested = vec![vec![b"AC".to_vec(), b"GT".to_vec()]];
+    /// let chr = Chromosome::from_nested_vec("chr1", nested).unwrap();
+    /// assert_eq!(chr.to_string(), "ACGT");
+    /// ```
     pub fn from_nested_vec(
         id: impl Into<Arc<str>>,
         nested: Vec<Vec<Vec<u8>>>,
@@ -117,6 +160,15 @@ impl Chromosome {
     ///
     /// Example: "ACGT-ACGT=ACGT-ACGT" with ru_delim='-' and hor_delim='='
     /// parses to 2 HORs, each with 2 RUs.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// let input = "AC-GT=AA-TT";
+    /// let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+    /// assert_eq!(chr.to_string(), "ACGTAATT");
+    /// ```
     pub fn from_string_with_delimiters(
         id: impl Into<Arc<str>>,
         sequence: &str,
@@ -214,6 +266,15 @@ impl Chromosome {
     /// delimiters between repeat units and higher-order repeats.
     ///
     /// `ru_delim` is used between repeat units, `hor_delim` between HORs.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// let chr = Chromosome::uniform("chr1", Nucleotide::A, 2, 2, 1);
+    /// assert_eq!(chr.to_formatted_string('-', '='), "AA-AA");
+    /// ```
     pub fn to_formatted_string(&self, ru_delim: char, hor_delim: char) -> String {
         let chars: Vec<char> = self
             .sequence
@@ -282,6 +343,18 @@ impl Chromosome {
 
     /// Create a `SharedChromosome` which provides an immutable, cheaply
     /// clonable view of this chromosome suitable for parallel read-only use.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// let chr = Chromosome::uniform("chr1", Nucleotide::A, 2, 2, 1);
+    /// let shared = chr.to_shared();
+    /// assert_eq!(shared.len(), chr.len());
+    /// let owned = shared.to_mutable();
+    /// assert_eq!(owned.to_string(), chr.to_string());
+    /// ```
     pub fn to_shared(&self) -> SharedChromosome {
         SharedChromosome {
             id: self.id.clone(),
@@ -291,6 +364,17 @@ impl Chromosome {
     }
 
     /// Get the sequence slice corresponding to the RU at `index`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// let chr = Chromosome::from_string_with_delimiters("chr1", "AC-GT=AA-TT", '=', '-').unwrap();
+    /// let slice = chr.get_ru_slice(1).unwrap();
+    /// let s: String = slice.iter().map(|n| n.to_char()).collect();
+    /// assert_eq!(s, "GT");
+    /// ```
     pub fn get_ru_slice(&self, index: usize) -> Option<&[Nucleotide]> {
         let (start, end) = self.map.get_ru_interval(index)?;
         Some(&self.sequence.as_slice()[start..end])
@@ -307,6 +391,18 @@ impl Chromosome {
     ///
     /// # Returns
     /// Similarity score in [0.0, 1.0]. Returns 0.0 if indices are invalid.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// // small example with exact match
+    /// let a = Chromosome::from_string_with_delimiters("a", "ACGT=ACGT", '=', '-').unwrap();
+    /// let b = Chromosome::from_string_with_delimiters("b", "ACGT=ACGT", '=', '-').unwrap();
+    /// // compare RU 0 of both (k=2 => "AC","CG","GT")
+    /// assert_eq!(a.calculate_similarity(0, &b, 0, 2), 1.0);
+    /// ```
     pub fn calculate_similarity(
         &self,
         ru_index_self: usize,
@@ -380,6 +476,20 @@ impl Chromosome {
     ///
     /// `pos1` is the break point in `self`.
     /// `pos2` is the break point in `other`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// let a = Chromosome::uniform("a", Nucleotide::A, 1, 4, 1); // "AAAA"
+    /// let b = Chromosome::uniform("b", Nucleotide::T, 1, 4, 1); // "TTTT"
+    /// let (a1, b1) = a.crossover_generalized(&b, 2, 1).unwrap();
+    /// // a1 = a[..2] + b[1..] = "AA" + "TTT" = "AATTT"
+    /// assert_eq!(a1.to_string(), "AATTT");
+    /// // b1 = b[..1] + a[2..] = "T" + "AA" = "TAA"
+    /// assert_eq!(b1.to_string(), "TAA");
+    /// ```
     pub fn crossover_generalized(
         &self,
         other: &Self,
@@ -425,12 +535,26 @@ impl Chromosome {
         ))
     }
 
+    
+
     /// Perform generalized gene conversion.
     ///
     /// Replaces a tract in `self` (recipient) starting at `start1` of length `length`
     /// with a tract from `other` (donor) starting at `start2` of length `length`.
     ///
     /// Note: Currently assumes length is same for both, but logic supports different lengths if needed.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// let rec = Chromosome::uniform("r", Nucleotide::A, 1, 4, 1); // "AAAA"
+    /// let donor = Chromosome::uniform("d", Nucleotide::T, 1, 4, 1); // "TTTT"
+    /// let out = rec.gene_conversion_generalized(&donor, 1, 1, 2).unwrap();
+    /// // Replace rec[1..3] with donor[1..3] => "A" + "TT" + "A" = "ATTA"
+    /// assert_eq!(out.to_string(), "ATTA");
+    /// ```
     pub fn gene_conversion_generalized(
         &self,
         other: &Self,
@@ -487,6 +611,8 @@ impl Chromosome {
 
         Ok(Self::new(self.id.clone(), new_seq, map_final))
     }
+
+    
 }
 
 impl std::fmt::Display for Chromosome {
@@ -499,7 +625,20 @@ impl std::fmt::Display for Chromosome {
 ///
 /// `SharedChromosome` contains a reference-counted view of the sequence data
 /// and the repeat-structure metadata. It is intended for read-only access and
-/// cheap cloning across threads.
+/// cheap cloning across threads. Converting a `SharedChromosome` back to an
+/// owned `Chromosome` performs minimal copying where necessary and keeps the
+/// shared, read-only operations efficient.
+///
+/// # Examples
+///
+/// ```rust
+/// # use centrevo_sim::genome::Chromosome;
+/// # use centrevo_sim::base::Nucleotide;
+/// let chr = Chromosome::uniform("chr1", Nucleotide::A, 2, 2, 1);
+/// let shared = chr.to_shared();
+/// let owned = shared.to_mutable();
+/// assert_eq!(owned.to_string(), chr.to_string());
+/// ```
 #[derive(Debug, Clone)]
 pub struct SharedChromosome {
     id: Arc<str>,
@@ -558,6 +697,17 @@ impl SharedChromosome {
 
     /// Convert the shared chromosome into an owned `Chromosome` with
     /// mutable sequence data (clones the underlying indices if necessary).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// let chr = Chromosome::uniform("chr1", Nucleotide::A, 2, 2, 1);
+    /// let shared = chr.to_shared();
+    /// let owned = shared.to_mutable();
+    /// assert_eq!(owned.to_string(), chr.to_string());
+    /// ```
     pub fn to_mutable(&self) -> Chromosome {
         Chromosome {
             id: self.id.clone(),

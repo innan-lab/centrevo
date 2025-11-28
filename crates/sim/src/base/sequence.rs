@@ -4,13 +4,30 @@ use std::sync::Arc;
 use std::str::FromStr;
 use crate::errors::{InvalidNucleotide, InvalidSequence, OutOfBounds};
 
-/// Mutable biological sequence backed by a vector of Nucleotides.
+/// Mutable biological sequence backed by a vector of `Nucleotide`s.
 ///
-/// `Sequence` stores a vector of `Nucleotide`s. It is intended for active,
-/// in-place operations such as mutation, insertion, and deletion. For read-only,
-/// shareable views convert to `SharedSequence` using `to_shared` or `into_shared`.
+/// `Sequence` stores a vector of `Nucleotide`s and is intended for active,
+/// in-place operations such as mutation, insertion, deletion and other
+/// transformations performed by the simulation engine. For read-only, shareable
+/// views convert to `SharedSequence` using `to_shared` or `into_shared`.
+///
+/// # Examples
+///
+/// Basic construction and mutation:
+///
+/// ```rust
+/// # use centrevo_sim::base::{Sequence, Nucleotide};
+/// let mut seq: Sequence = "ACGT".parse().unwrap();
+/// assert_eq!(seq.to_string(), "ACGT");
+/// seq.set(0, Nucleotide::T).unwrap();
+/// assert_eq!(seq.to_string(), "TCGT");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Sequence(Vec<Nucleotide>);
+// Internal representation details:
+// - The inner Vec stores bases (Nucleotides) in-order; indices are 0-based.
+// - Mutating operations edit the vector in-place so callers who need shared,
+//   read-only views should use `to_shared`/`into_shared`.
 
 impl Sequence {
     /// Create a new, empty `Sequence`.
@@ -21,7 +38,7 @@ impl Sequence {
     /// # use centrevo_sim::base::{Sequence, Nucleotide};
     /// let seq = Sequence::new();
     /// assert_eq!(seq.len(), 0);
-    /// ```
+    /// let seq: Sequence = "ACGT".parse().unwrap();
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -126,6 +143,20 @@ impl Sequence {
         SharedSequence(self.0.into())
     }
 
+    /// Convert this `Sequence` into a `SharedSequence` without copying data.
+    ///
+    /// This consumes the `Sequence` and reuses the owned buffer in the shared view.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::{Sequence, Nucleotide};
+    /// let seq: Sequence = "ACGT".parse().unwrap();
+    /// let seq: Sequence = "ACGT".parse().unwrap();
+    /// let shared = seq.into_shared();
+    /// assert_eq!(shared.to_string(), "ACGT");
+    /// ```
+
     /// Create an immutable `SharedSequence` by cloning the internal data.
     ///
     /// Use this when you need a shared, read-only view but still keep the
@@ -133,6 +164,8 @@ impl Sequence {
     pub fn to_shared(&self) -> SharedSequence {
         SharedSequence(self.0.clone().into())
     }
+
+    
 }
 
 impl Default for Sequence {
@@ -174,6 +207,8 @@ impl FromStr for Sequence {
 /// across threads for read-only operations.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SharedSequence(Arc<[Nucleotide]>);
+// SharedSequence stores an `Arc<[Nucleotide]>` so clones are cheap and
+// the data may be shared across threads. The stored slice is immutable.
 
 impl SharedSequence {
     /// Create a `SharedSequence` from an `Arc<[Nucleotide]>`.
@@ -214,6 +249,23 @@ impl SharedSequence {
     pub fn to_mutable(&self) -> Sequence {
         Sequence(self.0.to_vec())
     }
+
+    /// Convert the shared view into a mutable owned `Sequence`.
+    ///
+    /// This clones the underlying data so the returned `Sequence` can be mutated
+    /// independently of the `SharedSequence`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::{Sequence, Nucleotide};
+    /// let seq: Sequence = "ACGT".parse().unwrap();
+    /// let shared = seq.to_shared();
+    /// let mut owned = shared.to_mutable();
+    /// owned.set(1, Nucleotide::T).unwrap();
+    /// assert_eq!(owned.to_string(), "ATGT");
+    /// assert_eq!(shared.to_string(), "ACGT");
+    /// ```
 
     /// Clone the shared data into a new `Sequence` struct.
     /// 

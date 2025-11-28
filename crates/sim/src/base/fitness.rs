@@ -22,6 +22,25 @@ pub struct Normalized;
 /// Construction/assignment from NaN is forbidden and will cause a panic to
 /// prevent NaNs from entering the numeric system; this keeps invariants simple
 /// and prevents hidden propagation of NaN through calculations.
+///
+/// # Examples
+///
+/// Basic construction and operations:
+///
+/// ```rust
+/// # use centrevo_sim::base::fitness::{FitnessValue, Unnormalized, Normalized};
+/// let f1 = FitnessValue::<Unnormalized>::new(0.2);
+/// let f2 = FitnessValue::<Unnormalized>::new(0.3);
+/// let sum = f1 + f2; // unnormalized addition
+/// let sum_val: f64 = sum.into();
+/// assert!((sum_val - 0.5).abs() < 1e-12);
+/// let total = FitnessValue::<Unnormalized>::new(1.0);
+/// let normalized = sum.normalize(total);
+/// // normalized is in type Normalized and should equal 0.5
+/// let normalized_val: f64 = normalized.into();
+/// // normalized is in type Normalized and should equal 0.5
+/// assert!((normalized_val - 0.5).abs() < 1e-12);
+/// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct FitnessValue<State>(f64, PhantomData<State>);
 
@@ -74,11 +93,22 @@ impl<State> FitnessValue<State> {
     /// This represents no fitness (0.0).
     pub const LETHAL_FITNESS: Self = Self(0.0, PhantomData);
 
+    //TODO: Reconsider this type-state pattern. I think it adds complexity without enough benefit.
     /// Neutral fitness value constant.
     /// This represents neutral fitness (1.0).
     pub const NEUTRAL_FITNESS: Self = Self(1.0, PhantomData);
 
     /// Converts to the log-scale fitness value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::fitness::FitnessValue;
+    /// let f = FitnessValue::<_>::new(0.25);
+    /// let log = f.ln();
+    /// let back: f64 = log.exp().into();
+    /// assert!((back - 0.25).abs() < 1e-12);
+    /// ```
     pub fn ln(self) -> LogFitnessValue<State> {
         LogFitnessValue(self.0.ln(), PhantomData)
     }
@@ -167,6 +197,21 @@ impl<'a> Sum<&'a FitnessValue<Unnormalized>> for FitnessValue<Unnormalized> {
     }
 }
 
+/// Multiplication for `FitnessValue` uses log-space for numerical stability.
+///
+/// Multiplication is implemented via `ln(a) + ln(b)` to prevent underflow
+/// when multiplying very small values. The implementation also contains
+/// fast-paths for `0.0` and `1.0` to avoid unnecessary conversions.
+///
+/// # Examples
+///
+/// ```rust
+/// # use centrevo_sim::base::fitness::FitnessValue;
+/// let f1 = FitnessValue::<_>::new(0.5);
+/// let f2 = FitnessValue::<_>::new(0.5);
+/// let res = f1 * f2;
+/// assert!((*res - 0.25).abs() < 1e-12);
+/// ```
 impl<State> Mul for FitnessValue<State> {
     type Output = Self;
 
@@ -201,7 +246,15 @@ impl<State> MulAssign for FitnessValue<State> {
 /// A log-scale fitness value (natural logarithm of fitness).
 ///
 /// Note: Construction/assignment from NaN is forbidden and will cause a panic.
-/// 
+///
+/// # Examples
+///
+/// ```rust
+/// # use centrevo_sim::base::fitness::{LogFitnessValue, Unnormalized};
+/// let log_val = LogFitnessValue::new(-std::f64::consts::LN_2); // ln(0.5)
+/// let lin = log_val.exp();
+/// assert!((*lin - 0.5).abs() < 1e-12);
+/// ```
 /// This is useful for numerical stability when working with very small fitness values,
 /// as it avoids underflow issues. The value represents ln(fitness).
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -229,6 +282,17 @@ impl LogFitnessValue<Unnormalized> {
     }
 }
 
+/// Example demonstrating normalization of log fitness values:
+///
+/// ```rust
+/// # use centrevo_sim::base::fitness::{LogFitnessValue, Unnormalized};
+/// let log_total = LogFitnessValue::new(0.0); // ln(1.0)
+/// let log_val = LogFitnessValue::new(-std::f64::consts::LN_2); // ln(0.5)
+/// let normalized = log_val.normalize(log_total);
+/// // normalized as linear is 0.5
+/// let linear: f64 = normalized.exp().into();
+/// assert!((linear - 0.5).abs() < 1e-12);
+/// ```
 impl LogFitnessValue<Normalized> {
     /// Manually changes to unnormalized state.
     /// This does not change the numeric value; it only changes the type state.

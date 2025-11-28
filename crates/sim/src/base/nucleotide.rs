@@ -9,6 +9,20 @@ use crate::errors::InvalidNucleotide;
 /// a single byte (u8). The mapping of variants to integers is stable and used
 /// throughout the crate (A=0, C=1, G=2, T=3). Use the convenience conversion
 /// functions to go between bytes/chars and `Nucleotide`.
+///
+/// # Examples
+///
+/// Basic conversions and utility methods:
+///
+/// ```rust
+/// # use centrevo_sim::base::Nucleotide;
+/// assert_eq!(Nucleotide::from_index(0), Some(Nucleotide::A));
+/// assert_eq!(Nucleotide::from_ascii(b'A'), Some(Nucleotide::A));
+/// assert_eq!(Nucleotide::A.to_char(), 'A');
+/// assert_eq!(Nucleotide::A.complement(), Nucleotide::T);
+/// assert!(Nucleotide::G.is_purine());
+/// assert!(Nucleotide::C.is_pyrimidine());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Nucleotide {
@@ -39,6 +53,15 @@ impl Nucleotide {
 
     /// Convert from an ASCII byte (`b'A'`, `b'C'`, `b'G'`, `b'T'`) and also
     /// accepts lowercase bytes. Returns `None` for non-standard characters.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::Nucleotide;
+    /// assert_eq!(Nucleotide::from_ascii(b'A'), Some(Nucleotide::A));
+    /// assert_eq!(Nucleotide::from_ascii(b'a'), Some(Nucleotide::A));
+    /// assert_eq!(Nucleotide::from_ascii(b'N'), None);
+    /// ```
     #[inline]
     pub const fn from_ascii(byte: u8) -> Option<Self> {
         match byte {
@@ -51,6 +74,13 @@ impl Nucleotide {
     }
 
     /// Convert to an uppercase ASCII byte representing this nucleotide.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::Nucleotide;
+    /// assert_eq!(Nucleotide::A.to_ascii(), b'A');
+    /// ```
     #[inline(always)]
     pub const fn to_ascii(self) -> u8 {
         match self {
@@ -62,12 +92,27 @@ impl Nucleotide {
     }
 
     /// Convert to an uppercase `char` representing this nucleotide.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::Nucleotide;
+    /// assert_eq!(Nucleotide::G.to_char(), 'G');
+    /// ```
     #[inline(always)]
     pub const fn to_char(self) -> char {
         self.to_ascii() as char
     }
 
     /// Return the complementary base (A <-> T, C <-> G).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::Nucleotide;
+    /// assert_eq!(Nucleotide::A.complement(), Nucleotide::T);
+    /// assert_eq!(Nucleotide::C.complement(), Nucleotide::G);
+    /// ```
     #[inline(always)]
     pub const fn complement(self) -> Self {
         match self {
@@ -79,18 +124,42 @@ impl Nucleotide {
     }
 
     /// Return true if the nucleotide is a purine (A or G).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::Nucleotide;
+    /// assert!(Nucleotide::A.is_purine());
+    /// assert!(!Nucleotide::C.is_purine());
+    /// ```
     #[inline(always)]
     pub const fn is_purine(self) -> bool {
         matches!(self, Self::A | Self::G)
     }
 
     /// Return true if the nucleotide is a pyrimidine (C or T).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use centrevo_sim::base::Nucleotide;
+    /// assert!(Nucleotide::C.is_pyrimidine());
+    /// assert!(!Nucleotide::A.is_pyrimidine());
+    /// ```
     #[inline(always)]
     pub const fn is_pyrimidine(self) -> bool {
         matches!(self, Self::C | Self::T)
     }
 }
 
+/// Example showing `TryFrom<u8>` conversions and error handling:
+///
+/// ```rust
+/// # use std::convert::TryFrom;
+/// # use centrevo_sim::base::Nucleotide;
+/// assert_eq!(Nucleotide::try_from(b'A'), Ok(Nucleotide::A));
+/// assert!(Nucleotide::try_from(b'X').is_err());
+/// ```
 impl TryFrom<u8> for Nucleotide {
     type Error = InvalidNucleotide;
 
@@ -99,6 +168,14 @@ impl TryFrom<u8> for Nucleotide {
     }
 }
 
+/// Example showing `TryFrom<char>` conversions:
+///
+/// ```rust
+/// # use std::convert::TryFrom;
+/// # use centrevo_sim::base::Nucleotide;
+/// assert_eq!(Nucleotide::try_from('A'), Ok(Nucleotide::A));
+/// assert!(Nucleotide::try_from('N').is_err());
+/// ```
 impl TryFrom<char> for Nucleotide {
     type Error = InvalidNucleotide;
 

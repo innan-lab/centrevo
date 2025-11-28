@@ -258,14 +258,13 @@ impl RecombinationModel {
     /// use centrevo_sim::base::Sequence;
     /// use rand::SeedableRng;
     /// use rand_xoshiro::Xoshiro256PlusPlus;
-    /// use std::str::FromStr;
     ///
     /// let model = RecombinationModel::builder()
     ///     .break_prob(0.1) // High probability for example
     ///     .build()
     ///     .unwrap();
     ///
-    /// let seq = Sequence::from_str("AAAAA").unwrap();
+    /// let seq: Sequence = "AAAAA".parse().unwrap();
     /// let map = RepeatMap::uniform(1, 1, 5);
     /// let chr1 = Chromosome::new("chr1", seq.clone(), map.clone());
     /// let chr2 = Chromosome::new("chr2", seq, map);

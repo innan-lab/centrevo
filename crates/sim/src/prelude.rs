@@ -7,9 +7,8 @@
 //!
 //! ```
 //! use centrevo_sim::prelude::*;
-//! use std::str::FromStr;
-//!
-//! let seq = Sequence::from_str("ACGT").unwrap();
+//! 
+//! let seq: Sequence = "ACGT".parse().unwrap();
 //! ```
 
 pub use crate::errors;

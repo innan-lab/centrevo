@@ -10,6 +10,8 @@ use crate::simulation::{
     FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure,
     SimulationConfig,
 };
+use crate::evolution::RecombinationType;
+use crate::errors::RecombinationError;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rayon::prelude::*;
@@ -112,6 +114,69 @@ impl Simulation {
             config,
             rng,
         })
+    }
+
+    /// Apply a single recombination `event` to a pair of chromosomes.
+    ///
+    /// This helper is used by `apply_recombination` and is kept as a separate
+    /// private method to make testing and error handling centralized.
+    fn apply_event_to_pair(
+        params: &crate::evolution::RecombinationModel,
+        chr1: &mut Chromosome,
+        chr2: &mut Chromosome,
+        event: RecombinationType,
+    ) -> Result<(), String> {
+        match event {
+            RecombinationType::None => Ok(()),
+            RecombinationType::Crossover { pos1, pos2 } => {
+                let (new1, new2) = params.crossover(chr1, chr2, pos1, pos2)
+                    .map_err(|e| format!("Crossover failed: {e}"))?;
+
+                *chr1 = new1;
+                *chr2 = new2;
+                Ok(())
+            }
+            RecombinationType::GeneConversion {
+                donor_start,
+                recipient_start,
+                length,
+            } => {
+                match params.gene_conversion(chr2, chr1, recipient_start, donor_start, length) {
+                    Ok(new2) => {
+                        *chr2 = new2;
+                        Ok(())
+                    }
+                    Err(e) => match e {
+                        RecombinationError::InvalidRange { .. }
+                        | RecombinationError::InvalidPosition { .. } => {
+                            // Try to clamp to remaining lengths
+                            if recipient_start >= chr2.len() || donor_start >= chr1.len() {
+                                // Nothing to do
+                                return Ok(());
+                            }
+                            let recipient_remaining = chr2.len() - recipient_start;
+                            let donor_remaining = chr1.len() - donor_start;
+                            let clamped_len = length
+                                .min(recipient_remaining)
+                                .min(donor_remaining);
+                            if clamped_len == 0 {
+                                return Ok(());
+                            }
+
+                            if let Ok(new2) = params.gene_conversion(
+                                chr2, chr1, recipient_start, donor_start, clamped_len,
+                            ) {
+                                *chr2 = new2;
+                                Ok(())
+                            } else {
+                                Ok(())
+                            }
+                        }
+                        other => Err(format!("Gene conversion failed: {other}")),
+                    },
+                }
+            }
+        }
     }
 
     /// Create a new simulation from custom sequences.
@@ -488,11 +553,20 @@ impl Simulation {
     }
 
     /// Apply recombination to all individuals in the population.
+    ///
+    /// Note: Some recombination events may become invalid while being applied
+    /// (for example, if previous events change chromosome lengths). For gene
+    /// conversion events where the specified range becomes invalid, the engine
+    /// attempts to clamp the tract length to the available space and retry the
+    /// operation. If clamping cannot resolve the issue, the event is skipped.
     fn apply_recombination(&mut self) -> Result<(), String> {
         let pop_size = self.population.size();
 
         // Generate seeds for each individual
         let seeds: Vec<u64> = (0..pop_size).map(|_| self.rng.random()).collect();
+
+        // Clone params to avoid immutable borrow of `self` in the parallel closure
+        let params = self.recombination.params.clone();
 
         // Parallel recombination with independent RNGs per individual
         self.population
@@ -520,45 +594,7 @@ impl Simulation {
 
                         // Apply the recombination events sequentially
                         for event in events {
-                            match event {
-                                crate::evolution::RecombinationType::None => {
-                                    // Should not be in the list, but handle just in case
-                                }
-                                crate::evolution::RecombinationType::Crossover { pos1, pos2 } => {
-                                    // Perform crossover
-                                    // Note: This consumes the current state and produces new chromosomes
-                                    // We need to be careful because crossover takes &Chromosome, not &mut
-                                    // But we have &mut references.
-                                    // We can clone to pass to crossover (expensive?) or refactor crossover to take &mut?
-                                    // The current crossover signature is:
-                                    // pub fn crossover(&self, other: &Self, pos1: usize, pos2: usize) -> Result<(Self, Self), RecombinationError>
-                                    // It takes &self and &other.
-
-                                    let (new1, new2) = self
-                                        .recombination
-                                        .params
-                                        .crossover(chr1, chr2, pos1, pos2)
-                                        .map_err(|e| format!("Crossover failed: {e}"))?;
-
-                                    *chr1 = new1;
-                                    *chr2 = new2;
-                                }
-                                crate::evolution::RecombinationType::GeneConversion {
-                                    start1,
-                                    start2,
-                                    length,
-                                } => {
-                                    // Perform gene conversion (chr1 -> chr2)
-                                    // gene_conversion takes &Sequence, &Sequence.
-                                    let new2 = self
-                                        .recombination
-                                        .params
-                                        .gene_conversion(chr2, chr1, start2, start1, length)
-                                        .map_err(|e| format!("Gene conversion failed: {e}"))?;
-
-                                    *chr2 = new2;
-                                }
-                            }
+                            Simulation::apply_event_to_pair(&params, chr1, chr2, event)?;
                         }
                     }
                 }
@@ -777,5 +813,61 @@ mod tests {
                 assert_eq!(chr.sequence().get(i), Some(Nucleotide::C));
             }
         }
+    }
+
+    #[test]
+    fn test_apply_event_to_pair_gene_conversion_clamps() {
+        // Create a small simulation with trivial configs
+        let structure = RepeatStructure::new(Nucleotide::A, 1, 1, 6, 1); // chr len 6
+        let mutation = MutationConfig::uniform(0.0).unwrap();
+        let recombination = RecombinationConfig::standard(0.0, 0.5, 0.5).unwrap();
+        let fitness = FitnessConfig::neutral();
+        let config = SimulationConfig::new(1, 1, Some(42));
+
+        let sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+
+        // Chron 1: donor (length 6), Chron 2: recipient (length 4)
+        let mut donor = Chromosome::uniform("d", Nucleotide::A, 1, 1, 6);
+        let mut recipient = Chromosome::uniform("r", Nucleotide::T, 1, 1, 4);
+
+        // Create a gene conversion event where length exceeds recipient remaining length
+        let event = crate::evolution::RecombinationType::GeneConversion {
+            donor_start: 0, // donor start
+            recipient_start: 1, // recipient start
+            length: 5, // length > recipient remaining (3)
+        };
+
+        // Apply via helper — should clamp to 3 and succeed
+        let params = sim.recombination.params.clone();
+        Simulation::apply_event_to_pair(&params, &mut donor, &mut recipient, event).unwrap();
+
+        assert_eq!(recipient.to_string(), "TAAA");
+    }
+
+    #[test]
+    fn test_apply_event_to_pair_gene_conversion_skip_when_out_of_bounds() {
+        let structure = RepeatStructure::new(Nucleotide::A, 1, 1, 4, 1);
+        let mutation = MutationConfig::uniform(0.0).unwrap();
+        let recombination = RecombinationConfig::standard(0.0, 0.5, 0.5).unwrap();
+        let fitness = FitnessConfig::neutral();
+        let config = SimulationConfig::new(1, 1, Some(42));
+
+        let sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+
+        let mut donor = Chromosome::uniform("d", Nucleotide::A, 1, 1, 4);
+        let mut recipient = Chromosome::uniform("r", Nucleotide::T, 1, 1, 4);
+
+        // The recipient start is out of bounds
+        let event = crate::evolution::RecombinationType::GeneConversion {
+            donor_start: 0,
+            recipient_start: 10, // invalid
+            length: 2,
+        };
+
+        let params = sim.recombination.params.clone();
+        Simulation::apply_event_to_pair(&params, &mut donor, &mut recipient, event).unwrap();
+
+        // No changes to recipient - still TTTT
+        assert_eq!(recipient.to_string(), "TTTT");
     }
 }

@@ -481,8 +481,19 @@ impl Chromosome {
     /// Perform crossover between two chromosomes at potentially different positions.
     ///
     /// `pos1` is the break point in `self` and `pos2` is the break point in `other`.
+    /// Chromosomes involved do not need to be the same total length; the crossover
+    /// operation concatenates the left segment from one and the right segment from the other.
     /// Returns two new chromosomes as offspring.
     ///
+    /// # Arguments
+    /// * `other` - The other chromosome to crossover with
+    /// * `pos1` - Crossover position in `self`
+    /// * `pos2` - Crossover position in `other`
+    /// 
+    /// # Returns
+    /// A Result containing a tuple of two new `Chromosome`s if successful,
+    /// or an error string if the positions are out of bounds.
+    /// 
     /// # Examples
     ///
     /// ```rust
@@ -541,60 +552,86 @@ impl Chromosome {
         ))
     }
 
-
-
-    /// Perform generalized gene conversion.
+    /// Perform gene conversion operation.
     ///
-    /// Replaces a tract in `self` (recipient) starting at `start1` of length `length`
-    /// with a tract from `other` (donor) starting at `start2` of length `length`.
+    /// Replaces a tract in `self` (recipient) starting at `recipient_start` of length `length`
+    /// with a tract from `other` (donor) starting at `donor_start` of length `length`.
     ///
-    /// Note: Currently assumes length is same for both, but logic supports different lengths if needed.
+    /// Chromosomes involved do not need to be the same total length; the donor tract
+    /// is copied into the recipient and the resulting chromosome length may change
+    /// accordingly.
+    /// 
+    /// # Arguments
+    /// * `other` - Donor chromosome
+    /// * `recipient_start` - Start position in recipient (self)
+    /// * `donor_start` - Start position in donor (other)
+    /// * `length` - Length of tract to replace
+    /// 
+    /// # Returns
+    /// A Result containing a new `Chromosome` if successful,
+    /// or an error string if the specified ranges are out of bounds.
     ///
     /// # Examples
+    ///
+    /// Simple example with equal total lengths:
     ///
     /// ```rust
     /// # use centrevo_sim::genome::Chromosome;
     /// # use centrevo_sim::base::Nucleotide;
     /// let rec = Chromosome::uniform("r", Nucleotide::A, 1, 4, 1); // "AAAA"
     /// let donor = Chromosome::uniform("d", Nucleotide::T, 1, 4, 1); // "TTTT"
-    /// let out = rec.gene_conversion_generalized(&donor, 1, 1, 2).unwrap();
+    /// let out = rec.gene_conversion(&donor, 1, 1, 2).unwrap();
     /// // Replace rec[1..3] with donor[1..3] => "A" + "TT" + "A" = "ATTA"
     /// assert_eq!(out.to_string(), "ATTA");
     /// ```
-    pub fn gene_conversion_generalized(
+    ///
+    /// Different total lengths are supported. Donor tracts are copied into the
+    /// recipient and may change the resulting chromosome length.
+    ///
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// // Recipient length 4, donor length 6
+    /// let rec = Chromosome::uniform("r", Nucleotide::A, 1, 4, 1); // "AAAA"
+    /// let donor = Chromosome::uniform("d", Nucleotide::T, 1, 6, 1); // "TTTTTT"
+    /// let out = rec.gene_conversion(&donor, 1, 3, 2).unwrap();
+    /// // Replace rec[1..3] with donor[3..5] => "A" + "TT" + "A" = "ATTA"
+    /// assert_eq!(out.to_string(), "ATTA");
+    /// ```
+    pub fn gene_conversion(
         &self,
         other: &Self,
-        start1: usize,
-        start2: usize,
+        recipient_start: usize,
+        donor_start: usize,
         length: usize,
     ) -> Result<Self, String> {
-        let end1 = start1 + length;
-        let end2 = start2 + length;
+        let end1 = recipient_start + length;
+        let end2 = donor_start + length;
 
         if end1 > self.len() {
             return Err(format!(
-                "Recipient range {start1}..{end1} out of bounds (len {})",
+                "Recipient range {recipient_start}..{end1} out of bounds (len {})",
                 self.len()
             ));
         }
         if end2 > other.len() {
             return Err(format!(
-                "Donor range {start2}..{end2} out of bounds (len {})",
+                "Donor range {donor_start}..{end2} out of bounds (len {})",
                 other.len()
             ));
         }
 
         // 1. Split Recipient: Left | Tract | Right
-        // Split at start1 -> (Left, MidRight)
-        let (map_left, map_mid_right) = self.map.split_at(start1).map_err(|e| e.to_string())?;
+        // Split at recipient_start -> (Left, MidRight)
+        let (map_left, map_mid_right) = self.map.split_at(recipient_start).map_err(|e| e.to_string())?;
         // Split MidRight at length -> (OldTract, Right)
         let (_map_old_tract, map_right) =
             map_mid_right.split_at(length).map_err(|e| e.to_string())?;
 
         // 2. Split Donor: DLeft | NewTract | DRight
-        // Split at start2 -> (DLeft, DMidRight)
+        // Split at donor_start -> (DLeft, DMidRight)
         let (_map_d_left, map_d_mid_right) =
-            other.map.split_at(start2).map_err(|e| e.to_string())?;
+            other.map.split_at(donor_start).map_err(|e| e.to_string())?;
         // Split DMidRight at length -> (NewTract, DRight)
         let (map_new_tract, _map_d_right) = map_d_mid_right
             .split_at(length)
@@ -606,10 +643,12 @@ impl Chromosome {
 
         // 4. Construct New Sequence
         // Left part
-        let mut new_seq_vec = Vec::with_capacity(self.len()); // Approx capacity
-        new_seq_vec.extend_from_slice(&self.sequence.as_slice()[..start1]);
+        // Compute final length for capacity: recipient left + donor tract + recipient right
+            let final_len = recipient_start + (end2 - donor_start) + (self.len() - end1);
+        let mut new_seq_vec = Vec::with_capacity(final_len);
+        new_seq_vec.extend_from_slice(&self.sequence.as_slice()[..recipient_start]);
         // New Tract
-        new_seq_vec.extend_from_slice(&other.sequence.as_slice()[start2..end2]);
+        new_seq_vec.extend_from_slice(&other.sequence.as_slice()[donor_start..end2]);
         // Right part
         new_seq_vec.extend_from_slice(&self.sequence.as_slice()[end1..]);
 
@@ -1059,6 +1098,17 @@ mod tests {
         // Check that mutations were applied
         assert_eq!(chr.sequence().get(0), Some(Nucleotide::T));
         assert_eq!(chr.sequence().get(50), Some(Nucleotide::G));
+    }
+
+    #[test]
+    fn test_gene_conversion_different_chromosome_lengths() {
+        // Recipient length 4, donor length 6
+        let rec = Chromosome::uniform("r", Nucleotide::A, 1, 4, 1); // "AAAA"
+        let donor = Chromosome::uniform("d", Nucleotide::T, 1, 6, 1); // "TTTTTT"
+
+        // Replace rec[1..3] with donor[3..5] => "A" + "TT" + "A" = "ATTA"
+        let out = rec.gene_conversion(&donor, 1, 3, 2).unwrap();
+        assert_eq!(out.to_string(), "ATTA");
     }
 
     #[test]

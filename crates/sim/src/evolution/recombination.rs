@@ -19,9 +19,12 @@ pub enum RecombinationType {
     /// Crossover (recombination) at specific positions in both chromosomes
     Crossover { pos1: usize, pos2: usize },
     /// Gene conversion from start to end position
+    // `donor_start` is the position in the first chromosome passed to `sample_events`
+    // (source/donor). `recipient_start` is the position in the second chromosome passed
+    // to `sample_events` (target/recipient).
     GeneConversion {
-        start1: usize,
-        start2: usize,
+        donor_start: usize,
+        recipient_start: usize,
         length: usize,
     },
 }
@@ -322,6 +325,10 @@ impl RecombinationModel {
         events: &mut Vec<RecombinationType>,
     ) {
         // Find homologous position in seq2
+        // NOTE: `pos1` refers to a position in `seq1` (source/donor) and `pos2`
+        // refers to the mapped position in `seq2` (target/recipient). The
+        // `RecombinationType::GeneConversion` event stores `donor_start` and `recipient_start`
+        // corresponding to these positions respectively.
         let pos2 = self.find_homologous_site(seq1, pos1, seq2, rng);
 
         // Determine if crossover or gene conversion
@@ -338,9 +345,10 @@ impl RecombinationModel {
                 tract_length += 1;
             }
 
+            // Store gene conversion event with donor_start=pos1 and recipient_start=pos2
             events.push(RecombinationType::GeneConversion {
-                start1: pos1,
-                start2: pos2,
+                donor_start: pos1,
+                recipient_start: pos2,
                 length: tract_length,
             });
         }
@@ -438,7 +446,8 @@ impl RecombinationModel {
     /// A tuple of two new sequences (offspring1, offspring2).
     ///
     /// # Errors
-    /// Returns an error if the sequences have different lengths.
+    /// Returns an error if the provided positions are invalid for the given
+    /// sequences. Crossover does not require the sequences to be the same total length.
     pub fn crossover(
         &self,
         seq1: &crate::genome::Chromosome,
@@ -462,20 +471,22 @@ impl RecombinationModel {
     /// A new sequence with the converted tract.
     ///
     /// # Errors
-    /// Returns an error if sequences have different lengths or indices are invalid.
+    /// Returns an error if the provided indices are invalid for the given
+    /// chromosomes. Gene conversion does not require the chromosomes to be
+    /// the same total length.
     pub fn gene_conversion(
         &self,
         recipient: &crate::genome::Chromosome,
         donor: &crate::genome::Chromosome,
-        start1: usize,
-        start2: usize,
+        recipient_start: usize,
+        donor_start: usize,
         length: usize,
     ) -> Result<crate::genome::Chromosome, RecombinationError> {
         recipient
-            .gene_conversion_generalized(donor, start1, start2, length)
+            .gene_conversion(donor, recipient_start, donor_start, length)
             .map_err(|_| RecombinationError::InvalidRange {
-                start: start1,
-                end: start1 + length,
+                start: recipient_start,
+                end: recipient_start + length,
             }) // Simplified error mapping
     }
 }
@@ -625,12 +636,12 @@ mod tests {
         for event in events {
             match event {
                 RecombinationType::GeneConversion {
-                    start1,
-                    start2,
+                    donor_start,
+                    recipient_start,
                     length,
                 } => {
-                    assert!(start1 + length <= 10);
-                    assert!(start2 + length <= 10);
+                    assert!(donor_start + length <= 10);
+                    assert!(recipient_start + length <= 10);
                 }
                 _ => panic!("Expected gene conversion event"),
             }
@@ -824,25 +835,25 @@ mod tests {
         );
         assert_eq!(
             RecombinationType::GeneConversion {
-                start1: 1,
-                start2: 1,
+                donor_start: 1,
+                recipient_start: 1,
                 length: 5
             },
             RecombinationType::GeneConversion {
-                start1: 1,
-                start2: 1,
+                donor_start: 1,
+                recipient_start: 1,
                 length: 5
             }
         );
         assert_ne!(
             RecombinationType::GeneConversion {
-                start1: 1,
-                start2: 1,
+                donor_start: 1,
+                recipient_start: 1,
                 length: 5
             },
             RecombinationType::GeneConversion {
-                start1: 1,
-                start2: 2,
+                donor_start: 1,
+                recipient_start: 2,
                 length: 5
             }
         );
@@ -899,7 +910,7 @@ mod tests {
         for event in events {
             let pos = match event {
                 RecombinationType::Crossover { pos1, .. } => pos1,
-                RecombinationType::GeneConversion { start1, .. } => start1,
+                RecombinationType::GeneConversion { donor_start, .. } => donor_start,
                 RecombinationType::None => panic!("Should not have None in events list"),
             };
             assert!(pos >= last_pos);

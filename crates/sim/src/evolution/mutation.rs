@@ -243,8 +243,13 @@ impl SubstitutionModel {
 
     /// Mutate a sequence in place according to the substitution model.
     ///
-    /// Each base in the sequence has an independent chance of mutating.
+    /// Each base in the sequence is tested for mutation based on its total mutation rate.
+    /// If a mutation occurs, a target base is selected proportional to the substitution rates.
     /// This version uses bulk random number generation for better performance.
+    /// 
+    /// # Arguments
+    /// * `sequence` - The sequence to mutate (modified in place).
+    /// * `rng` - Random number generator.
     ///
     /// # Returns
     /// The number of mutations that occurred.
@@ -301,14 +306,18 @@ impl SubstitutionModel {
     ///
     /// This is mathematically equivalent to the standard approach but much faster
     /// for low mutation rates (typical in evolutionary simulations).
+    /// 
+    /// # Arguments
+    /// * `sequence` - The sequence to mutate (modified in place).
+    /// * `rng` - Random number generator.
+    /// 
+    /// # Returns
+    /// The number of mutations that occurred.
     ///
     /// # Performance
     /// - Low mutation rates: 5-10x faster
     /// - Medium mutation rates: 2-5x faster
     /// - High mutation rates: Similar or slightly slower
-    ///
-    /// # Returns
-    /// The number of mutations that occurred.
     #[inline]
     pub fn mutate_sequence_poisson<R: Rng + ?Sized>(
         &self,

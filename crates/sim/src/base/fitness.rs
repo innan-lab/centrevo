@@ -49,6 +49,13 @@ impl FitnessValue {
     /// Creates a new FitnessValue representing a non-negative weight.
     ///
     /// Values are in [0.0, +inf) and may act as weights for selection or scoring.
+    /// 
+    /// # Arguments
+    /// * `value` - The fitness value (must be finite and non-negative).
+    /// 
+    /// # Panics
+    /// * Panics if `value` is NaN or infinite.
+    /// * Panics if `value` is negative.
     pub fn new(value: f64) -> Self {
         // Panic on NaN or infinite values to maintain the invariant that FitnessValue contains only finite numeric values.
         assert!(value.is_finite(), "FitnessValue must be finite");
@@ -247,6 +254,13 @@ pub struct LogFitnessValue(f64);
 impl LogFitnessValue {
     /// Creates a new LogFitnessValue from a log-scale value.
     /// Since fitness is typically in [0.0, 1.0], log-scale values are typically in [-∞, 0.0].
+    /// 
+    /// # Arguments
+    /// * `log_value` - The natural logarithm of the fitness value.
+    /// 
+    /// # Panics
+    /// * Panics if `log_value` is NaN.
+    /// * Panics if `log_value` is positive infinity or non-finite (only negative infinity is allowed).
     pub fn new(log_value: f64) -> Self {
         // Logs must not be NaN. We allow negative infinity to represent zero
         // fitness, but disallow positive infinity or other non-finite values.

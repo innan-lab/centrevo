@@ -46,6 +46,14 @@ pub struct Chromosome {
 
 impl Chromosome {
     /// Create a new chromosome
+    /// 
+    /// # Arguments
+    /// * `id` - Chromosome identifier
+    /// * `sequence` - The nucleotide sequence
+    /// * `map` - The repeat map
+    /// 
+    /// # Returns
+    /// A new `Chromosome` instance
     pub fn new(id: impl Into<Arc<str>>, sequence: Sequence, map: RepeatMap) -> Self {
         Self {
             id: id.into(),

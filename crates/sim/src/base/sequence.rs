@@ -32,13 +32,7 @@ pub struct Sequence(Vec<Nucleotide>);
 impl Sequence {
     /// Create a new, empty `Sequence`.
     ///
-    /// Example:
-    ///
-    /// ```rust
-    /// # use centrevo_sim::base::{Sequence, Nucleotide};
-    /// let seq = Sequence::new();
-    /// assert_eq!(seq.len(), 0);
-    /// let seq: Sequence = "ACGT".parse().unwrap();
+    /// The sequence has zero length and no allocated capacity.
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -85,6 +79,10 @@ impl Sequence {
     ///
     /// Returns `OutOfBounds` if `index` is greater than or equal to the
     /// sequence length.
+    /// 
+    /// # Arguments
+    /// * `index` - The position in the sequence to set (0-based).
+    /// * `base` - The `Nucleotide` to set at the specified index.
     #[inline]
     pub fn set(&mut self, index: usize, base: Nucleotide) -> Result<(), OutOfBounds> {
         self.0

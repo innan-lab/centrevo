@@ -478,21 +478,10 @@ impl Chromosome {
         }
     }
 
-    /// Perform crossover with another chromosome at the given position.
-    /// Returns two new chromosomes.
-    pub fn crossover(&self, other: &Self, position: usize) -> Result<(Self, Self), String> {
-        // Legacy wrapper for backward compatibility if needed, or we can update it.
-        // But the plan says we update crossover to accept (pos1, pos2).
-        // Let's keep this one for now but mark it as deprecated or just update it to use same pos?
-        // Actually, the previous implementation assumed same length.
-        // We will replace this with the generalized version.
-        self.crossover_generalized(other, position, position)
-    }
-
-    /// Generalized crossover between two chromosomes at potentially different positions.
+    /// Perform crossover between two chromosomes at potentially different positions.
     ///
-    /// `pos1` is the break point in `self`.
-    /// `pos2` is the break point in `other`.
+    /// `pos1` is the break point in `self` and `pos2` is the break point in `other`.
+    /// Returns two new chromosomes as offspring.
     ///
     /// # Examples
     ///
@@ -501,13 +490,13 @@ impl Chromosome {
     /// # use centrevo_sim::base::Nucleotide;
     /// let a = Chromosome::uniform("a", Nucleotide::A, 1, 4, 1); // "AAAA"
     /// let b = Chromosome::uniform("b", Nucleotide::T, 1, 4, 1); // "TTTT"
-    /// let (a1, b1) = a.crossover_generalized(&b, 2, 1).unwrap();
+    /// let (a1, b1) = a.crossover(&b, 2, 1).unwrap();
     /// // a1 = a[..2] + b[1..] = "AA" + "TTT" = "AATTT"
     /// assert_eq!(a1.to_string(), "AATTT");
     /// // b1 = b[..1] + a[2..] = "T" + "AA" = "TAA"
     /// assert_eq!(b1.to_string(), "TAA");
     /// ```
-    pub fn crossover_generalized(
+    pub fn crossover(
         &self,
         other: &Self,
         pos1: usize,

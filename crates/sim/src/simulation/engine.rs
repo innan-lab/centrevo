@@ -531,7 +531,7 @@ impl Simulation {
                                     // But we have &mut references.
                                     // We can clone to pass to crossover (expensive?) or refactor crossover to take &mut?
                                     // The current crossover signature is:
-                                    // pub fn crossover(&self, other: &Self, position: usize) -> Result<(Self, Self), RecombinationError>
+                                    // pub fn crossover(&self, other: &Self, pos1: usize, pos2: usize) -> Result<(Self, Self), RecombinationError>
                                     // It takes &self and &other.
 
                                     let (new1, new2) = self

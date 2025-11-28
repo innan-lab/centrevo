@@ -446,7 +446,7 @@ impl RecombinationModel {
         pos1: usize,
         pos2: usize,
     ) -> Result<(crate::genome::Chromosome, crate::genome::Chromosome), RecombinationError> {
-        seq1.crossover_generalized(seq2, pos1, pos2).map_err(|_| {
+        seq1.crossover(seq2, pos1, pos2).map_err(|_| {
             RecombinationError::InvalidPosition {
                 position: pos1,
                 length: seq1.len(),

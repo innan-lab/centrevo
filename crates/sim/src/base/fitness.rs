@@ -426,7 +426,7 @@ mod tests {
     // }
 
     #[test]
-    #[should_panic(expected = "FitnessValue cannot be NaN")]
+    #[should_panic(expected = "FitnessValue must be finite")]
     fn test_new_nan_panics() {
         let nan_val = f64::NAN;
         let _nan_f = FitnessValue::new(nan_val);
@@ -477,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "FitnessValue cannot be NaN")]
+    #[should_panic(expected = "FitnessValue must be finite")]
     fn test_ln_and_exp_roundtrip_nan() {
         // Creating a FitnessValue from NaN should panic; therefore this test checks
         // that such construction triggers a panic as part of the new NaN handling.
@@ -688,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "FitnessValue cannot be NaN")]
+    #[should_panic(expected = "FitnessValue must be finite")]
     fn test_add_assign_with_nan() {
         // Constructing a FitnessValue with NaN should panic; add-assign tries to
         // create such a value (by converting from NaN) so it should panic at the

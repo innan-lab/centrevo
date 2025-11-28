@@ -56,7 +56,7 @@ pub struct BufferConfig {
     ///
     /// Rule of thumb for determining buffer size:
     /// - Small simulations (10-50 individuals): 5-10 snapshots
-    /// - Medium simulations (100-500 individuals): 10-20 snapshots  
+    /// - Medium simulations (100-500 individuals): 10-20 snapshots
     /// - Large simulations (1000+ individuals): 20-50 snapshots
     ///
     /// Buffer memory usage ≈ buffer_capacity × pop_size × chromosome_size × 2
@@ -381,11 +381,11 @@ async fn background_recorder_task(
         );
 
         -- Indices for fast queries
-        CREATE INDEX IF NOT EXISTS idx_pop_sim_gen 
+        CREATE INDEX IF NOT EXISTS idx_pop_sim_gen
             ON population_state(sim_id, generation);
-        CREATE INDEX IF NOT EXISTS idx_pop_individual 
+        CREATE INDEX IF NOT EXISTS idx_pop_individual
             ON population_state(individual_id);
-        CREATE INDEX IF NOT EXISTS idx_fitness_sim_gen 
+        CREATE INDEX IF NOT EXISTS idx_fitness_sim_gen
             ON fitness_history(sim_id, generation);
         CREATE INDEX IF NOT EXISTS idx_checkpoints_sim_gen
             ON checkpoints(sim_id, generation);",
@@ -528,8 +528,8 @@ fn write_compressed_snapshots(
     {
         let mut stmt = tx
             .prepare_cached(
-                "INSERT INTO population_state 
-                (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_seq, 
+                "INSERT INTO population_state
+                (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_seq,
                  haplotype2_chr_id, haplotype2_seq, fitness)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )
@@ -552,7 +552,7 @@ fn write_compressed_snapshots(
 
     // Insert fitness history
     tx.execute(
-        "INSERT OR REPLACE INTO fitness_history 
+        "INSERT OR REPLACE INTO fitness_history
         (sim_id, generation, mean_fitness, min_fitness, max_fitness, std_fitness)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
@@ -573,7 +573,7 @@ fn write_compressed_snapshots(
         .as_secs() as i64;
 
     tx.execute(
-        "INSERT OR REPLACE INTO checkpoints 
+        "INSERT OR REPLACE INTO checkpoints
         (sim_id, generation, rng_state, timestamp)
         VALUES (?1, ?2, ?3, ?4)",
         params![sim_id, generation as i64, rng_state, timestamp],
@@ -609,7 +609,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{i}"), chr_length);
-            ind.set_cached_fitness(FitnessValue::new_normalized(i as f64 / size as f64));
+            ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)

@@ -221,6 +221,14 @@ sim = (cv.SimulationBuilder()
 
 Centrevo supports various fitness functions for natural selection. By default, fitness is **neutral** (no selection), but you can specify selection pressures using the `FitnessConfig` builder.
 
+Note: `FitnessValue` objects (and Python-exposed weights) are linear non-negative floats. The previous `Normalized/Unnormalized` type-state pattern and helper normalization API has been removed — if you need normalized weights for probabilistic sampling, compute them manually, for example:
+
+```python
+weights = [2.0, 3.0, 4.0]
+total = sum(weights)
+normalized = [w / total for w in weights]
+```
+
 #### Available Fitness Functions
 
 **Neutral Fitness (default)**
@@ -355,38 +363,38 @@ sim.run()
 
 - **`Nucleotide`**: DNA base (A, C, G, T)
   - Static methods: `A()`, `C()`, `G()`, `T()`
-  
+
 - **`Alphabet`**: Collection of nucleotide characters
   - Static method: `dna()` - Creates standard DNA alphabet
-  
+
 - **`Chromosome`**: Chromosome with repeat structure
   - Static method: `uniform(id, base, length, ru_length, rus_per_hor)`
-  
+
 - **`Haplotype`**: Collection of chromosomes
   - Constructor: `Haplotype()`
   - Static method: `from_chromosomes(chromosomes)`
-  
+
 - **`Individual`**: Diploid individual
   - Constructor: `Individual(id, haplotype1, haplotype2)`
-  
+
 - **`Population`**: Collection of individuals
   - Constructor: `Population(id, individuals)`
   - Methods: `size()`, `generation()`
-  
+
 - **`RepeatStructure`**: Configuration for repeat structure
   - Constructor: `RepeatStructure(alphabet, init_base, ru_length, rus_per_hor, hors_per_chr, chrs_per_hap)`
   - Method: `chr_length()` - Get total chromosome length
-  
+
 - **`SimulationConfig`**: Simulation parameters
   - Constructor: `SimulationConfig(population_size, total_generations, seed)`
-  
+
 - **`RecordingStrategy`**: When to save snapshots
   - Static methods:
     - `every_n(n)` - Record every N generations
     - `specific(generations)` - Record specific generations
     - `all()` - Record all generations
     - `none()` - No recording
-  
+
 - **`Recorder`**: Save simulation state to database
   - Constructor: `Recorder(db_path, sim_id, strategy)`
   - Methods:
@@ -396,7 +404,7 @@ sim.run()
     - `record_checkpoint(simulation, generation)` - Save checkpoint for resume
     - `finalize_metadata()` - Finalize simulation metadata
     - `close()` - Close the recorder
-  
+
 - **`QueryBuilder`**: Query saved simulations
   - Constructor: `QueryBuilder(db_path)`
   - Methods:
@@ -479,7 +487,7 @@ sim.run()
 ### Export Functions (PyArrow Integration)
 
 - **`export_diversity_metrics(population, chromosome_idx)`**: Export diversity metrics as dict
-  - Returns: Dict with keys: `'nucleotide_diversity'`, `'tajimas_d'`, `'wattersons_theta'`, 
+  - Returns: Dict with keys: `'nucleotide_diversity'`, `'tajimas_d'`, `'wattersons_theta'`,
     `'haplotype_diversity'`, `'generation'`, `'population_size'`
   - Example: `metrics = centrevo.export_diversity_metrics(pop, 0)`
 
@@ -725,11 +733,11 @@ for rate in mutation_rates:
         .init_from_checkpoint("checkpoint.db", "initial", generation=1000)
         .mutation_rate(rate)
         .build())
-    
+
     sim.run()
     population = sim.population()
     pi = cv.nucleotide_diversity(population, 0)
-    
+
     results.append({
         'mutation_rate': rate,
         'nucleotide_diversity': pi
@@ -804,7 +812,7 @@ generations = query.get_recorded_generations("my_sim")
 for gen in generations:
     # Load population (implement your loading logic)
     population = load_population_from_db("my_sim", gen)
-    
+
     # Export metrics
     metrics = centrevo.export_diversity_metrics(population, 0)
     diversity_trajectory.append(metrics)
@@ -905,19 +913,19 @@ for sim_name in sims:
     print(f"\nAnalyzing: {sim_name}")
     print(f"  Population: {info['pop_size']}")
     print(f"  Generations: {info['num_generations']}")
-    
+
     # Get recorded generations
     gens = query.get_recorded_generations(sim_name)
-    
+
     # Load and analyze final generation
     if gens:
         final_gen = max(gens)
         pop = query.get_generation(sim_name, final_gen)
-        
+
         # Run analysis
         pi = centrevo.nucleotide_diversity(pop, 0)
         print(f"  Final π: {pi:.6f}")
-        
+
         # Export results
         fasta = centrevo.export_fasta(pop)
         with open(f"{sim_name}_final.fasta", "w") as f:
@@ -926,12 +934,12 @@ for sim_name in sims:
 # Get fitness trajectories
 for sim_name in sims:
     history = query.get_fitness_history(sim_name)
-    
+
     # Plot fitness over time
     import matplotlib.pyplot as plt
     generations = [h['generation'] for h in history]
     mean_fitness = [h['mean'] for h in history]
-    
+
     plt.plot(generations, mean_fitness, label=sim_name)
 
 plt.xlabel('Generation')

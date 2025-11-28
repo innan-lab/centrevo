@@ -11,7 +11,7 @@ use centrevo_sim::base::Nucleotide;
 use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 use centrevo_sim::simulation::{
     Population, RepeatStructure, SimulationConfig, Simulation,
-    MutationConfig, RecombinationConfig, FitnessConfig, FitnessConfigBuilder, 
+    MutationConfig, RecombinationConfig, FitnessConfig, FitnessConfigBuilder,
     BuilderEmpty, BuilderInitialized, SequenceInput, SimulationBuilder,
 };
 use centrevo_sim::storage::{QueryBuilder, Recorder, RecordingStrategy, SimulationSnapshot};
@@ -37,16 +37,16 @@ fn centrevo(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFitnessConfig>()?;
     m.add_class::<PyFitnessConfigBuilder>()?;
     m.add_class::<PySimulationBuilder>()?;
-    
+
     // Core functions
     m.add_function(wrap_pyfunction!(create_initial_population, m)?)?;
-    
+
     // Analysis functions
     super::analysis::register_analysis_functions(m)?;
-    
+
     // Export functions
     super::export::register_export_functions(m)?;
-    
+
     Ok(())
 }
 
@@ -67,7 +67,7 @@ impl PyNucleotide {
 
         let byte = base.as_bytes()[0];
         let inner = Nucleotide::from_ascii(byte)
-            .ok_or_else(|| PyValueError::new_err(format!("Invalid nucleotide: {}", base)))?;
+            .ok_or_else(|| PyValueError::new_err(format!("Invalid nucleotide: {base}")))?;
 
         Ok(Self { inner })
     }
@@ -79,7 +79,7 @@ impl PyNucleotide {
 
     /// Get Python representation.
     fn __repr__(&self) -> String {
-        format!("Nucleotide('{}')", self.inner.to_char())
+        format!("Nucleotide('{c}')", c = self.inner.to_char())
     }
 
     #[staticmethod]
@@ -152,7 +152,7 @@ impl PyChromosome {
     }
 
     fn __repr__(&self) -> String {
-        format!("Chromosome(id='{}', length={})", self.inner.id(), self.inner.len())
+        format!("Chromosome(id='{id}', length={len})", id = self.inner.id(), len = self.inner.len())
     }
 }
 
@@ -202,7 +202,7 @@ impl PyHaplotype {
     }
 
     fn __repr__(&self) -> String {
-        format!("Haplotype({} chromosomes)", self.inner.len())
+        format!("Haplotype({len} chromosomes)", len = self.inner.len())
     }
 }
 
@@ -237,7 +237,7 @@ impl PyIndividual {
     }
 
     fn __repr__(&self) -> String {
-        format!("Individual(id='{}', cached_fitness={:?})", self.inner.id(), self.inner.cached_fitness())
+        format!("Individual(id='{id}', cached_fitness={cached:?})", id = self.inner.id(), cached = self.inner.cached_fitness())
     }
 }
 
@@ -280,10 +280,10 @@ impl PyPopulation {
 
     fn __repr__(&self) -> String {
         format!(
-            "Population(id='{}', size={}, generation={})",
-            self.inner.id(),
-            self.inner.size(),
-            self.inner.generation()
+            "Population(id='{id}', size={size}, generation={generation})",
+            id = self.inner.id(),
+            size = self.inner.size(),
+            generation = self.inner.generation()
         )
     }
 }
@@ -421,8 +421,8 @@ impl PyRecordingStrategy {
 
     fn __repr__(&self) -> String {
         match &self.inner {
-            RecordingStrategy::EveryN(n) => format!("RecordingStrategy.every_n({})", n),
-            RecordingStrategy::Specific(gens) => format!("RecordingStrategy.specific({:?})", gens),
+            RecordingStrategy::EveryN(n) => format!("RecordingStrategy.every_n({n})"),
+            RecordingStrategy::Specific(gens) => format!("RecordingStrategy.specific({gens:?})"),
             RecordingStrategy::All => "RecordingStrategy.all()".to_string(),
             RecordingStrategy::None => "RecordingStrategy.none()".to_string(),
         }
@@ -444,7 +444,7 @@ impl PyRecorder {
             sim_id,
             strategy.inner.clone(),
         )
-        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create recorder: {}", e)))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create recorder: {e}")))?;
 
         Ok(Self {
             inner: Some(recorder),
@@ -456,7 +456,7 @@ impl PyRecorder {
             .as_mut()
             .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
             .record_metadata(&config.inner)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record metadata: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record metadata: {e}")))?;
 
         Ok(())
     }
@@ -481,7 +481,7 @@ impl PyRecorder {
             .as_mut()
             .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
             .record_full_config(&snapshot)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record full config: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record full config: {e}")))?;
 
         Ok(())
     }
@@ -491,7 +491,7 @@ impl PyRecorder {
             .as_mut()
             .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
             .record_generation(&population.inner, generation)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record generation: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record generation: {e}")))?;
 
         Ok(())
     }
@@ -508,7 +508,7 @@ impl PyRecorder {
             .as_mut()
             .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
             .record_checkpoint(generation, &rng_state)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record checkpoint: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to record checkpoint: {e}")))?;
 
         Ok(())
     }
@@ -518,7 +518,7 @@ impl PyRecorder {
             .as_mut()
             .ok_or_else(|| PyRuntimeError::new_err("Recorder has been closed"))?
             .finalize_metadata()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to finalize metadata: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to finalize metadata: {e}")))?;
 
         Ok(())
     }
@@ -527,7 +527,7 @@ impl PyRecorder {
         if let Some(recorder) = self.inner.take() {
             recorder
                 .close()
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to close recorder: {}", e)))?;
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to close recorder: {e}")))?;
         }
         Ok(())
     }
@@ -552,7 +552,7 @@ impl PyQueryBuilder {
     #[new]
     fn new(db_path: String) -> PyResult<Self> {
         let query = QueryBuilder::new(PathBuf::from(db_path))
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to open database: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to open database: {e}")))?;
 
         Ok(Self { inner: Some(query) })
     }
@@ -563,7 +563,7 @@ impl PyQueryBuilder {
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("QueryBuilder has been closed"))?
             .list_simulations()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to list simulations: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to list simulations: {e}")))?;
 
         let list = PyList::new(py, simulations)?;
         Ok(list.into())
@@ -575,7 +575,7 @@ impl PyQueryBuilder {
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("QueryBuilder has been closed"))?
             .get_recorded_generations(&sim_id)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get generations: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get generations: {e}")))?;
 
         let list = PyList::new(py, generations)?;
         Ok(list.into())
@@ -587,7 +587,7 @@ impl PyQueryBuilder {
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("QueryBuilder has been closed"))?
             .get_simulation_info(&sim_id)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get simulation info: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get simulation info: {e}")))?;
 
         let dict = PyDict::new(py);
         dict.set_item("sim_id", info.sim_id)?;
@@ -608,7 +608,7 @@ impl PyQueryBuilder {
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("QueryBuilder has been closed"))?
             .get_generation(&sim_id, generation)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to load generation: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to load generation: {e}")))?;
 
         if snapshots.is_empty() {
             return Err(PyRuntimeError::new_err(format!(
@@ -618,7 +618,7 @@ impl PyQueryBuilder {
         }
 
         // Convert snapshots to individuals
-        
+
         let mut individuals = Vec::new();
 
         for snap in snapshots {
@@ -647,7 +647,7 @@ impl PyQueryBuilder {
         }
 
         Ok(PyPopulation {
-            inner: Population::new(format!("{}_gen{}", sim_id, generation), individuals),
+            inner: Population::new(format!("{sim_id}_gen{generation}"), individuals),
         })
     }
 
@@ -657,7 +657,7 @@ impl PyQueryBuilder {
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("QueryBuilder has been closed"))?
             .get_fitness_history(&sim_id)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get fitness history: {}", e)))?;
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get fitness history: {e}")))?;
 
         let mut records: Vec<Py<PyDict>> = Vec::new();
         for (generation, stats) in history {
@@ -677,7 +677,7 @@ impl PyQueryBuilder {
         if let Some(query) = self.inner.take() {
             query
                 .close()
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to close database: {}", e)))?;
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to close database: {e}")))?;
         }
         Ok(())
     }
@@ -739,7 +739,7 @@ impl PyMutationConfig {
     #[staticmethod]
     fn uniform(rate: f64) -> PyResult<Self> {
         let config = MutationConfig::uniform(rate)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create mutation config: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to create mutation config: {e}")))?;
         Ok(Self { inner: config })
     }
 
@@ -760,7 +760,7 @@ impl PyRecombinationConfig {
     #[staticmethod]
     fn standard(break_prob: f64, crossover_prob: f64, gc_extension_prob: f64) -> PyResult<Self> {
         let config = RecombinationConfig::standard(break_prob, crossover_prob, gc_extension_prob)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create recombination config: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to create recombination config: {e}")))?;
         Ok(Self { inner: config })
     }
 
@@ -788,21 +788,21 @@ impl PyFitnessConfig {
     #[staticmethod]
     fn with_gc_content(optimum: f64, concentration: f64) -> PyResult<PyFitnessConfigBuilder> {
         let builder = FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(optimum, concentration)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create GC content fitness: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to create GC content fitness: {e}")))?;
         Ok(PyFitnessConfigBuilder { inner: builder })
     }
 
     #[staticmethod]
     fn with_length(optimum: usize, std_dev: f64) -> PyResult<PyFitnessConfigBuilder> {
         let builder = FitnessConfigBuilder::<BuilderEmpty>::with_length(optimum, std_dev)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create length fitness: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to create length fitness: {e}")))?;
         Ok(PyFitnessConfigBuilder { inner: builder })
     }
 
     #[staticmethod]
     fn with_similarity(shape: f64) -> PyResult<PyFitnessConfigBuilder> {
         let builder = FitnessConfigBuilder::<BuilderEmpty>::with_similarity(shape)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create similarity fitness: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to create similarity fitness: {e}")))?;
         Ok(PyFitnessConfigBuilder { inner: builder })
     }
 
@@ -840,21 +840,21 @@ impl PyFitnessConfigBuilder {
     fn with_gc_content(&self, optimum: f64, concentration: f64) -> PyResult<Self> {
         let builder = self.inner.clone()
             .with_gc_content(optimum, concentration)
-            .map_err(|e| PyValueError::new_err(format!("Failed to add GC content fitness: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to add GC content fitness: {e}")))?;
         Ok(Self { inner: builder })
     }
 
     fn with_length(&self, optimum: usize, std_dev: f64) -> PyResult<Self> {
         let builder = self.inner.clone()
             .with_length(optimum, std_dev)
-            .map_err(|e| PyValueError::new_err(format!("Failed to add length fitness: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to add length fitness: {e}")))?;
         Ok(Self { inner: builder })
     }
 
     fn with_similarity(&self, shape: f64) -> PyResult<Self> {
         let builder = self.inner.clone()
             .with_similarity(shape)
-            .map_err(|e| PyValueError::new_err(format!("Failed to add similarity fitness: {}", e)))?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to add similarity fitness: {e}")))?;
         Ok(Self { inner: builder })
     }
 

@@ -1,7 +1,6 @@
 //! Centrevo CLI - Command-line interface for centromeric evolution simulations.
 
 use anyhow::{Context, Result};
-use centrevo_sim::base::fitness::Normalized;
 use centrevo_sim::base::{FitnessValue, Nucleotide};
 use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 use centrevo_sim::simulation::{
@@ -918,7 +917,7 @@ fn analyze_data(
 
         let mut ind = Individual::new(snap.individual_id, h1, h2);
         if let Some(f) = snap.fitness {
-            ind.set_cached_fitness(FitnessValue::<Normalized>::new_normalized(f));
+            ind.set_cached_fitness(FitnessValue::new(f));
         }
         individuals.push(ind);
     }

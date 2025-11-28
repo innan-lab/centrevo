@@ -33,7 +33,7 @@ recorder.record_metadata(&config)?;
 // Run simulation and record
 for generation in 0..1000 {
     // ... simulation step ...
-    
+
     recorder.record_if_needed(&population, generation)?;
 }
 

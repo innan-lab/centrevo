@@ -166,10 +166,10 @@ impl Chromosome {
     /// ```rust
     /// # use centrevo_sim::genome::Chromosome;
     /// let input = "AC-GT=AA-TT";
-    /// let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+    /// let chr = Chromosome::from_formatted_string("chr1", input, '=', '-').unwrap();
     /// assert_eq!(chr.to_string(), "ACGTAATT");
     /// ```
-    pub fn from_string_with_delimiters(
+    pub fn from_formatted_string(
         id: impl Into<Arc<str>>,
         sequence: &str,
         hor_delim: char,
@@ -370,13 +370,30 @@ impl Chromosome {
     /// ```rust
     /// # use centrevo_sim::genome::Chromosome;
     /// # use centrevo_sim::base::Nucleotide;
-    /// let chr = Chromosome::from_string_with_delimiters("chr1", "AC-GT=AA-TT", '=', '-').unwrap();
+    /// let chr = Chromosome::from_formatted_string("chr1", "AC-GT=AA-TT", '=', '-').unwrap();
     /// let slice = chr.get_ru_slice(1).unwrap();
     /// let s: String = slice.iter().map(|n| n.to_char()).collect();
     /// assert_eq!(s, "GT");
     /// ```
     pub fn get_ru_slice(&self, index: usize) -> Option<&[Nucleotide]> {
         let (start, end) = self.map.get_ru_interval(index)?;
+        Some(&self.sequence.as_slice()[start..end])
+    }
+
+    /// Get the sequence slice corresponding to the HOR at `index`.
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust
+    /// # use centrevo_sim::genome::Chromosome;
+    /// # use centrevo_sim::base::Nucleotide;
+    /// let chr = Chromosome::from_formatted_string("chr1", "AC-GT=AA-TT", '=', '-').unwrap();
+    /// let slice = chr.get_hor_slice(0).unwrap();
+    /// let s: String = slice.iter().map(|n| n.to_char()).collect();
+    /// assert_eq!(s, "ACGT");
+    /// ```
+    pub fn get_hor_slice(&self, index: usize) -> Option<&[Nucleotide]> {
+        let (start, end) = self.map.get_hor_interval(index)?;
         Some(&self.sequence.as_slice()[start..end])
     }
 
@@ -398,8 +415,8 @@ impl Chromosome {
     /// # use centrevo_sim::genome::Chromosome;
     /// # use centrevo_sim::base::Nucleotide;
     /// // small example with exact match
-    /// let a = Chromosome::from_string_with_delimiters("a", "ACGT=ACGT", '=', '-').unwrap();
-    /// let b = Chromosome::from_string_with_delimiters("b", "ACGT=ACGT", '=', '-').unwrap();
+    /// let a = Chromosome::from_formatted_string("a", "ACGT=ACGT", '=', '-').unwrap();
+    /// let b = Chromosome::from_formatted_string("b", "ACGT=ACGT", '=', '-').unwrap();
     /// // compare RU 0 of both (k=2 => "AC","CG","GT")
     /// assert_eq!(a.calculate_similarity(0, &b, 0, 2), 1.0);
     /// ```
@@ -535,7 +552,7 @@ impl Chromosome {
         ))
     }
 
-    
+
 
     /// Perform generalized gene conversion.
     ///
@@ -612,7 +629,7 @@ impl Chromosome {
         Ok(Self::new(self.id.clone(), new_seq, map_final))
     }
 
-    
+
 }
 
 impl std::fmt::Display for Chromosome {
@@ -1135,7 +1152,7 @@ mod tests {
     #[test]
     fn test_from_string_with_delimiters() {
         let input = "AC-GT=AA-TT";
-        let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+        let chr = Chromosome::from_formatted_string("chr1", input, '=', '-').unwrap();
 
         assert_eq!(chr.to_string(), "ACGTAATT");
         assert_eq!(chr.num_hors(), 2);
@@ -1146,7 +1163,7 @@ mod tests {
     fn test_from_string_with_delimiters_empty_parts() {
         // "AC-GT=" -> 1 HOR with 2 RUs. Trailing delimiter creates empty string which should be ignored.
         let input = "AC-GT=";
-        let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+        let chr = Chromosome::from_formatted_string("chr1", input, '=', '-').unwrap();
 
         assert_eq!(chr.to_string(), "ACGT");
         assert_eq!(chr.num_hors(), 1);
@@ -1216,7 +1233,7 @@ mod tests {
         // The implementation checks `if ru_str.is_empty() { continue; }`.
         // So empty RUs are skipped.
         let input = "AC--GT";
-        let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+        let chr = Chromosome::from_formatted_string("chr1", input, '=', '-').unwrap();
         assert_eq!(chr.to_string(), "ACGT");
         assert_eq!(chr.map().num_rus(), 2); // AC, GT. The empty one is skipped.
     }
@@ -1224,7 +1241,7 @@ mod tests {
     #[test]
     fn test_from_string_with_delimiters_empty_string() {
         let input = "";
-        let chr = Chromosome::from_string_with_delimiters("chr1", input, '=', '-').unwrap();
+        let chr = Chromosome::from_formatted_string("chr1", input, '=', '-').unwrap();
         assert!(chr.is_empty());
     }
 }

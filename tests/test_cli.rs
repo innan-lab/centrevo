@@ -143,7 +143,7 @@ fn test_init_default_values() {
 #[test]
 fn test_list_empty_database() {
     let db_path = test_db_path("list_empty");
-    
+
     // Create empty database by initializing then clearing
     centrevo_cmd()
         .args(["init", "-N", "temp", "-o", db_path.to_str().unwrap(), "-n", "1", "-g", "1"])

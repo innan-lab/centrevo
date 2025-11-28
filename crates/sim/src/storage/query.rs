@@ -42,7 +42,7 @@ impl QueryBuilder {
             .db
             .connection()
             .prepare(
-                "SELECT start_time, end_time, pop_size, num_generations, 
+                "SELECT start_time, end_time, pop_size, num_generations,
                        mutation_rate, recombination_rate, parameters_json
                 FROM simulations WHERE sim_id = ?1",
             )
@@ -76,9 +76,9 @@ impl QueryBuilder {
             .db
             .connection()
             .prepare(
-                "SELECT individual_id, haplotype1_chr_id, haplotype1_seq, 
+                "SELECT individual_id, haplotype1_chr_id, haplotype1_seq,
                        haplotype2_chr_id, haplotype2_seq, fitness
-                FROM population_state 
+                FROM population_state
                 WHERE sim_id = ?1 AND generation = ?2
                 ORDER BY individual_id",
             )
@@ -115,7 +115,7 @@ impl QueryBuilder {
             .connection()
             .prepare(
                 "SELECT generation, mean_fitness, min_fitness, max_fitness, std_fitness
-                FROM fitness_history 
+                FROM fitness_history
                 WHERE sim_id = ?1
                 ORDER BY generation",
             )
@@ -149,8 +149,8 @@ impl QueryBuilder {
             .db
             .connection()
             .prepare(
-                "SELECT DISTINCT generation FROM population_state 
-                WHERE sim_id = ?1 
+                "SELECT DISTINCT generation FROM population_state
+                WHERE sim_id = ?1
                 ORDER BY generation",
             )
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -179,7 +179,7 @@ impl QueryBuilder {
             .prepare(
                 "SELECT generation, individual_id, haplotype1_chr_id, haplotype1_seq,
                        haplotype2_chr_id, haplotype2_seq, fitness
-                FROM population_state 
+                FROM population_state
                 WHERE sim_id = ?1 AND individual_id = ?2
                 ORDER BY generation",
             )
@@ -220,7 +220,7 @@ impl QueryBuilder {
             .connection()
             .prepare(
                 "SELECT mean_fitness, min_fitness, max_fitness, std_fitness
-                FROM fitness_history 
+                FROM fitness_history
                 WHERE sim_id = ?1 AND generation = ?2",
             )
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -252,7 +252,7 @@ impl QueryBuilder {
             .prepare(
                 "SELECT individual_id, haplotype1_chr_id, haplotype1_seq,
                        haplotype2_chr_id, haplotype2_seq, fitness
-                FROM population_state 
+                FROM population_state
                 WHERE sim_id = ?1 AND generation = ?2 AND fitness >= ?3
                 ORDER BY fitness DESC",
             )
@@ -286,7 +286,7 @@ impl QueryBuilder {
             .connection()
             .prepare(
                 "SELECT generation, rng_state, timestamp
-                FROM checkpoints 
+                FROM checkpoints
                 WHERE sim_id = ?1
                 ORDER BY generation DESC
                 LIMIT 1",
@@ -318,7 +318,7 @@ impl QueryBuilder {
             .connection()
             .prepare(
                 "SELECT generation, rng_state, timestamp
-                FROM checkpoints 
+                FROM checkpoints
                 WHERE sim_id = ?1 AND generation = ?2",
             )
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -410,7 +410,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{i}"), chr_length);
-                ind.set_cached_fitness(FitnessValue::new_normalized(i as f64 / size as f64));
+                ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)

@@ -19,14 +19,14 @@ fn export_fasta_py(population: &PyPopulation) -> PyResult<String> {
 
     for (i, ind) in population.inner.individuals().iter().enumerate() {
         let id = ind.id();
-        
+
         // Export haplotype 1
         for (chr_idx, chr) in ind.haplotype1().chromosomes().iter().enumerate() {
             fasta.push_str(&format!(">{}|h1|chr{}\n", id, chr_idx));
             fasta.push_str(&chr.to_string());
             fasta.push('\n');
         }
-        
+
         // Export haplotype 2
         for (chr_idx, chr) in ind.haplotype2().chromosomes().iter().enumerate() {
             fasta.push_str(&format!(">{}|h2|chr{}\n", id, chr_idx));
@@ -52,12 +52,12 @@ fn export_csv_py(population: &PyPopulation) -> PyResult<String> {
 
     for ind in population.inner.individuals() {
         let id = ind.id();
-        
+
         // Export haplotype 1
         for (chr_idx, chr) in ind.haplotype1().chromosomes().iter().enumerate() {
             csv.push_str(&format!("{},h1,{},{}\n", id, chr_idx, chr.to_string()));
         }
-        
+
         // Export haplotype 2
         for (chr_idx, chr) in ind.haplotype2().chromosomes().iter().enumerate() {
             csv.push_str(&format!("{},h2,{},{}\n", id, chr_idx, chr.to_string()));
@@ -78,7 +78,7 @@ fn export_csv_py(population: &PyPopulation) -> PyResult<String> {
 #[pyo3(name = "export_json")]
 fn export_json_py(population: &PyPopulation) -> PyResult<String> {
     use serde_json::json;
-    
+
     let data: Vec<_> = population
         .inner
         .individuals()
@@ -90,14 +90,14 @@ fn export_json_py(population: &PyPopulation) -> PyResult<String> {
                 .iter()
                 .map(|chr| chr.to_string())
                 .collect();
-            
+
             let h2_seqs: Vec<String> = ind
                 .haplotype2()
                 .chromosomes()
                 .iter()
                 .map(|chr| chr.to_string())
                 .collect();
-            
+
             json!({
                 "id": ind.id(),
                 "fitness": ind.cached_fitness(),
@@ -122,7 +122,7 @@ fn export_json_py(population: &PyPopulation) -> PyResult<String> {
 #[pyo3(name = "export_metadata_json")]
 fn export_metadata_json_py(info_dict: &Bound<'_, PyDict>) -> PyResult<String> {
     use serde_json::json;
-    
+
     let obj = json!({
         "name": info_dict.get_item("sim_id")?.and_then(|v| v.extract::<String>().ok()),
         "population_size": info_dict.get_item("pop_size")?.and_then(|v| v.extract::<usize>().ok()),
@@ -143,6 +143,6 @@ pub fn register_export_functions(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(export_csv_py, m)?)?;
     m.add_function(wrap_pyfunction!(export_json_py, m)?)?;
     m.add_function(wrap_pyfunction!(export_metadata_json_py, m)?)?;
-    
+
     Ok(())
 }

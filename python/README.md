@@ -165,7 +165,7 @@ Export functions return Python dicts that can be converted to PyArrow:
 fn export_diversity_metrics(population: &Population, chr_idx: usize) -> PyResult<PyObject> {
     // Calculate metrics
     let metrics = calculate_diversity(&population, chr_idx);
-    
+
     // Return as Python dict
     Python::with_gil(|py| {
         let dict = PyDict::new(py);

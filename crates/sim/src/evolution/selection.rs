@@ -3,7 +3,7 @@
 //! This module provides fitness scoring capabilities including GC content,
 //! length-based, and sequence similarity fitness functions.
 
-use crate::base::{FitnessValue, Nucleotide, fitness};
+use crate::base::{FitnessValue, Nucleotide};
 use crate::errors::FitnessError;
 use crate::genome::{Chromosome, Individual};
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ pub trait HaplotypeFitness {
     ///
     /// Returns a non-negative fitness value. Higher values indicate better fitness.
     /// The default implementation returns neutral fitness of 1.0.
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue<fitness::Normalized> {
+    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
         FitnessValue::NEUTRAL_FITNESS
     }
 }
@@ -37,13 +37,13 @@ pub trait HaplotypeFitness {
 /// ```rust
 /// # use centrevo_sim::evolution::IndividualFitness;
 /// # use centrevo_sim::genome::Individual;
-/// use centrevo_sim::base::{FitnessValue, fitness::Normalized};
+/// use centrevo_sim::base::FitnessValue;
 ///
 /// struct MyFitness;
 /// impl centrevo_sim::evolution::HaplotypeFitness for MyFitness {}
 /// impl IndividualFitness for MyFitness {
-///     fn individual_fitness(&self, _ind: &Individual) -> FitnessValue<Normalized> {
-///         FitnessValue::new_normalized(0.42)
+///     fn individual_fitness(&self, _ind: &Individual) -> FitnessValue {
+///         FitnessValue::new(0.42)
 ///     }
 /// }
 /// ```
@@ -51,7 +51,7 @@ pub trait IndividualFitness: HaplotypeFitness {
     /// Calculate fitness score for a diploid individual.
     ///
     /// The default implementation multiplies the fitness scores of both haplotypes.
-    fn individual_fitness(&self, individual: &Individual) -> FitnessValue<fitness::Normalized> {
+    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
         let fit1 = self.haplotype_fitness(individual.haplotype1().get(0).unwrap());
         let fit2 = self.haplotype_fitness(individual.haplotype2().get(0).unwrap());
         fit1 * fit2
@@ -104,7 +104,7 @@ impl GCContentFitness {
 }
 
 impl HaplotypeFitness for GCContentFitness {
-    fn haplotype_fitness(&self, chromosome: &Chromosome) -> FitnessValue<fitness::Normalized> {
+    fn haplotype_fitness(&self, chromosome: &Chromosome) -> FitnessValue {
         let gc_content = chromosome.gc_content();
 
         // Handle edge cases with small epsilon to avoid log(0)
@@ -112,9 +112,8 @@ impl HaplotypeFitness for GCContentFitness {
 
         let (alpha, beta) = self.to_alpha_beta();
 
-        // Unnormalized Beta PDF bounded between 0 and 1, but area under curve is not 1
+        // Beta PDF returns values in [0, 1], but the area under the curve is not 1; use raw PDF values as weights
         FitnessValue::new(gc.powf(alpha - 1.0) * (1.0 - gc).powf(beta - 1.0))
-            .normalize(FitnessValue::NEUTRAL_FITNESS)
     }
 }
 
@@ -156,7 +155,7 @@ impl LengthFitness {
 }
 
 impl HaplotypeFitness for LengthFitness {
-    fn haplotype_fitness(&self, chromosome: &Chromosome) -> FitnessValue<fitness::Normalized> {
+    fn haplotype_fitness(&self, chromosome: &Chromosome) -> FitnessValue {
         if chromosome.is_empty() {
             return FitnessValue::LETHAL_FITNESS;
         }
@@ -167,7 +166,7 @@ impl HaplotypeFitness for LengthFitness {
 
         // Log-normal fitness
         let lognorm_fit = -(deviation * deviation) / (2.0 * self.std_dev * self.std_dev);
-        FitnessValue::new(lognorm_fit.exp()).normalize(FitnessValue::NEUTRAL_FITNESS)
+        FitnessValue::new(lognorm_fit.exp())
     }
 }
 
@@ -206,7 +205,7 @@ impl SequenceSimilarityFitness {
 }
 
 impl HaplotypeFitness for SequenceSimilarityFitness {
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue<fitness::Normalized> {
+    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
         panic!(
             "SequenceSimilarityFitness requires two haplotypes. Use individual_fitness instead."
         );
@@ -214,7 +213,7 @@ impl HaplotypeFitness for SequenceSimilarityFitness {
 }
 
 impl IndividualFitness for SequenceSimilarityFitness {
-    fn individual_fitness(&self, individual: &Individual) -> FitnessValue<fitness::Normalized> {
+    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
         let chr1 = individual.haplotype1().get(0).unwrap();
         let chr2 = individual.haplotype2().get(0).unwrap();
 
@@ -239,7 +238,7 @@ impl IndividualFitness for SequenceSimilarityFitness {
         let similarity = (max_len - total_diff) as f64 / max_len as f64;
 
         // Apply shape parameter
-        FitnessValue::new(similarity.powf(self.shape)).normalize(FitnessValue::NEUTRAL_FITNESS)
+        FitnessValue::new(similarity.powf(self.shape))
     }
 }
 
@@ -284,13 +283,13 @@ impl LengthSimilarityFitness {
 }
 
 impl HaplotypeFitness for LengthSimilarityFitness {
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue<fitness::Normalized> {
+    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
         panic!("LengthSimilarityFitness requires two haplotypes. Use individual_fitness instead.");
     }
 }
 
 impl IndividualFitness for LengthSimilarityFitness {
-    fn individual_fitness(&self, individual: &Individual) -> FitnessValue<fitness::Normalized> {
+    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
         let chr1 = individual.haplotype1().get(0).unwrap();
         let chr2 = individual.haplotype2().get(0).unwrap();
 
@@ -303,7 +302,7 @@ impl IndividualFitness for LengthSimilarityFitness {
             1.0 - Self::length_ratio(chr1.sequence().as_slice(), chr2.sequence().as_slice());
 
         // Apply shape parameter
-        FitnessValue::new(similarity.powf(self.shape)).normalize(FitnessValue::NEUTRAL_FITNESS)
+        FitnessValue::new(similarity.powf(self.shape))
     }
 }
 

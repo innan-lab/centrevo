@@ -14,7 +14,7 @@ This new struct will live in `src/genome/repeat_map.rs` (new file). It acts as a
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepeatMap {
     /// Start indices (offsets) of every Repeat Unit in the sequence.
-    /// 
+    ///
     /// - Must always start with 0.
     /// - Must always end with `sequence.len()`.
     /// - Length is `num_rus + 1`.
@@ -22,7 +22,7 @@ pub struct RepeatMap {
     ru_offsets: Vec<usize>,
 
     /// Indices into `ru_offsets` that mark the start of each Higher-Order Repeat.
-    /// 
+    ///
     /// - Must always start with 0.
     /// - Must always end with `num_rus` (i.e., `ru_offsets.len() - 1`).
     /// - Length is `num_hors + 1`.
@@ -38,10 +38,10 @@ The `Chromosome` struct in `src/genome/chromosome.rs` will be updated to replace
 pub struct Chromosome {
     id: Arc<str>,
     sequence: Sequence,
-    
+
     // REPLACED: ru_length: usize,
     // REPLACED: rus_per_hor: usize,
-    
+
     // NEW:
     map: RepeatMap,
 }
@@ -51,7 +51,7 @@ pub struct Chromosome {
 
 This structure fully supports the user's requirements:
 
-1.  **Non-uniform RU lengths**: 
+1.  **Non-uniform RU lengths**:
     *   Since `ru_offsets` stores explicit start points, the distance between `ru_offsets[i]` and `ru_offsets[i+1]` can be arbitrary.
     *   *Example*: `ru_offsets = [0, 100, 205, 300]` -> RU lengths are 100, 105, 95.
 

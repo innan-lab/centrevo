@@ -3,7 +3,7 @@
 //! This module provides structures and functions for managing populations
 //! of individuals during evolutionary simulations.
 
-use crate::base::{fitness, FitnessValue};
+use crate::base::FitnessValue;
 use crate::evolution::IndividualFitness;
 use crate::genome::Individual;
 use crate::simulation::FitnessConfig;
@@ -83,7 +83,7 @@ impl Population {
     }
 
     /// Compute fitness values for all individuals.
-    pub fn compute_fitness(&self, config: &FitnessConfig) -> Vec<FitnessValue<fitness::Normalized>> {
+    pub fn compute_fitness(&self, config: &FitnessConfig) -> Vec<FitnessValue> {
         self.individuals
             .par_iter()
             .map(|ind| {
@@ -116,14 +116,20 @@ impl Population {
     pub fn select_parents<R: Rng + ?Sized>(
         &self,
         rng: &mut R,
-        fitness_values: &[FitnessValue<fitness::Normalized>],
+        fitness_values: &[FitnessValue],
         n_pairs: usize,
     ) -> Vec<(usize, usize)> {
         // Create cumulative distribution for weighted sampling
-        let total_fitness: FitnessValue<fitness::Unnormalized> = fitness_values.iter()
-            .map(|&f| f.unnormalize()).sum();
+        let total_fitness: FitnessValue = fitness_values.iter().copied().sum();
         let total_fitness_val = *total_fitness;
-        if (total_fitness == FitnessValue::LETHAL_FITNESS) || ((total_fitness_val / fitness_values.len() as f64) == 1.0) {
+        // If either all fitnesses are lethal or all values are equal then selection
+        // is uniform; the 'all equal' case corresponds to no selection pressure.
+        let all_equal = if fitness_values.is_empty() {
+            true
+        } else {
+            fitness_values.iter().copied().all(|f| f == fitness_values[0])
+        };
+        if (total_fitness == FitnessValue::LETHAL_FITNESS) || all_equal {
             // Fitness values are all zeros/all ones - use uniform selection
             return (0..n_pairs)
                 .map(|_| {
@@ -299,8 +305,8 @@ mod tests {
         pop.update_fitness(&config);
 
         // After update, should be Some(1.0) (neutral)
-        assert_eq!(pop.get(0).unwrap().cached_fitness(), Some(FitnessValue::new_normalized(1.0)));
-        assert_eq!(pop.get(1).unwrap().cached_fitness(), Some(FitnessValue::new_normalized(1.0)));
+        assert_eq!(pop.get(0).unwrap().cached_fitness(), Some(FitnessValue::new(1.0)));
+        assert_eq!(pop.get(1).unwrap().cached_fitness(), Some(FitnessValue::new(1.0)));
     }
 
     #[test]
@@ -340,12 +346,12 @@ mod tests {
         ];
 
         let pop = Population::new("pop1", individuals);
-        let total_fitness = FitnessValue::new(6.0);
+        // total_fitness retained for readability but unused
         let fitness_values = vec![
-            FitnessValue::new(1.0).normalize(total_fitness),
-            FitnessValue::new(2.0).normalize(total_fitness),
-            FitnessValue::new(3.0).normalize(total_fitness),
-        ]; // Weighted selection
+            FitnessValue::new(1.0),
+            FitnessValue::new(2.0),
+            FitnessValue::new(3.0),
+        ]; // Weighted selection (raw weights 1,2,3)
 
         let mut rng = StdRng::seed_from_u64(42);
         let pairs = pop.select_parents(&mut rng, &fitness_values, 10);
@@ -357,6 +363,9 @@ mod tests {
             assert_ne!(p1, p2);
         }
     }
+
+    // Removed tests for infinite fitness values: +infinity cases are now
+    // disallowed at construction time via FitnessValue::new.
 
     #[test]
     fn test_population_set_individuals() {

@@ -8,7 +8,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use std::hint::black_box;
 
 fn create_test_individual(id: &str, length: usize) -> Individual {
-    
+
     let chr1 = Chromosome::uniform(
         format!("{id}_h1_chr1"),
         Nucleotide::A,
@@ -51,11 +51,11 @@ fn bench_sync_recording(c: &mut Criterion) {
         group.throughput(Throughput::Elements(pop_size as u64));
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}ind_1kb", pop_size)),
+            BenchmarkId::from_parameter(format!("{pop_size}ind_1kb")),
             &pop_size,
             |b, &size| {
                 b.iter(|| {
-                    let path = format!("/tmp/bench_sync_{}.sqlite", size);
+                    let path = format!("/tmp/bench_sync_{size}.sqlite");
                     let _ = std::fs::remove_file(&path);
 
                     let mut recorder = Recorder::new(&path, "bench_sim", RecordingStrategy::All)
@@ -88,12 +88,12 @@ fn bench_async_recording(c: &mut Criterion) {
         group.throughput(Throughput::Elements(pop_size as u64));
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}ind_1kb", pop_size)),
+            BenchmarkId::from_parameter(format!("{pop_size}ind_1kb")),
             &pop_size,
             |b, &size| {
                 b.iter(|| {
                     runtime.block_on(async {
-                        let path = format!("/tmp/bench_async_{}.sqlite", size);
+                        let path = format!("/tmp/bench_async_{size}.sqlite");
                         let _ = std::fs::remove_file(&path);
 
                         let config = BufferConfig::medium();
@@ -128,12 +128,12 @@ fn bench_compression_levels(c: &mut Criterion) {
 
     for level in [1, 3, 5, 10, 15, 20] {
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("level_{}", level)),
+            BenchmarkId::from_parameter(format!("level_{level}")),
             &level,
             |b, &lvl| {
                 b.iter(|| {
                     runtime.block_on(async {
-                        let path = format!("/tmp/bench_compress_{}.sqlite", lvl);
+                        let path = format!("/tmp/bench_compress_{lvl}.sqlite");
                         let _ = std::fs::remove_file(&path);
 
                         let config = BufferConfig {
@@ -173,12 +173,12 @@ fn bench_population_sizes(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(data_size as u64));
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}ind_{}kb", pop_size, chr_length / 1000)),
+            BenchmarkId::from_parameter(format!("{pop_size}ind_{kb}kb", kb = chr_length / 1000)),
             &(pop_size, chr_length),
             |b, &(size, length)| {
                 b.iter(|| {
                     runtime.block_on(async {
-                        let path = format!("/tmp/bench_size_{}_{}.sqlite", size, length);
+                        let path = format!("/tmp/bench_size_{size}_{length}.sqlite");
                         let _ = std::fs::remove_file(&path);
 
                         let config = if size < 100 {
@@ -219,12 +219,12 @@ fn bench_multiple_generations(c: &mut Criterion) {
         group.throughput(Throughput::Elements(num_gens as u64));
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}gens", num_gens)),
+            BenchmarkId::from_parameter(format!("{num_gens}gens")),
             &num_gens,
             |b, &gens| {
                 b.iter(|| {
                     runtime.block_on(async {
-                        let path = format!("/tmp/bench_multigens_{}.sqlite", gens);
+                        let path = format!("/tmp/bench_multigens_{gens}.sqlite");
                         let _ = std::fs::remove_file(&path);
 
                         let config = BufferConfig::medium();
@@ -267,7 +267,7 @@ fn bench_buffer_configurations(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(name), &config, |b, cfg| {
             b.iter(|| {
                 runtime.block_on(async {
-                    let path = format!("/tmp/bench_buffer_{}.sqlite", name);
+                    let path = format!("/tmp/bench_buffer_{name}.sqlite");
                     let _ = std::fs::remove_file(&path);
 
                     let recorder = AsyncRecorder::new(&path, "bench_sim", cfg.clone())
@@ -299,7 +299,7 @@ fn bench_snapshot_creation(c: &mut Criterion) {
         group.throughput(Throughput::Elements(pop_size as u64));
 
         group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}ind", pop_size)),
+            BenchmarkId::from_parameter(format!("{pop_size}ind")),
             &pop_size,
             |b, &size| {
                 let pop = create_test_population(size, 1000);
@@ -340,7 +340,7 @@ fn bench_compression_only(c: &mut Criterion) {
 
         for level in [1, 10, 20] {
             group.bench_with_input(
-                BenchmarkId::from_parameter(format!("{}ind_lvl{}", pop_size, level)),
+                BenchmarkId::from_parameter(format!("{pop_size}ind_lvl{level}")),
                 &level,
                 |b, &lvl| {
                     b.iter(|| {

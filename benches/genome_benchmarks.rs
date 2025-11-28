@@ -19,99 +19,99 @@ fn create_test_chromosome(size: usize) -> Chromosome {
 }
 
 fn create_test_individual(chr_size: usize, n_chromosomes: usize) -> Individual {
-    
+
     let mut hap1 = Haplotype::new();
     let mut hap2 = Haplotype::new();
-    
+
     for _ in 0..n_chromosomes {
         let chr1 = create_test_chromosome(chr_size);
         let chr2 = create_test_chromosome(chr_size);
         hap1.push(chr1);
         hap2.push(chr2);
     }
-    
+
     Individual::new("ind1", hap1, hap2)
 }
 
 /// Benchmark chromosome creation
 fn bench_chromosome_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("chromosome_creation");
-    
+
     let sizes = [1_000, 10_000, 100_000];
-    
+
     for size in sizes {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::new("create", size), &size, |b, &s| {
             b.iter(|| black_box(create_test_chromosome(s)));
         });
     }
-    
+
     group.finish();
 }
 
 /// Benchmark chromosome operations
 fn bench_chromosome_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("chromosome_operations");
-    
+
     let sizes = [1_000, 10_000, 100_000];
-    
+
     for size in sizes {
         let chr = create_test_chromosome(size);
-        
+
         group.throughput(Throughput::Elements(size as u64));
-        
+
         group.bench_with_input(BenchmarkId::new("clone", size), &chr, |b, c| {
             b.iter(|| black_box(c.clone()));
         });
-        
+
         group.bench_with_input(BenchmarkId::new("gc_content", size), &chr, |b, c| {
             b.iter(|| black_box(c.gc_content()));
         });
-        
+
         group.bench_with_input(BenchmarkId::new("to_string", size), &chr, |b, c| {
             b.iter(|| black_box(c.to_string()));
         });
-        
+
         group.bench_with_input(BenchmarkId::new("to_formatted_string", size), &chr, |b, c| {
             b.iter(|| black_box(c.to_formatted_string('|', ' ')));
         });
-        
+
         group.bench_with_input(BenchmarkId::new("to_shared", size), &chr, |b, c| {
             b.iter(|| black_box(c.to_shared()));
         });
     }
-    
+
     group.finish();
 }
 
 /// Benchmark haplotype operations
 fn bench_haplotype_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("haplotype_operations");
-    
+
     let chr_sizes = [1_000, 10_000];
     let n_chromosomes_list = [1, 10, 50];
-    
+
     for chr_size in chr_sizes {
         for n_chromosomes in n_chromosomes_list {
             let mut hap = Haplotype::new();
             for _ in 0..n_chromosomes {
                 hap.push(create_test_chromosome(chr_size));
             }
-            
-            let label = format!("{}chr_x_{}", n_chromosomes, chr_size);
-            
+
+            let label = format!("{n_chromosomes}chr_x_{chr_size}");
+
             group.bench_with_input(
                 BenchmarkId::new("clone", &label),
                 &hap,
                 |b, h| b.iter(|| black_box(h.clone()))
             );
-            
+
             group.bench_with_input(
                 BenchmarkId::new("total_length", &label),
                 &hap,
                 |b, h| b.iter(|| black_box(h.total_length()))
             );
-            
+
             group.bench_with_input(
                 BenchmarkId::new("iterate", &label),
                 &hap,
@@ -127,7 +127,7 @@ fn bench_haplotype_operations(c: &mut Criterion) {
             );
         }
     }
-    
+
     group.finish();
 }
 
@@ -136,18 +136,18 @@ fn bench_individual_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("individual_operations");
     let chr_sizes = [1_000, 10_000];
     let n_chromosomes_list = [1, 10];
-    
+
     for chr_size in chr_sizes {
         for n_chromosomes in n_chromosomes_list {
             let ind = create_test_individual(chr_size, n_chromosomes);
-            let label = format!("{}chr_x_{}", n_chromosomes, chr_size);
-            
+            let label = format!("{n_chromosomes}chr_x_{chr_size}");
+
             group.bench_with_input(
                 BenchmarkId::new("clone", &label),
                 &ind,
                 |b, i| b.iter(|| black_box(i.clone()))
             );
-            
+
             group.bench_with_input(
                 BenchmarkId::new("access_haplotypes", &label),
                 &ind,
@@ -160,14 +160,14 @@ fn bench_individual_operations(c: &mut Criterion) {
             );
         }
     }
-    
+
     group.finish();
 }
 
 /// Benchmark memory patterns for populations
 fn bench_population_memory(c: &mut Criterion) {
     let mut group = c.benchmark_group("population_memory");
-    
+
     group.bench_function("create_100_individuals", |b| {
         b.iter(|| {
             let mut population = Vec::with_capacity(100);
@@ -178,19 +178,19 @@ fn bench_population_memory(c: &mut Criterion) {
             black_box(population)
         });
     });
-    
+
     group.bench_function("clone_100_individuals", |b| {
         let mut population = Vec::with_capacity(100);
         for _ in 0..100 {
             population.push(create_test_individual(10_000, 1));
         }
-        
+
         b.iter(|| {
             let cloned: Vec<_> = population.iter().map(|ind| ind.clone()).collect();
             black_box(cloned)
         });
     });
-    
+
     group.finish();
 }
 

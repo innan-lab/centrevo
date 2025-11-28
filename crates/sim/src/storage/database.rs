@@ -89,11 +89,11 @@ impl Database {
                 );
 
                 -- Indices for fast queries
-                CREATE INDEX IF NOT EXISTS idx_pop_sim_gen 
+                CREATE INDEX IF NOT EXISTS idx_pop_sim_gen
                     ON population_state(sim_id, generation);
-                CREATE INDEX IF NOT EXISTS idx_pop_individual 
+                CREATE INDEX IF NOT EXISTS idx_pop_individual
                     ON population_state(individual_id);
-                CREATE INDEX IF NOT EXISTS idx_fitness_sim_gen 
+                CREATE INDEX IF NOT EXISTS idx_fitness_sim_gen
                     ON fitness_history(sim_id, generation);
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_sim_gen
                     ON checkpoints(sim_id, generation);",
@@ -129,7 +129,7 @@ impl Database {
     pub fn close(self) -> Result<(), DatabaseError> {
         // Checkpoint and truncate WAL
         if let Err(e) = self.conn.execute_batch(
-            "PRAGMA wal_checkpoint(TRUNCATE); 
+            "PRAGMA wal_checkpoint(TRUNCATE);
              PRAGMA journal_mode = DELETE;"
         ) {
             eprintln!("Warning: failed to checkpoint/truncate WAL: {e}");

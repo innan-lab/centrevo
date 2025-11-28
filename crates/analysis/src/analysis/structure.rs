@@ -1,27 +1,27 @@
 //! Population structure analysis
-//! 
+//!
 //! Methods for detecting and quantifying population differentiation.
 
 use centrevo_sim::simulation::Population;
 use nalgebra as na;
 
 /// Calculate FST between two subpopulations
-/// 
+///
 /// Uses Weir & Cockerham's estimator.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `pop1` - First population
 /// * `pop2` - Second population
 /// * `chromosome_idx` - Chromosome index
 /// * `haplotype_idx` - Haplotype index
-/// 
+///
 /// # Returns
-/// 
+///
 /// FST value (0.0 to 1.0)
-/// 
+///
 /// # References
-/// 
+///
 /// Weir, B. S., & Cockerham, C. C. (1984). Estimating F-statistics for the
 /// analysis of population structure. Evolution, 38(6), 1358-1370.
 pub fn fst(
@@ -35,18 +35,18 @@ pub fn fst(
 }
 
 /// Perform PCA on population genetic data
-/// 
+///
 /// Returns principal components and explained variance.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `population` - The population to analyze
 /// * `chromosome_idx` - Chromosome index
 /// * `haplotype_idx` - Haplotype index
 /// * `n_components` - Number of principal components to return
-/// 
+///
 /// # Returns
-/// 
+///
 /// Tuple of (PC matrix, explained variance vector)
 pub fn pca(
     _population: &Population,

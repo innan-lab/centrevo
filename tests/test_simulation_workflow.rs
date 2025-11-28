@@ -131,7 +131,6 @@ fn test_simulation_with_length_selection() {
     for ind in sim.population().individuals() {
         let f = ind.cached_fitness().expect("Fitness should be calculated");
         assert!(f >= 0.0, "Fitness should be non-negative");
-        assert!(f <= 1.0, "Fitness should be normalized");
     }
 }
 

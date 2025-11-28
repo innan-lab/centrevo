@@ -125,7 +125,7 @@ fn linkage_disequilibrium_py(
         chromosome_idx,
         haplotype_idx,
     );
-    
+
     match ld_stats {
         Some(stats) => {
             let dict = PyDict::new(py);
@@ -166,14 +166,14 @@ fn ld_decay_py(
         max_distance,
         bin_size,
     );
-    
+
     // Separate distances and r_squared values
     let (distances, r_squared_values): (Vec<usize>, Vec<f64>) = decay.into_iter().unzip();
-    
+
     let dict = PyDict::new(py);
     dict.set_item("distances", PyList::new(py, &distances)?)?;
     dict.set_item("r_squared_values", PyList::new(py, &r_squared_values)?)?;
-    
+
     Ok(dict.into())
 }
 
@@ -203,10 +203,10 @@ fn haplotype_blocks_py(
         haplotype_idx,
         threshold,
     );
-    
+
     // Convert Vec<(usize, usize)> to Python list of tuples
     let py_blocks: Vec<(usize, usize)> = blocks;
-    
+
     Ok(PyList::new(py, py_blocks)?.into())
 }
 
@@ -245,13 +245,13 @@ fn distance_matrix_py(
     chromosome_idx: usize,
 ) -> PyResult<Py<PyList>> {
     let matrix = distance_matrix(&population.inner, chromosome_idx);
-    
+
     // Convert Vec<Vec<f64>> to Python list of lists
     let py_matrix: Vec<Py<PyList>> = matrix
         .iter()
         .map(|row| PyList::new(py, row).unwrap().into())
         .collect();
-    
+
     Ok(PyList::new(py, py_matrix)?.into())
 }
 
@@ -315,12 +315,12 @@ fn nucleotide_composition_py(
         haplotype_idx,
         chromosome_idx,
     );
-    
+
     let dict = PyDict::new(py);
     for (nuc, freq) in composition {
         dict.set_item(format!("{:?}", nuc), freq)?;
     }
-    
+
     Ok(dict.into())
 }
 
@@ -366,7 +366,7 @@ fn export_diversity_metrics_py(
     chromosome_idx: usize,
 ) -> PyResult<Py<PyDict>> {
     let dict = PyDict::new(py);
-    
+
     dict.set_item(
         "nucleotide_diversity",
         nucleotide_diversity(&population.inner, chromosome_idx),
@@ -385,7 +385,7 @@ fn export_diversity_metrics_py(
     )?;
     dict.set_item("generation", population.inner.generation())?;
     dict.set_item("population_size", population.inner.size())?;
-    
+
     Ok(dict.into())
 }
 
@@ -409,7 +409,7 @@ fn export_distance_matrix_py(
 ) -> PyResult<Py<PyList>> {
     let matrix = distance_matrix(&population.inner, chromosome_idx);
     let n = matrix.len();
-    
+
     let mut records: Vec<Py<PyDict>> = Vec::new();
     for i in 0..n {
         for j in 0..n {
@@ -420,7 +420,7 @@ fn export_distance_matrix_py(
             records.push(dict.into());
         }
     }
-    
+
     Ok(PyList::new(py, records)?.into())
 }
 
@@ -452,7 +452,7 @@ fn export_ld_decay_py(
         max_distance,
         bin_size,
     );
-    
+
     let mut records: Vec<Py<PyDict>> = Vec::new();
     for (dist, r2) in decay {
         let dict = PyDict::new(py);
@@ -460,7 +460,7 @@ fn export_ld_decay_py(
         dict.set_item("r_squared", r2)?;
         records.push(dict.into());
     }
-    
+
     Ok(PyList::new(py, records)?.into())
 }
 
@@ -471,27 +471,27 @@ pub fn register_analysis_functions(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tajimas_d_py, m)?)?;
     m.add_function(wrap_pyfunction!(wattersons_theta_py, m)?)?;
     m.add_function(wrap_pyfunction!(haplotype_diversity_py, m)?)?;
-    
+
     // Linkage analysis
     m.add_function(wrap_pyfunction!(linkage_disequilibrium_py, m)?)?;
     m.add_function(wrap_pyfunction!(ld_decay_py, m)?)?;
     m.add_function(wrap_pyfunction!(haplotype_blocks_py, m)?)?;
-    
+
     // Distance analysis
     m.add_function(wrap_pyfunction!(pairwise_distances_py, m)?)?;
     m.add_function(wrap_pyfunction!(distance_matrix_py, m)?)?;
-    
+
     // Composition analysis
     m.add_function(wrap_pyfunction!(gc_content_py, m)?)?;
     m.add_function(wrap_pyfunction!(nucleotide_composition_py, m)?)?;
-    
+
     // Polymorphism analysis
     m.add_function(wrap_pyfunction!(count_segregating_sites_py, m)?)?;
-    
+
     // Export functions for PyArrow
     m.add_function(wrap_pyfunction!(export_diversity_metrics_py, m)?)?;
     m.add_function(wrap_pyfunction!(export_distance_matrix_py, m)?)?;
     m.add_function(wrap_pyfunction!(export_ld_decay_py, m)?)?;
-    
+
     Ok(())
 }

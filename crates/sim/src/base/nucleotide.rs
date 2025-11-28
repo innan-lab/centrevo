@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(Nucleotide::try_from('A'), Ok(Nucleotide::A));
         assert_eq!(Nucleotide::try_from('g'), Ok(Nucleotide::G));
         assert!(Nucleotide::try_from('N').is_err());
-        
+
         let err = Nucleotide::try_from('X').unwrap_err();
         assert_eq!(err.0, b'X');
     }
@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(Nucleotide::try_from(b'A'), Ok(Nucleotide::A));
         assert_eq!(Nucleotide::try_from(b'c'), Ok(Nucleotide::C));
         assert!(Nucleotide::try_from(b'N').is_err());
-        
+
         let err = Nucleotide::try_from(b'X').unwrap_err();
         assert_eq!(err.0, b'X');
     }
@@ -317,7 +317,7 @@ mod tests {
     fn test_nucleotide_into_u8() {
         let idx: u8 = Nucleotide::A.into();
         assert_eq!(idx, 0);
-        
+
         let idx: u8 = Nucleotide::T.into();
         assert_eq!(idx, 3);
     }
@@ -326,7 +326,7 @@ mod tests {
     fn test_nucleotide_into_char() {
         let c: char = Nucleotide::A.into();
         assert_eq!(c, 'A');
-        
+
         let c: char = Nucleotide::G.into();
         assert_eq!(c, 'G');
     }
@@ -344,7 +344,7 @@ mod tests {
     fn test_nucleotide_equality() {
         assert_eq!(Nucleotide::A, Nucleotide::A);
         assert_ne!(Nucleotide::A, Nucleotide::C);
-        
+
         // Test copy semantics
         let n1 = Nucleotide::G;
         let n2 = n1;
@@ -354,12 +354,12 @@ mod tests {
     #[test]
     fn test_nucleotide_hash() {
         use std::collections::HashSet;
-        
+
         let mut set = HashSet::new();
         set.insert(Nucleotide::A);
         set.insert(Nucleotide::C);
         set.insert(Nucleotide::A); // Duplicate
-        
+
         assert_eq!(set.len(), 2);
         assert!(set.contains(&Nucleotide::A));
         assert!(set.contains(&Nucleotide::C));

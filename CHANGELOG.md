@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (Breaking)
+- Removed the `Unnormalized` / `Normalized` type-state pattern for `FitnessValue` and `LogFitnessValue`. Both are now single-type wrappers over `f64`:
+  - Use `FitnessValue::new(f64)` and `LogFitnessValue::new(f64)` for construction.
+  - `FitnessValue::LETHAL_FITNESS` = `0.0`, `FitnessValue::NEUTRAL_FITNESS` = `1.0`.
+  - `LogFitnessValue::LETHAL_FITNESS` = `-∞` (negative infinity), `LogFitnessValue::NEUTRAL_FITNESS` = `0.0`.
+  - The `normalize()` / `new_normalized()` / `unnormalize()` helper APIs have been removed. If you need to normalize by the sum of weights, do that manually (e.g., divide by the total or use log-space subtraction for `LogFitnessValue`).
+  - Arithmetic: multiplication remains implemented via log-space addition to preserve numerical stability; addition is linear and the result may exceed `1.0`.
+
+  Migration: update any usages such as `FitnessValue::<Normalized>::new_normalized(f)` to `FitnessValue::new(f)`, and replace `.normalize()` invocations with explicit `value / total` or log-space subtraction as appropriate.
+
+
 ### Planned (Phase 3 - Next Release)
 - CI/CD pipeline with automated testing and code coverage tracking
 - Plotting utilities module with matplotlib integration

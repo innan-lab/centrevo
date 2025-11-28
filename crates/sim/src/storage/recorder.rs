@@ -160,7 +160,7 @@ impl IndividualSnapshot {
         // Create individual
         let mut individual = Individual::new(self.individual_id.as_str(), hap1, hap2);
         if let Some(f) = self.fitness {
-            individual.set_cached_fitness(FitnessValue::new_normalized(f));
+            individual.set_cached_fitness(FitnessValue::new(f));
         }
 
         Ok(individual)
@@ -274,7 +274,7 @@ impl Recorder {
         self.db
             .connection()
             .execute(
-                "INSERT OR REPLACE INTO simulations 
+                "INSERT OR REPLACE INTO simulations
                 (sim_id, start_time, pop_size, num_generations, mutation_rate, recombination_rate, parameters_json)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
@@ -308,7 +308,7 @@ impl Recorder {
         self.db
             .connection()
             .execute(
-                "INSERT OR REPLACE INTO simulations 
+                "INSERT OR REPLACE INTO simulations
                 (sim_id, start_time, pop_size, num_generations, mutation_rate, recombination_rate, parameters_json, config_json)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
@@ -388,8 +388,8 @@ impl Recorder {
         {
             let mut stmt = tx
                 .prepare_cached(
-                    "INSERT INTO population_state 
-                    (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_seq, 
+                    "INSERT INTO population_state
+                    (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_seq,
                      haplotype2_chr_id, haplotype2_seq, fitness)
                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 )
@@ -412,7 +412,7 @@ impl Recorder {
 
         // Insert fitness history
         tx.execute(
-            "INSERT OR REPLACE INTO fitness_history 
+            "INSERT OR REPLACE INTO fitness_history
             (sim_id, generation, mean_fitness, min_fitness, max_fitness, std_fitness)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -448,7 +448,7 @@ impl Recorder {
         self.db
             .connection()
             .execute(
-                "INSERT OR REPLACE INTO checkpoints 
+                "INSERT OR REPLACE INTO checkpoints
                 (sim_id, generation, rng_state, timestamp)
                 VALUES (?1, ?2, ?3, ?4)",
                 params![
@@ -496,7 +496,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{i}"), chr_length);
-            ind.set_cached_fitness(FitnessValue::new_normalized(i as f64 / size as f64));
+            ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)

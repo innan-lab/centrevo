@@ -145,6 +145,8 @@ impl Sequence {
 
     /// Convert this `Sequence` into a `SharedSequence` without copying data.
     ///
+    /// Use this when you need a shared, read-only view but still keep the
+    /// original mutable `Sequence`.
     /// This consumes the `Sequence` and reuses the owned buffer in the shared view.
     ///
     /// # Examples
@@ -156,16 +158,9 @@ impl Sequence {
     /// let shared = seq.into_shared();
     /// assert_eq!(shared.to_string(), "ACGT");
     /// ```
-
-    /// Create an immutable `SharedSequence` by cloning the internal data.
-    ///
-    /// Use this when you need a shared, read-only view but still keep the
-    /// original mutable `Sequence`.
     pub fn to_shared(&self) -> SharedSequence {
         SharedSequence(self.0.clone().into())
     }
-
-    
 }
 
 impl Default for Sequence {
@@ -254,6 +249,7 @@ impl SharedSequence {
     ///
     /// This clones the underlying data so the returned `Sequence` can be mutated
     /// independently of the `SharedSequence`.
+    /// This is an alias for `to_mutable`.
     ///
     /// # Examples
     ///
@@ -266,10 +262,6 @@ impl SharedSequence {
     /// assert_eq!(owned.to_string(), "ATGT");
     /// assert_eq!(shared.to_string(), "ACGT");
     /// ```
-
-    /// Clone the shared data into a new `Sequence` struct.
-    /// 
-    /// This is an alias for `to_mutable`.
     pub fn to_sequence(&self) -> Sequence {
         self.to_mutable()
     }

@@ -202,8 +202,9 @@ impl Simulation {
         // Verify sim_id matches
         if checkpoint.sim_id != sim_id {
             return Err(format!(
-                "Checkpoint sim_id mismatch: expected '{}', found '{}'",
-                sim_id, checkpoint.sim_id
+                "Checkpoint sim_id mismatch: expected '{expected}', found '{found}'",
+                expected = sim_id,
+                found = checkpoint.sim_id
             ));
         }
 
@@ -219,8 +220,8 @@ impl Simulation {
 
         if snapshots.is_empty() {
             return Err(format!(
-                "No population data found for generation {}",
-                checkpoint.generation
+                "No population data found for generation {generation}",
+                generation = checkpoint.generation
             ));
         }
 
@@ -234,14 +235,14 @@ impl Simulation {
         // Validate population size matches configuration
         if individuals.len() != snapshot.config.population_size {
             return Err(format!(
-                "Population size mismatch: config expects {}, checkpoint has {}",
-                snapshot.config.population_size,
-                individuals.len()
+                "Population size mismatch: config expects {expected}, checkpoint has {actual}",
+                expected = snapshot.config.population_size,
+                actual = individuals.len()
             ));
         }
 
         // Create population with correct generation number
-        let mut population = Population::new(format!("pop_{}", checkpoint.generation), individuals);
+        let mut population = Population::new(format!("pop_{gen}", gen = checkpoint.generation), individuals);
 
         // Set generation counter to checkpoint generation
         for _ in 0..checkpoint.generation {

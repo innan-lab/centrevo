@@ -1,20 +1,20 @@
 //! Temporal analysis
-//! 
+//!
 //! Functions for tracking changes over time in simulations.
 
 use centrevo_sim::simulation::Population;
 
 /// Track allele frequency at a specific position over time
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `populations` - Vector of populations at different time points
 /// * `position` - Position to track
 /// * `chromosome_idx` - Chromosome index
 /// * `haplotype_idx` - Haplotype index
-/// 
+///
 /// # Returns
-/// 
+///
 /// Vector of allele frequencies over time
 pub fn allele_trajectory(
     _populations: &[Population],
@@ -27,13 +27,13 @@ pub fn allele_trajectory(
 }
 
 /// Calculate fitness dynamics over time
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `populations` - Vector of populations at different time points
-/// 
+///
 /// # Returns
-/// 
+///
 /// Vector of (mean_fitness, std_fitness) tuples
 pub fn fitness_dynamics(_populations: &[Population]) -> Vec<(f64, f64)> {
     // TODO: Implement in Week 3

@@ -393,10 +393,10 @@ mod tests {
         let ru_len = if total_len > 0 { total_len } else { 10 };
         let rus_per_hor = 1;
         let num_hors = if total_len > 0 { 1 } else { 0 };
-        
+
         let map = RepeatMap::uniform(ru_len, rus_per_hor, num_hors);
 
-        let chr = Chromosome::new(format!("chr_{}", id), seq, map);
+        let chr = Chromosome::new(format!("chr_{id}"), seq, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr);
         let hap2 = Haplotype::new();

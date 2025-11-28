@@ -159,7 +159,7 @@ Example:
 fn bench_my_operation(c: &mut Criterion) {
     let mut group = c.benchmark_group("my_operation");
     let sizes = [100, 1_000, 10_000];
-    
+
     for size in sizes {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(
@@ -170,7 +170,7 @@ fn bench_my_operation(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 ```

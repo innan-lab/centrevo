@@ -14,8 +14,8 @@ fn create_test_simulation(
     chr_length: usize,
     generations: usize,
 ) -> Simulation {
-    
-    
+
+
     let structure = RepeatStructure::new(
         Nucleotide::A,
         171,
@@ -23,12 +23,12 @@ fn create_test_simulation(
         chr_length / (171 * 12),  // Calculate HORs to get desired length
         1,
     );
-    
+
     let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let config = SimulationConfig::new(pop_size, generations, Some(42));
-    
+
     Simulation::new(structure, mutation, recombination, fitness, config).unwrap()
 }
 
@@ -37,8 +37,8 @@ fn create_simulation_with_fitness(
     chr_length: usize,
     generations: usize,
 ) -> Simulation {
-    
-    
+
+
     let structure = RepeatStructure::new(
         Nucleotide::A,
         171,
@@ -46,15 +46,15 @@ fn create_simulation_with_fitness(
         chr_length / (171 * 12),
         1,
     );
-    
+
     let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
-    
+
     let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
     let fitness = FitnessConfig::new(Some(gc_fitness), None, None, None);
-    
+
     let config = SimulationConfig::new(pop_size, generations, Some(42));
-    
+
     Simulation::new(structure, mutation, recombination, fitness, config).unwrap()
 }
 
@@ -63,11 +63,11 @@ fn bench_simulation_init(c: &mut Criterion) {
     let mut group = c.benchmark_group("simulation_init");
     let pop_sizes = [10, 50, 100];
     let chr_lengths = [10_000, 50_000, 100_000];
-    
+
     for pop_size in pop_sizes {
         for chr_length in chr_lengths {
             let label = format!("pop{pop_size}_len{chr_length}");
-            
+
             group.bench_with_input(
                 BenchmarkId::new("create_neutral", &label),
                 &(pop_size, chr_length),
@@ -75,7 +75,7 @@ fn bench_simulation_init(c: &mut Criterion) {
                     b.iter(|| black_box(create_test_simulation(p, l, 10)));
                 }
             );
-            
+
             group.bench_with_input(
                 BenchmarkId::new("create_with_fitness", &label),
                 &(pop_size, chr_length),
@@ -85,7 +85,7 @@ fn bench_simulation_init(c: &mut Criterion) {
             );
         }
     }
-    
+
     group.finish();
 }
 
@@ -94,10 +94,10 @@ fn bench_single_generation(c: &mut Criterion) {
     let mut group = c.benchmark_group("single_generation");
     let pop_sizes = [10, 50, 100];
     let chr_length = 10_000;
-    
+
     for pop_size in pop_sizes {
         group.throughput(Throughput::Elements(pop_size as u64));
-        
+
         // Neutral fitness
         group.bench_with_input(
             BenchmarkId::new("neutral", pop_size),
@@ -113,7 +113,7 @@ fn bench_single_generation(c: &mut Criterion) {
                 );
             }
         );
-        
+
         // With fitness selection
         group.bench_with_input(
             BenchmarkId::new("with_fitness", pop_size),
@@ -130,7 +130,7 @@ fn bench_single_generation(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 
@@ -138,14 +138,14 @@ fn bench_single_generation(c: &mut Criterion) {
 fn bench_multi_generation(c: &mut Criterion) {
     let mut group = c.benchmark_group("multi_generation");
     group.sample_size(10);  // Reduce sample size for longer benchmarks
-    
+
     let pop_size = 50;
     let chr_length = 10_000;
     let generation_counts = [5, 10, 20];
-    
+
     for n_gens in generation_counts {
         group.throughput(Throughput::Elements((pop_size * n_gens) as u64));
-        
+
         group.bench_with_input(
             BenchmarkId::new("run", n_gens),
             &n_gens,
@@ -161,7 +161,7 @@ fn bench_multi_generation(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 
@@ -170,10 +170,10 @@ fn bench_population_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("population_operations");
     let pop_sizes = [10, 50, 100, 500];
     let chr_length = 10_000;
-    
+
     for pop_size in pop_sizes {
         let sim = create_test_simulation(pop_size, chr_length, 1);
-        
+
         group.bench_with_input(
             BenchmarkId::new("compute_fitness", pop_size),
             &sim,
@@ -184,11 +184,11 @@ fn bench_population_operations(c: &mut Criterion) {
                 });
             }
         );
-        
+
         // Test with GC fitness
         let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
         let fitness_config = FitnessConfig::new(Some(gc_fitness), None, None, None);
-        
+
         group.bench_with_input(
             BenchmarkId::new("compute_fitness_gc", pop_size),
             &sim,
@@ -199,26 +199,26 @@ fn bench_population_operations(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark memory allocation patterns
 fn bench_memory_allocation(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_allocation");
-    
+
     group.bench_function("init_pop100_chr10k", |b| {
         b.iter(|| {
             black_box(create_test_simulation(100, 10_000, 1))
         });
     });
-    
+
     group.bench_function("init_pop10_chr100k", |b| {
         b.iter(|| {
             black_box(create_test_simulation(10, 100_000, 1))
         });
     });
-    
+
     group.bench_function("run_5gen_pop50", |b| {
         b.iter_batched(
             || create_test_simulation(50, 10_000, 5),
@@ -229,7 +229,7 @@ fn bench_memory_allocation(c: &mut Criterion) {
             criterion::BatchSize::SmallInput,
         );
     });
-    
+
     group.finish();
 }
 
@@ -239,9 +239,9 @@ fn bench_mutation_rates(c: &mut Criterion) {
     let pop_size = 50;
     let chr_length = 10_000;
     let rates = [0.0001, 0.001, 0.01];
-    
+
     for rate in rates {
-        
+
         let structure = RepeatStructure::new(
             Nucleotide::A,
             171,
@@ -249,12 +249,12 @@ fn bench_mutation_rates(c: &mut Criterion) {
             chr_length / (171 * 12),
             1,
         );
-        
+
         let mutation = MutationConfig::uniform(rate).unwrap();
         let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
         let fitness = FitnessConfig::neutral();
         let config = SimulationConfig::new(pop_size, 1, Some(42));
-        
+
         group.bench_with_input(
             BenchmarkId::new("rate", rate),
             &rate,
@@ -276,7 +276,7 @@ fn bench_mutation_rates(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 
@@ -284,11 +284,11 @@ fn bench_mutation_rates(c: &mut Criterion) {
 fn bench_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("scaling");
     group.sample_size(10);
-    
+
     // Test population size scaling
     let chr_length = 10_000;
     let pop_sizes = [10, 50, 100, 200];
-    
+
     for pop_size in pop_sizes {
         group.throughput(Throughput::Elements(pop_size as u64));
         group.bench_with_input(
@@ -306,11 +306,11 @@ fn bench_scaling(c: &mut Criterion) {
             }
         );
     }
-    
+
     // Test chromosome length scaling
     let pop_size = 50;
     let chr_lengths = [5_000, 10_000, 20_000, 50_000];
-    
+
     for chr_length in chr_lengths {
         group.throughput(Throughput::Elements((chr_length * pop_size) as u64));
         group.bench_with_input(
@@ -328,7 +328,7 @@ fn bench_scaling(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 

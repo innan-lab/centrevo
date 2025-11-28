@@ -7,7 +7,7 @@
 //!
 //! ```
 //! use centrevo_sim::prelude::*;
-//! 
+//!
 //! let seq: Sequence = "ACGT".parse().unwrap();
 //! ```
 

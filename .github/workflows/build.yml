@@ -17,15 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
-      
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-      
+
       - name: Run tests
         run: cargo test --all-features
 
@@ -43,39 +43,39 @@ jobs:
             os: ubuntu-latest
             artifact_name: centrevo
             asset_name: centrevo-linux-amd64
-          
+
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_name: centrevo
             asset_name: centrevo-macos-amd64
-          
+
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact_name: centrevo
             asset_name: centrevo-macos-arm64
-          
+
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact_name: centrevo.exe
             asset_name: centrevo-windows-amd64.exe
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
           targets: ${{ matrix.target }}
-      
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      
+
       - name: Build binary
         run: cargo build --release --bin centrevo --target ${{ matrix.target }}
-      
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -96,83 +96,83 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             maturin-args: ""
-          
+
           - runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             maturin-args: "--target aarch64-unknown-linux-gnu"
-          
+
           - runner: macos-latest
             target: x86_64-apple-darwin
             maturin-args: "--target x86_64-apple-darwin"
-          
+
           - runner: macos-latest
             target: aarch64-apple-darwin
             maturin-args: "--target aarch64-apple-darwin"
-          
+
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             maturin-args: ""
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88"
           targets: ${{ matrix.platform.target }}
-      
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.platform.target }}
-      
+
       # For cross-compilation on Linux
       - name: Set up QEMU
         if: runner.os == 'Linux'
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
-      
+
       - name: Install maturin
         run: pip install maturin
-      
+
       - name: Build wheels
         run: maturin build --release --features python ${{ matrix.platform.maturin-args }} --out dist
-      
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.platform.target }}
           path: dist/*.whl
           if-no-files-found: error
-  
+
   build-sdist:
     name: Build Source Distribution
     needs: test
     # Only build on merges to main
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      
+
       - name: Install maturin
         run: pip install maturin
-      
+
       - name: Build sdist
         run: maturin sdist --out dist
-      
+
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:

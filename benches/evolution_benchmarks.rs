@@ -4,7 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Through
 use centrevo::base::{Nucleotide, Sequence};
 use centrevo::genome::{Chromosome, Haplotype, Individual};
 use centrevo::evolution::{
-    SubstitutionModel, RecombinationParams, 
+    SubstitutionModel, RecombinationParams,
     GCContentFitness, LengthFitness, SequenceSimilarityFitness,
     HaplotypeFitness, IndividualFitness,
 };
@@ -25,34 +25,34 @@ fn create_test_sequence(size: usize) -> Sequence {
 }
 
 fn create_test_individual(size: usize) -> Individual {
-    
+
     let seq = create_test_sequence(size);
     let chr1 = Chromosome::new("chr1", seq.clone(), 171, 12);
     let chr2 = Chromosome::new("chr2", seq, 171, 12);
-    
+
     let mut hap1 = Haplotype::new();
     let mut hap2 = Haplotype::new();
     hap1.push(chr1);
     hap2.push(chr2);
-    
+
     Individual::new("ind1", hap1, hap2)
 }
 
 /// Benchmark mutation operations
 fn bench_mutation(c: &mut Criterion) {
     let mut group = c.benchmark_group("mutation");
-    
+
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let rates = [0.001, 0.01, 0.1];
     let sizes = [1_000, 10_000, 100_000];
-    
+
     for rate in rates {
         let model = SubstitutionModel::uniform(rate).unwrap();
-        
+
         for size in sizes {
-            let label = format!("rate_{}_size_{}", rate, size);
+            let label = format!("rate_{rate}_size_{size}");
             group.throughput(Throughput::Elements(size as u64));
-            
+
             // Standard mutation
             group.bench_with_input(
                 BenchmarkId::new("standard", &label),
@@ -65,7 +65,7 @@ fn bench_mutation(c: &mut Criterion) {
                     });
                 }
             );
-            
+
             // Poisson mutation
             group.bench_with_input(
                 BenchmarkId::new("poisson", &label),
@@ -80,20 +80,20 @@ fn bench_mutation(c: &mut Criterion) {
             );
         }
     }
-    
+
     group.finish();
 }
 
 /// Benchmark single base mutation
 fn bench_mutate_base(c: &mut Criterion) {
     let mut group = c.benchmark_group("mutate_base");
-    
+
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let rates = [0.001, 0.01, 0.1];
-    
+
     for rate in rates {
         let model = SubstitutionModel::uniform(rate).unwrap();
-        
+
         group.bench_with_input(
             BenchmarkId::new("single", rate),
             &rate,
@@ -104,22 +104,22 @@ fn bench_mutate_base(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark recombination operations
 fn bench_recombination(c: &mut Criterion) {
     let mut group = c.benchmark_group("recombination");
-    
+
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let sizes = [1_000, 10_000, 100_000];
-    
+
     let params = RecombinationParams::new(0.01, 0.7, 0.1).unwrap();
-    
+
     for size in sizes {
         group.throughput(Throughput::Elements(size as u64));
-        
+
         // Benchmark event sampling
         group.bench_with_input(
             BenchmarkId::new("sample_event", size),
@@ -128,12 +128,12 @@ fn bench_recombination(c: &mut Criterion) {
                 b.iter(|| black_box(params.sample_event(s, &mut rng)));
             }
         );
-        
+
         // Benchmark crossover
         let seq1 = create_test_sequence(size);
         let seq2 = create_test_sequence(size);
         let position = size / 2;
-        
+
         group.bench_with_input(
             BenchmarkId::new("crossover", size),
             &(seq1.clone(), seq2.clone()),
@@ -143,7 +143,7 @@ fn bench_recombination(c: &mut Criterion) {
                 });
             }
         );
-        
+
         // Benchmark gene conversion
         let tract_len = 100.min(size / 10);
         group.bench_with_input(
@@ -156,19 +156,19 @@ fn bench_recombination(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark fitness calculations
 fn bench_fitness(c: &mut Criterion) {
     let mut group = c.benchmark_group("fitness");
-    
+
     let sizes = [1_000, 10_000, 100_000];
-    
+
     // GC content fitness
     let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
-    
+
     for size in sizes {
         let chr = Chromosome::new(
             "chr1",
@@ -176,9 +176,9 @@ fn bench_fitness(c: &mut Criterion) {
             171,
             12,
         );
-        
+
         group.throughput(Throughput::Elements(size as u64));
-        
+
         group.bench_with_input(
             BenchmarkId::new("gc_content", size),
             &chr,
@@ -187,10 +187,10 @@ fn bench_fitness(c: &mut Criterion) {
             }
         );
     }
-    
+
     // Length fitness
     let len_fitness = LengthFitness::new(10_000, 0.5).unwrap();
-    
+
     for size in sizes {
         let chr = Chromosome::new(
             "chr1",
@@ -198,7 +198,7 @@ fn bench_fitness(c: &mut Criterion) {
             171,
             12,
         );
-        
+
         group.bench_with_input(
             BenchmarkId::new("length", size),
             &chr,
@@ -207,13 +207,13 @@ fn bench_fitness(c: &mut Criterion) {
             }
         );
     }
-    
+
     // Sequence similarity fitness
     let sim_fitness = SequenceSimilarityFitness::new(1.0).unwrap();
-    
+
     for size in sizes {
         let ind = create_test_individual(size);
-        
+
         group.bench_with_input(
             BenchmarkId::new("similarity", size),
             &ind,
@@ -222,21 +222,21 @@ fn bench_fitness(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark combined evolution operations
 fn bench_combined_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("combined_operations");
-    
+
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
     let size = 10_000;
-    
+
     let mutation_model = SubstitutionModel::uniform(0.001).unwrap();
     let recomb_params = RecombinationParams::new(0.01, 0.7, 0.1).unwrap();
     let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
-    
+
     group.bench_function("mutation_then_fitness", |b| {
         b.iter(|| {
             let mut seq = create_test_sequence(size);
@@ -245,13 +245,13 @@ fn bench_combined_operations(c: &mut Criterion) {
             black_box(gc_fitness.haplotype_fitness(&chr))
         });
     });
-    
+
     group.bench_function("recombination_then_fitness", |b| {
         b.iter(|| {
             let seq1 = create_test_sequence(size);
             let seq2 = create_test_sequence(size);
             let event = recomb_params.sample_event(size, &mut rng);
-            
+
             let result_seq = match event {
                 centrevo::evolution::RecombinationType::Crossover { position } => {
                     let (s1, _) = recomb_params.crossover(&seq1, &seq2, position).unwrap();
@@ -259,12 +259,12 @@ fn bench_combined_operations(c: &mut Criterion) {
                 }
                 _ => seq1,
             };
-            
+
             let chr = Chromosome::new("chr1", result_seq, 171, 12);
             black_box(gc_fitness.haplotype_fitness(&chr))
         });
     });
-    
+
     group.finish();
 }
 
@@ -273,12 +273,12 @@ fn bench_population_fitness(c: &mut Criterion) {
     let mut group = c.benchmark_group("population_fitness");
     let pop_sizes = [10, 100, 1000];
     let gc_fitness = GCContentFitness::new(0.5, 2.0).unwrap();
-    
+
     for pop_size in pop_sizes {
         let individuals: Vec<_> = (0..pop_size)
             .map(|_| create_test_individual(10_000))
             .collect();
-        
+
         group.bench_with_input(
             BenchmarkId::new("sequential", pop_size),
             &individuals,
@@ -292,7 +292,7 @@ fn bench_population_fitness(c: &mut Criterion) {
             }
         );
     }
-    
+
     group.finish();
 }
 

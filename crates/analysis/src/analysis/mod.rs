@@ -1,5 +1,5 @@
 //! Population genetics analysis tools for Centrevo
-//! 
+//!
 //! This module provides comprehensive analysis capabilities including:
 //! - Diversity metrics (π, Tajima's D, θ_W)
 //! - Linkage disequilibrium analysis

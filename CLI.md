@@ -730,27 +730,27 @@ for seed in {1..10}; do
   for mut_rate in 0.0001 0.001 0.01; do
     sim_name="batch_seed${seed}_mut${mut_rate}"
     echo "Running: $sim_name"
-    
+
     centrevo init \
       -N "$sim_name" \
       -n 100 \
       -g 1000 \
       --seed $seed \
       -o batch_results.db
-    
+
     centrevo run \
       -N "$sim_name" \
       -d batch_results.db \
       --mutation-rate $mut_rate \
       --progress false
-    
+
     centrevo analyze \
       -N "$sim_name" \
       -d batch_results.db \
       -g 1000 \
       --format json \
       -o "results/${sim_name}_analysis.json"
-    
+
     if [ $? -eq 0 ]; then
       echo "✓ $sim_name complete"
     else
@@ -786,22 +786,22 @@ def run_simulation(name, pop_size, generations, seed):
         "-g", str(generations),
         "--seed", str(seed)
     ], capture_output=True, text=True)
-    
+
     if init_result.returncode != 0:
         print(f"Init failed: {init_result.stderr}", file=sys.stderr)
         return False
-    
+
     # Run
     run_result = subprocess.run([
         "./centrevo", "run",
         "-N", name,
         "--progress", "false"
     ], capture_output=True, text=True)
-    
+
     if run_result.returncode != 0:
         print(f"Run failed: {run_result.stderr}", file=sys.stderr)
         return False
-    
+
     return True
 
 def analyze_simulation(name, generation):
@@ -812,11 +812,11 @@ def analyze_simulation(name, generation):
         "-g", str(generation),
         "--format", "json"
     ], capture_output=True, text=True)
-    
+
     if result.returncode != 0:
         print(f"Analysis failed: {result.stderr}", file=sys.stderr)
         return None
-    
+
     return json.loads(result.stdout)
 
 # Run pipeline

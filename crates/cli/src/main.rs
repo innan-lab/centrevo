@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use centrevo_sim::base::{FitnessValue, Nucleotide};
 use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 use centrevo_sim::simulation::{
-    FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure, Simulation,
-    SimulationConfig,
+    FitnessConfig, MutationConfig, Population, RecombinationConfig, Simulation, SimulationConfig,
+    UniformRepeatStructure,
 };
 use centrevo_sim::storage::{QueryBuilder, Recorder, RecordingStrategy};
 use clap::{Parser, Subcommand};
@@ -319,7 +319,8 @@ fn init_simulation(
     println!("Initializing simulation: {name}");
 
     // Create configurations
-    let structure = RepeatStructure::new(Nucleotide::A, ru_length, rus_per_hor, hors_per_chr, 1);
+    let structure =
+        UniformRepeatStructure::new(Nucleotide::A, ru_length, rus_per_hor, hors_per_chr, 1);
 
     let config = SimulationConfig::new(population_size, generations, seed);
 
@@ -391,7 +392,10 @@ fn run_simulation(
         // Setup recorder with full config
         use centrevo_sim::storage::SimulationSnapshot;
         let snapshot = SimulationSnapshot {
-            structure: sim.structure().clone(),
+            structure: sim
+                .structure()
+                .cloned()
+                .expect("Cannot resume without uniform structure"),
             mutation: sim.mutation().clone(),
             recombination: sim.recombination().clone(),
             fitness: sim.fitness().clone(),
@@ -489,7 +493,7 @@ fn run_simulation(
         query.close().ok();
 
         // Setup simulation components
-        let structure = RepeatStructure::new(
+        let structure = UniformRepeatStructure::new(
             Nucleotide::A,
             171, // TODO: These should match init params from database
             12,
@@ -640,7 +644,7 @@ fn show_generations(database: &PathBuf, name: &str) -> Result<()> {
     Ok(())
 }
 
-fn create_initial_population(size: usize, structure: &RepeatStructure) -> Population {
+fn create_initial_population(size: usize, structure: &UniformRepeatStructure) -> Population {
     let mut individuals = Vec::with_capacity(size);
 
     for i in 0..size {

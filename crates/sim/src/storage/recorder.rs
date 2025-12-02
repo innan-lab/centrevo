@@ -4,8 +4,8 @@ use crate::base::FitnessValue;
 use crate::errors::DatabaseError;
 use crate::genome::Individual;
 use crate::simulation::{
-    FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure,
-    SimulationConfig,
+    FitnessConfig, MutationConfig, Population, RecombinationConfig, SimulationConfig,
+    UniformRepeatStructure,
 };
 use crate::storage::Database;
 use rusqlite::params;
@@ -15,7 +15,7 @@ use std::sync::Arc;
 /// Complete simulation configuration for resumability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulationSnapshot {
-    pub structure: RepeatStructure,
+    pub structure: UniformRepeatStructure,
     pub mutation: MutationConfig,
     pub recombination: RecombinationConfig,
     pub fitness: FitnessConfig,
@@ -107,14 +107,14 @@ impl IndividualSnapshot {
     }
 
     /// Reconstruct an Individual from a snapshot.
-    /// Requires the RepeatStructure to rebuild the proper chromosome structure.
+    /// Requires the UniformRepeatStructure to rebuild the proper chromosome structure.
     pub fn to_individual(
         &self,
-        structure: &crate::simulation::RepeatStructure,
+        structure: &crate::simulation::UniformRepeatStructure,
     ) -> Result<Individual, String> {
         use crate::base::{Nucleotide, Sequence};
-        use crate::genome::{Chromosome, Haplotype};
         use crate::genome::repeat_map::RepeatMap;
+        use crate::genome::{Chromosome, Haplotype};
 
         // Reconstruct sequence from indices
         let seq1_nucs: Vec<Nucleotide> = self
@@ -139,16 +139,8 @@ impl IndividualSnapshot {
         );
 
         // Create chromosomes
-        let chr1 = Chromosome::new(
-            self.haplotype1_chr_id.clone(),
-            seq1,
-            map.clone(),
-        );
-        let chr2 = Chromosome::new(
-            self.haplotype2_chr_id.clone(),
-            seq2,
-            map,
-        );
+        let chr1 = Chromosome::new(self.haplotype1_chr_id.clone(), seq1, map.clone());
+        let chr2 = Chromosome::new(self.haplotype2_chr_id.clone(), seq2, map);
 
         // Create haplotypes
         let mut hap1 = Haplotype::new();
@@ -179,7 +171,9 @@ pub struct FitnessStats {
 impl FitnessStats {
     /// Calculate fitness statistics from a population.
     pub fn from_population(pop: &Population) -> Self {
-        let fitnesses: Vec<f64> = pop.individuals().iter()
+        let fitnesses: Vec<f64> = pop
+            .individuals()
+            .iter()
             .filter_map(|ind| ind.cached_fitness())
             .map(|f| *f)
             .collect();

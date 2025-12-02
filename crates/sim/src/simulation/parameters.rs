@@ -13,9 +13,12 @@ use crate::evolution::{
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
-/// Parameters for defining the initial repeat sequence structure.
+/// Parameters for defining a uniform repeat sequence structure.
+///
+/// This structure is used for configuration and reproducibility of simulations
+/// that start with a uniform repeat structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RepeatStructure {
+pub struct UniformRepeatStructure {
     /// Initial nucleotide to fill sequences
     pub init_base: Nucleotide,
     /// Repeat unit length in bases
@@ -28,8 +31,8 @@ pub struct RepeatStructure {
     pub chrs_per_hap: usize,
 }
 
-impl RepeatStructure {
-    /// Create a new repeat structure configuration.
+impl UniformRepeatStructure {
+    /// Create a new uniform repeat structure configuration.
     pub fn new(
         init_base: Nucleotide,
         ru_length: usize,
@@ -408,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_repeat_structure_new() {
-        let structure = RepeatStructure::new(Nucleotide::A, 171, 12, 100, 1);
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 171, 12, 100, 1);
 
         assert_eq!(structure.ru_length, 171);
         assert_eq!(structure.rus_per_hor, 12);
@@ -418,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_repeat_structure_chr_length() {
-        let structure = RepeatStructure::new(Nucleotide::A, 10, 5, 20, 1);
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 20, 1);
 
         // 10 * 5 * 20 = 1000
         assert_eq!(structure.chr_length(), 1000);

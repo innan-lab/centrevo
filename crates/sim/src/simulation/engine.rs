@@ -3,19 +3,17 @@
 //! This module provides the main simulation loop that orchestrates mutation,
 //! recombination, selection, and reproduction across generations.
 
-use crate::base::Sequence;
-use crate::genome::repeat_map::RepeatMap;
-use crate::genome::{Chromosome, Haplotype, Individual};
-use crate::simulation::{
-    FitnessConfig, MutationConfig, Population, RecombinationConfig, RepeatStructure,
-    SimulationConfig,
-};
-use crate::evolution::RecombinationType;
 use crate::errors::RecombinationError;
+use crate::evolution::RecombinationType;
+
+use crate::genome::{Chromosome, Individual};
+use crate::simulation::{
+    FitnessConfig, MutationConfig, Population, RecombinationConfig, SimulationConfig,
+    UniformRepeatStructure,
+};
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use rayon::prelude::*;
-use std::sync::Arc;
 
 /// Main simulation engine.
 #[derive(Debug)]
@@ -23,8 +21,9 @@ pub struct Simulation {
     /// Current population
     population: Population,
     /// Repeat structure parameters
-    #[allow(dead_code)] // Will be used in future iterations
-    structure: RepeatStructure,
+    /// Repeat structure parameters (optional, for metadata/reproducibility)
+    #[allow(dead_code)]
+    structure: Option<UniformRepeatStructure>,
     /// Mutation configuration
     mutation: MutationConfig,
     /// Recombination configuration
@@ -39,81 +38,29 @@ pub struct Simulation {
 
 impl Simulation {
     /// Create a new simulation with uniform initial sequences.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use SimulationBuilder or Simulation::from_sequences instead"
+    )]
     pub fn new(
-        structure: RepeatStructure,
+        structure: UniformRepeatStructure,
         mutation: MutationConfig,
         recombination: RecombinationConfig,
         fitness: FitnessConfig,
         config: SimulationConfig,
     ) -> Result<Self, String> {
-        // Create RNG from seed or thread_rng
-        // Using Xoshiro256++ which is 2-3x faster than StdRng
-        let rng = if let Some(seed) = config.seed {
-            Xoshiro256PlusPlus::seed_from_u64(seed)
-        } else {
-            Xoshiro256PlusPlus::from_seed(rand::rng().random())
-        };
-
         // Create initial population with uniform sequences
-        let individuals = Self::create_initial_population(&structure, config.population_size)?;
-        let population = Population::new("pop0", individuals);
-
-        Ok(Self {
-            population,
-            structure,
-            mutation,
-            recombination,
-            fitness,
-            config,
-            rng,
-        })
-    }
-
-    /// Create a new simulation with random initial sequences.
-    ///
-    /// Each position in each sequence will be initialized with a random base
-    /// from the alphabet. This is useful for starting simulations from a
-    /// completely random state.
-    ///
-    /// # Arguments
-    ///
-    /// * `structure` - Repeat structure parameters
-    /// * `mutation` - Mutation configuration
-    /// * `recombination` - Recombination configuration
-    /// * `fitness` - Fitness configuration
-    /// * `config` - Simulation configuration
-    ///
-    /// # Returns
-    ///
-    /// A `Simulation` instance initialized with random sequences.
-    pub fn new_random(
-        structure: RepeatStructure,
-        mutation: MutationConfig,
-        recombination: RecombinationConfig,
-        fitness: FitnessConfig,
-        config: SimulationConfig,
-    ) -> Result<Self, String> {
-        // Create RNG from seed or thread_rng
-        let mut rng = if let Some(seed) = config.seed {
-            Xoshiro256PlusPlus::seed_from_u64(seed)
-        } else {
-            Xoshiro256PlusPlus::from_seed(rand::rng().random())
+        let input = crate::simulation::inputs::SequenceInput::Uniform {
+            structure: structure.clone(),
         };
-
-        // Create initial population with random sequences
-        let individuals =
-            Self::create_random_population(&structure, config.population_size, &mut rng)?;
-        let population = Population::new("pop0", individuals);
-
-        Ok(Self {
-            population,
-            structure,
+        Self::from_sequences(
+            input,
+            Some(structure),
             mutation,
             recombination,
             fitness,
             config,
-            rng,
-        })
+        )
     }
 
     /// Apply a single recombination `event` to a pair of chromosomes.
@@ -129,7 +76,8 @@ impl Simulation {
         match event {
             RecombinationType::None => Ok(()),
             RecombinationType::Crossover { pos1, pos2 } => {
-                let (new1, new2) = params.crossover(chr1, chr2, pos1, pos2)
+                let (new1, new2) = params
+                    .crossover(chr1, chr2, pos1, pos2)
                     .map_err(|e| format!("Crossover failed: {e}"))?;
 
                 *chr1 = new1;
@@ -156,15 +104,17 @@ impl Simulation {
                             }
                             let recipient_remaining = chr2.len() - recipient_start;
                             let donor_remaining = chr1.len() - donor_start;
-                            let clamped_len = length
-                                .min(recipient_remaining)
-                                .min(donor_remaining);
+                            let clamped_len = length.min(recipient_remaining).min(donor_remaining);
                             if clamped_len == 0 {
                                 return Ok(());
                             }
 
                             if let Ok(new2) = params.gene_conversion(
-                                chr2, chr1, recipient_start, donor_start, clamped_len,
+                                chr2,
+                                chr1,
+                                recipient_start,
+                                donor_start,
+                                clamped_len,
                             ) {
                                 *chr2 = new2;
                                 Ok(())
@@ -199,25 +149,31 @@ impl Simulation {
     /// A `Simulation` instance initialized with the provided sequences, or an error
     /// if the sequences are invalid or don't match the parameters.
     pub fn from_sequences(
-        source: crate::simulation::initialization::SequenceInput,
-        structure: RepeatStructure,
+        source: crate::simulation::inputs::SequenceInput,
+        structure: Option<UniformRepeatStructure>,
         mutation: MutationConfig,
         recombination: RecombinationConfig,
         fitness: FitnessConfig,
         config: SimulationConfig,
     ) -> Result<Self, String> {
         // Create RNG from seed or thread_rng
-        let rng = if let Some(seed) = config.seed {
+        let mut rng = if let Some(seed) = config.seed {
             Xoshiro256PlusPlus::seed_from_u64(seed)
         } else {
             Xoshiro256PlusPlus::from_seed(rand::rng().random())
         };
 
         // Initialize individuals from source
-        let individuals = crate::simulation::initialization::initialize_from_source(
+        // Note: initialize_from_source might need update if it strictly requires structure
+        // For now, we assume it can handle Option or we pass a dummy if needed.
+        // Actually, let's check initialization.rs. It takes &RepeatStructure.
+        // We might need to update initialization.rs first or pass a dummy here if None.
+
+        let individuals = crate::simulation::inputs::initialize_from_source(
             source,
-            &structure,
+            structure.as_ref(),
             config.population_size,
+            &mut rng,
         )
         .map_err(|e| format!("Failed to initialize from sequences: {e}"))?;
 
@@ -307,7 +263,10 @@ impl Simulation {
         }
 
         // Create population with correct generation number
-        let mut population = Population::new(format!("pop_{gen}", gen = checkpoint.generation), individuals);
+        let mut population = Population::new(
+            format!("pop_{gen}", gen = checkpoint.generation),
+            individuals,
+        );
 
         // Set generation counter to checkpoint generation
         for _ in 0..checkpoint.generation {
@@ -325,129 +284,13 @@ impl Simulation {
 
         Ok(Self {
             population,
-            structure: snapshot.structure,
+            structure: Some(snapshot.structure), // Assuming snapshot still has it, will fix storage later
             mutation: snapshot.mutation,
             recombination: snapshot.recombination,
             fitness: snapshot.fitness,
             config: snapshot.config,
             rng,
         })
-    }
-
-    /// Create initial population with uniform sequences.
-    fn create_initial_population(
-        structure: &RepeatStructure,
-        pop_size: usize,
-    ) -> Result<Vec<Individual>, String> {
-        let mut individuals = Vec::with_capacity(pop_size);
-
-        for i in 0..pop_size {
-            let ind = Self::create_uniform_individual(format!("ind_{i}"), structure)?;
-            individuals.push(ind);
-        }
-
-        Ok(individuals)
-    }
-
-    /// Create initial population with random sequences.
-    fn create_random_population(
-        structure: &RepeatStructure,
-        pop_size: usize,
-        rng: &mut impl Rng,
-    ) -> Result<Vec<Individual>, String> {
-        let mut individuals = Vec::with_capacity(pop_size);
-
-        for i in 0..pop_size {
-            let ind = Self::create_random_individual(format!("ind_{i}"), structure, rng)?;
-            individuals.push(ind);
-        }
-
-        Ok(individuals)
-    }
-
-    /// Create a single individual with uniform sequences.
-    fn create_uniform_individual(
-        id: impl Into<Arc<str>>,
-        structure: &RepeatStructure,
-    ) -> Result<Individual, String> {
-        // Create haplotypes with uniform chromosomes
-        let mut hap1 = Haplotype::with_capacity(structure.chrs_per_hap);
-        let mut hap2 = Haplotype::with_capacity(structure.chrs_per_hap);
-
-        for chr_idx in 0..structure.chrs_per_hap {
-            // Create chromosomes
-            let chr1 = Chromosome::uniform(
-                format!("chr{chr_idx}"),
-                structure.init_base,
-                structure.ru_length,
-                structure.rus_per_hor,
-                structure.hors_per_chr,
-            );
-            let chr2 = Chromosome::uniform(
-                format!("chr{chr_idx}"),
-                structure.init_base,
-                structure.ru_length,
-                structure.rus_per_hor,
-                structure.hors_per_chr,
-            );
-
-            hap1.push(chr1);
-            hap2.push(chr2);
-        }
-
-        Ok(Individual::new(id, hap1, hap2))
-    }
-
-    /// Create a single individual with random sequences.
-    fn create_random_individual(
-        id: impl Into<Arc<str>>,
-        structure: &RepeatStructure,
-        rng: &mut impl Rng,
-    ) -> Result<Individual, String> {
-        use crate::base::Nucleotide;
-
-        let chr_length = structure.chr_length();
-        let alphabet_size = 4; // DNA has 4 bases
-
-        // Create haplotypes with random chromosomes
-        let mut hap1 = Haplotype::with_capacity(structure.chrs_per_hap);
-        let mut hap2 = Haplotype::with_capacity(structure.chrs_per_hap);
-
-        for chr_idx in 0..structure.chrs_per_hap {
-            // Create random sequence for haplotype 1
-            let mut seq1 = Sequence::with_capacity(chr_length);
-            for _ in 0..chr_length {
-                let idx = rng.random_range(0..alphabet_size);
-                let base = Nucleotide::from_index(idx as u8)
-                    .ok_or_else(|| format!("Invalid nucleotide index: {idx}"))?;
-                seq1.push(base);
-            }
-
-            // Create random sequence for haplotype 2
-            let mut seq2 = Sequence::with_capacity(chr_length);
-            for _ in 0..chr_length {
-                let idx = rng.random_range(0..alphabet_size);
-                let base = Nucleotide::from_index(idx as u8)
-                    .ok_or_else(|| format!("Invalid nucleotide index: {idx}"))?;
-                seq2.push(base);
-            }
-
-            // Create map
-            let map = RepeatMap::uniform(
-                structure.ru_length,
-                structure.rus_per_hor,
-                structure.hors_per_chr,
-            );
-
-            // Create chromosomes
-            let chr1 = Chromosome::new(format!("chr{chr_idx}"), seq1, map.clone());
-            let chr2 = Chromosome::new(format!("chr{chr_idx}"), seq2, map);
-
-            hap1.push(chr1);
-            hap2.push(chr2);
-        }
-
-        Ok(Individual::new(id, hap1, hap2))
     }
 
     /// Get the current population.
@@ -470,9 +313,9 @@ impl Simulation {
         &self.config
     }
 
-    /// Get reference to repeat structure.
-    pub fn structure(&self) -> &RepeatStructure {
-        &self.structure
+    /// Get reference to repeat structure (if available).
+    pub fn structure(&self) -> Option<&UniformRepeatStructure> {
+        self.structure.as_ref()
     }
 
     /// Get reference to mutation configuration.
@@ -705,13 +548,13 @@ mod tests {
     use crate::evolution::SubstitutionModel;
 
     fn create_test_config() -> (
-        RepeatStructure,
+        UniformRepeatStructure,
         MutationConfig,
         RecombinationConfig,
         FitnessConfig,
         SimulationConfig,
     ) {
-        let structure = RepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
 
         let mutation = MutationConfig::uniform(0.001).unwrap();
         let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
@@ -799,11 +642,19 @@ mod tests {
 
     #[test]
     fn test_create_uniform_individual() {
-        let structure = RepeatStructure::new(Nucleotide::C, 10, 5, 10, 2);
+        let structure = UniformRepeatStructure::new(Nucleotide::C, 10, 5, 10, 2);
 
-        let ind = Simulation::create_uniform_individual("test_ind", &structure).unwrap();
+        // We moved this logic to inputs, so we test it via inputs or integration
+        // Here we can test via Simulation::new which uses it
+        let mutation = MutationConfig::uniform(0.0).unwrap();
+        let recombination = RecombinationConfig::standard(0.0, 0.0, 0.0).unwrap();
+        let fitness = FitnessConfig::neutral();
+        let config = SimulationConfig::new(1, 1, None);
 
-        assert_eq!(ind.id(), "test_ind");
+        let sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+        let ind = sim.population().get(0).unwrap();
+
+        assert_eq!(ind.id(), "ind_0");
         assert_eq!(ind.haplotype1().len(), 2);
         assert_eq!(ind.haplotype2().len(), 2);
 
@@ -818,7 +669,7 @@ mod tests {
     #[test]
     fn test_apply_event_to_pair_gene_conversion_clamps() {
         // Create a small simulation with trivial configs
-        let structure = RepeatStructure::new(Nucleotide::A, 1, 1, 6, 1); // chr len 6
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 1, 1, 6, 1); // chr len 6
         let mutation = MutationConfig::uniform(0.0).unwrap();
         let recombination = RecombinationConfig::standard(0.0, 0.5, 0.5).unwrap();
         let fitness = FitnessConfig::neutral();
@@ -832,9 +683,9 @@ mod tests {
 
         // Create a gene conversion event where length exceeds recipient remaining length
         let event = crate::evolution::RecombinationType::GeneConversion {
-            donor_start: 0, // donor start
+            donor_start: 0,     // donor start
             recipient_start: 1, // recipient start
-            length: 5, // length > recipient remaining (3)
+            length: 5,          // length > recipient remaining (3)
         };
 
         // Apply via helper — should clamp to 3 and succeed
@@ -846,7 +697,7 @@ mod tests {
 
     #[test]
     fn test_apply_event_to_pair_gene_conversion_skip_when_out_of_bounds() {
-        let structure = RepeatStructure::new(Nucleotide::A, 1, 1, 4, 1);
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 1, 1, 4, 1);
         let mutation = MutationConfig::uniform(0.0).unwrap();
         let recombination = RecombinationConfig::standard(0.0, 0.5, 0.5).unwrap();
         let fitness = FitnessConfig::neutral();

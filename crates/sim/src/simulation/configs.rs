@@ -13,6 +13,66 @@ use crate::evolution::{
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
+/// Configuration for sequence initialization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SequenceConfig {
+    /// Generate sequences based on a repeat structure.
+    Generate {
+        /// Repeat structure parameters
+        structure: UniformRepeatStructure,
+        /// Generation mode (Uniform or Random)
+        mode: GenerationMode,
+    },
+    /// Load sequences from an external source.
+    Load {
+        /// Source of sequences
+        source: SequenceSource,
+        /// Optional structure for validation or metadata
+        structure: Option<UniformRepeatStructure>,
+    },
+}
+
+/// Mode for sequence generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GenerationMode {
+    /// Uniform sequences (all repeats identical)
+    Uniform,
+    /// Random sequences (random bases)
+    Random,
+}
+
+/// Source for loading sequences.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SequenceSource {
+    /// FASTA file path
+    Fasta {
+        /// Path to FASTA file
+        path: String,
+        /// Optional path to BED file for structure
+        bed_path: Option<String>,
+    },
+    /// JSON file path or string
+    Json(String),
+    /// Simulation database
+    Database {
+        /// Path to database
+        path: String,
+        /// Simulation ID
+        sim_id: String,
+        /// Generation to load (None for last)
+        generation: Option<usize>,
+    },
+    /// Formatted string
+    FormattedString {
+        /// Sequence string
+        sequence: String,
+        /// HOR delimiter
+        hor_delim: char,
+        /// RU delimiter
+        ru_delim: char,
+    },
+}
+
 /// Parameters for defining a uniform repeat sequence structure.
 ///
 /// This structure is used for configuration and reproducibility of simulations

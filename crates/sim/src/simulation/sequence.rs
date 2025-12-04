@@ -8,7 +8,7 @@ use crate::base::{Nucleotide, Sequence};
 use crate::errors::InitializationError;
 use crate::genome::repeat_map::RepeatMap;
 use crate::genome::{Chromosome, Haplotype, Individual};
-use crate::simulation::UniformRepeatStructure;
+use crate::simulation::{GenerationMode, SequenceConfig, SequenceSource, UniformRepeatStructure};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -156,35 +156,7 @@ impl SequenceEntryWithIndices {
     }
 }
 
-/// Input source for custom sequences.
-#[derive(Debug, Clone)]
-pub enum SequenceInput {
-    /// FASTA file path with explicit BED file for structure
-    Fasta { path: String, bed_path: String },
-    /// FASTA file path with uniform structure
-    FastaUniform {
-        path: String,
-        structure: UniformRepeatStructure,
-    },
-    /// Formatted string (e.g. "AC-GT=AA-TT")
-    FormattedString {
-        sequence: String,
-        hor_delim: char,
-        ru_delim: char,
-    },
-    /// JSON file path or JSON string
-    Json(String),
-    /// Database path and simulation ID
-    Database {
-        path: String,
-        sim_id: String,
-        generation: Option<usize>,
-    },
-    /// Random initialization
-    Random,
-    /// Uniform initialization with structure
-    Uniform { structure: UniformRepeatStructure },
-}
+// SequenceInput enum removed, replaced by SequenceConfig in configs.rs
 
 // Removed InitializationError definition, imported from crate::errors
 
@@ -612,89 +584,72 @@ pub fn create_individuals_from_sequences(
 }
 
 /// High-level function to initialize from any sequence source.
-pub fn initialize_from_source(
-    source: SequenceInput,
-    _structure: Option<&UniformRepeatStructure>, // Only used for legacy/validation if needed
+/// High-level function to initialize from configuration.
+pub fn initialize(
+    config: &SequenceConfig,
     population_size: usize,
     rng: &mut impl Rng,
 ) -> Result<Vec<Individual>, InitializationError> {
-    match source {
-        SequenceInput::Random => {
-            let structure = _structure.ok_or_else(|| {
-                InitializationError::Validation(
-                    "Random input requires uniform structure to be provided".to_string(),
-                )
-            })?;
-            create_random_population(structure, population_size, rng)
-                .map_err(InitializationError::Validation)
-        }
-        SequenceInput::Uniform { structure } => {
-            create_uniform_population(&structure, population_size)
-                .map_err(InitializationError::Validation)
-        }
-        SequenceInput::Fasta { path, bed_path } => {
-            let entries = parse_fasta(path)?;
-            // Parse BED to get maps for each chromosome
-            // For now, assuming BED entries match FASTA IDs or we map them
-            // This is complex. Let's assume for now we construct maps from BED.
-            // But we need to match them to sequences.
-            // Let's implement a helper `initialize_from_fasta_bed`
-            initialize_from_fasta_bed(entries, bed_path, population_size)
-        }
-        SequenceInput::FastaUniform { path, structure } => {
-            let entries = parse_fasta(path)?;
-            validate_sequences(&entries, &structure, population_size)?;
-            create_individuals_from_sequences(entries, &structure, population_size)
-        }
-        SequenceInput::FormattedString {
-            sequence,
-            hor_delim,
-            ru_delim,
-        } => {
-            // Create individuals from formatted string
-            // This implies all individuals/chromosomes have the SAME formatted string?
-            // Or the string represents one chromosome?
-            // The builder usually sets up a population.
-            // If we use `init_from_formatted_string`, we probably want to create a population
-            // where everyone has this sequence (like init_uniform but with structure).
-            initialize_from_formatted_string(&sequence, hor_delim, ru_delim, population_size)
-        }
-        SequenceInput::Json(input) => {
-            // JSON usually contains sequences. Structure?
-            // If JSON has just sequences, we need structure.
-            // But `SequenceInput::Json` doesn't carry structure.
-            // We might need to assume uniform if structure is provided in `_structure`.
-            let entries = parse_json(&input)?;
-            if let Some(structure) = _structure {
-                validate_sequences(&entries, structure, population_size)?;
-                create_individuals_from_sequences(entries, structure, population_size)
-            } else {
-                Err(InitializationError::Validation(
-                    "JSON input requires uniform structure to be provided".to_string(),
-                ))
+    match config {
+        SequenceConfig::Generate { structure, mode } => match mode {
+            GenerationMode::Random => create_random_population(structure, population_size, rng)
+                .map_err(InitializationError::Validation),
+            GenerationMode::Uniform => create_uniform_population(structure, population_size)
+                .map_err(InitializationError::Validation),
+        },
+        SequenceConfig::Load { source, structure } => match source {
+            SequenceSource::Fasta { path, bed_path } => {
+                let entries = parse_fasta(path)?;
+                if let Some(bed_path) = bed_path {
+                    // Parse BED to get maps for each chromosome
+                    initialize_from_fasta_bed(entries, bed_path.clone(), population_size)
+                } else if let Some(structure) = structure {
+                    // Uniform structure
+                    validate_sequences(&entries, structure, population_size)?;
+                    create_individuals_from_sequences(entries, structure, population_size)
+                } else {
+                    Err(InitializationError::Validation(
+                        "FASTA input requires either BED path or uniform structure".to_string(),
+                    ))
+                }
             }
-        }
-        SequenceInput::Database {
-            path,
-            sim_id,
-            generation,
-        } => {
-            let entries = load_from_database(path, &sim_id, generation)?;
-            // Database load should probably include structure or maps.
-            // For now, assume uniform if structure provided, or error?
-            // Actually, `load_from_database` returns sequences.
-            // We need maps. `load_from_database` should probably return Individuals directly or maps.
-            // But `load_from_database` is existing.
-            // Let's assume uniform for now if structure is passed.
-            if let Some(structure) = _structure {
-                validate_sequences(&entries, structure, population_size)?;
-                create_individuals_from_sequences(entries, structure, population_size)
-            } else {
-                Err(InitializationError::Validation(
-                    "Database input requires uniform structure (for now)".to_string(),
-                ))
+            SequenceSource::FormattedString {
+                sequence,
+                hor_delim,
+                ru_delim,
+            } => initialize_from_formatted_string(
+                sequence.as_str(),
+                *hor_delim,
+                *ru_delim,
+                population_size,
+            ),
+            SequenceSource::Json(input) => {
+                let entries = parse_json(input)?;
+                if let Some(structure) = structure {
+                    validate_sequences(&entries, structure, population_size)?;
+                    create_individuals_from_sequences(entries, structure, population_size)
+                } else {
+                    Err(InitializationError::Validation(
+                        "JSON input requires uniform structure to be provided".to_string(),
+                    ))
+                }
             }
-        }
+            SequenceSource::Database {
+                path,
+                sim_id,
+                generation,
+            } => {
+                let entries = load_from_database(path, sim_id, *generation)?;
+                if let Some(structure) = structure {
+                    validate_sequences(&entries, structure, population_size)?;
+                    create_individuals_from_sequences(entries, structure, population_size)
+                } else {
+                    Err(InitializationError::Validation(
+                        "Database input requires uniform structure (for now)".to_string(),
+                    ))
+                }
+            }
+        },
     }
 }
 

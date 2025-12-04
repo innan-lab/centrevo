@@ -8,8 +8,8 @@ use crate::evolution::RecombinationType;
 
 use crate::genome::{Chromosome, Individual};
 use crate::simulation::{
-    FitnessConfig, MutationConfig, Population, RecombinationConfig, SimulationConfig,
-    UniformRepeatStructure,
+    FitnessConfig, GenerationMode, MutationConfig, Population, RecombinationConfig, SequenceConfig,
+    SimulationConfig, UniformRepeatStructure,
 };
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -50,11 +50,12 @@ impl Simulation {
         config: SimulationConfig,
     ) -> Result<Self, String> {
         // Create initial population with uniform sequences
-        let input = crate::simulation::inputs::SequenceInput::Uniform {
+        let seq_config = SequenceConfig::Generate {
             structure: structure.clone(),
+            mode: GenerationMode::Uniform,
         };
-        Self::from_sequences(
-            input,
+        Self::from_config(
+            seq_config,
             Some(structure),
             mutation,
             recombination,
@@ -129,16 +130,15 @@ impl Simulation {
         }
     }
 
-    /// Create a new simulation from custom sequences.
+    /// Create a new simulation from configuration.
     ///
     /// This allows initializing a simulation with sequences from FASTA files,
-    /// JSON data, or a previous simulation database. The sequences are validated
-    /// to ensure they match the expected parameters.
+    /// JSON data, or a previous simulation database, or generating them.
     ///
     /// # Arguments
     ///
-    /// * `source` - Source of initial sequences (FASTA, JSON, or Database)
-    /// * `structure` - Repeat structure parameters
+    /// * `seq_config` - Sequence initialization configuration
+    /// * `structure` - Repeat structure parameters (optional, for metadata)
     /// * `mutation` - Mutation configuration
     /// * `recombination` - Recombination configuration
     /// * `fitness` - Fitness configuration
@@ -146,10 +146,9 @@ impl Simulation {
     ///
     /// # Returns
     ///
-    /// A `Simulation` instance initialized with the provided sequences, or an error
-    /// if the sequences are invalid or don't match the parameters.
-    pub fn from_sequences(
-        source: crate::simulation::inputs::SequenceInput,
+    /// A `Simulation` instance initialized with the provided sequences.
+    pub fn from_config(
+        seq_config: SequenceConfig,
         structure: Option<UniformRepeatStructure>,
         mutation: MutationConfig,
         recombination: RecombinationConfig,
@@ -163,19 +162,10 @@ impl Simulation {
             Xoshiro256PlusPlus::from_seed(rand::rng().random())
         };
 
-        // Initialize individuals from source
-        // Note: initialize_from_source might need update if it strictly requires structure
-        // For now, we assume it can handle Option or we pass a dummy if needed.
-        // Actually, let's check initialization.rs. It takes &RepeatStructure.
-        // We might need to update initialization.rs first or pass a dummy here if None.
-
-        let individuals = crate::simulation::inputs::initialize_from_source(
-            source,
-            structure.as_ref(),
-            config.population_size,
-            &mut rng,
-        )
-        .map_err(|e| format!("Failed to initialize from sequences: {e}"))?;
+        // Initialize individuals from config
+        let individuals =
+            crate::simulation::initialize(&seq_config, config.population_size, &mut rng)
+                .map_err(|e| format!("Failed to initialize from sequences: {e}"))?;
 
         let population = Population::new("pop0", individuals);
 

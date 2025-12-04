@@ -6,10 +6,9 @@
 use crate::base::Nucleotide;
 pub use crate::errors::BuilderError;
 use crate::genome::RepeatMap;
-use crate::simulation::inputs::SequenceInput;
 use crate::simulation::{
-    FitnessConfig, MutationConfig, RecombinationConfig, Simulation, SimulationConfig,
-    UniformRepeatStructure,
+    FitnessConfig, GenerationMode, MutationConfig, RecombinationConfig, SequenceConfig,
+    SequenceSource, Simulation, SimulationConfig, UniformRepeatStructure,
 };
 
 /// Builder for constructing Simulation instances with a fluent API.
@@ -71,8 +70,8 @@ pub struct SimulationBuilder {
     // Explicit map for init_with_map
     repeat_map: Option<RepeatMap>,
 
-    // Initialization input
-    input: SequenceInput,
+    // Initialization configuration
+    config: SequenceConfig,
     // Base for uniform initialization (stored separately as it's part of structure construction)
     init_base: Nucleotide,
 
@@ -100,8 +99,9 @@ impl SimulationBuilder {
             hors_per_chr: None,
             chrs_per_hap: 1,
             repeat_map: None,
-            input: SequenceInput::Uniform {
+            config: SequenceConfig::Generate {
                 structure: UniformRepeatStructure::new(Nucleotide::A, 0, 0, 0, 1), // Placeholder
+                mode: GenerationMode::Uniform,
             },
             init_base: Nucleotide::A,
             mutation_rate: 0.0,
@@ -150,24 +150,31 @@ impl SimulationBuilder {
     /// Initialize with uniform sequences using the specified base.
     pub fn init_uniform(mut self, base: Nucleotide) -> Self {
         self.init_base = base;
-        // We set input to Uniform with placeholder, actual structure built in build()
-        self.input = SequenceInput::Uniform {
+        // We set config to Generate Uniform with placeholder, actual structure built in build()
+        self.config = SequenceConfig::Generate {
             structure: UniformRepeatStructure::new(base, 0, 0, 0, 1),
+            mode: GenerationMode::Uniform,
         };
         self
     }
 
     /// Initialize with random sequences (each position gets random base from alphabet).
     pub fn init_random(mut self) -> Self {
-        self.input = SequenceInput::Random;
+        self.config = SequenceConfig::Generate {
+            structure: UniformRepeatStructure::new(Nucleotide::A, 0, 0, 0, 1), // Placeholder
+            mode: GenerationMode::Random,
+        };
         self
     }
 
     /// Initialize from a FASTA file with a BED file for structure.
     pub fn init_from_fasta(mut self, path: impl Into<String>, bed_path: impl Into<String>) -> Self {
-        self.input = SequenceInput::Fasta {
-            path: path.into(),
-            bed_path: bed_path.into(),
+        self.config = SequenceConfig::Load {
+            source: SequenceSource::Fasta {
+                path: path.into(),
+                bed_path: Some(bed_path.into()),
+            },
+            structure: None,
         };
         self
     }
@@ -178,9 +185,12 @@ impl SimulationBuilder {
         path: impl Into<String>,
         structure: UniformRepeatStructure,
     ) -> Self {
-        self.input = SequenceInput::FastaUniform {
-            path: path.into(),
-            structure,
+        self.config = SequenceConfig::Load {
+            source: SequenceSource::Fasta {
+                path: path.into(),
+                bed_path: None,
+            },
+            structure: Some(structure),
         };
         self
     }
@@ -192,10 +202,13 @@ impl SimulationBuilder {
         hor_delim: char,
         ru_delim: char,
     ) -> Self {
-        self.input = SequenceInput::FormattedString {
-            sequence: sequence.into(),
-            hor_delim,
-            ru_delim,
+        self.config = SequenceConfig::Load {
+            source: SequenceSource::FormattedString {
+                sequence: sequence.into(),
+                hor_delim,
+                ru_delim,
+            },
+            structure: None,
         };
         self
     }
@@ -210,7 +223,10 @@ impl SimulationBuilder {
 
     /// Initialize from JSON (file path or JSON string).
     pub fn init_from_json(mut self, input: impl Into<String>) -> Self {
-        self.input = SequenceInput::Json(input.into());
+        self.config = SequenceConfig::Load {
+            source: SequenceSource::Json(input.into()),
+            structure: None,
+        };
         self
     }
 
@@ -226,10 +242,13 @@ impl SimulationBuilder {
         sim_id: impl Into<String>,
         generation: Option<usize>,
     ) -> Self {
-        self.input = SequenceInput::Database {
-            path: db_path.into(),
-            sim_id: sim_id.into(),
-            generation,
+        self.config = SequenceConfig::Load {
+            source: SequenceSource::Database {
+                path: db_path.into(),
+                sim_id: sim_id.into(),
+                generation,
+            },
+            structure: None,
         };
         self
     }
@@ -299,10 +318,9 @@ impl SimulationBuilder {
 
         // Build simulation based on initialization mode
         // Build simulation based on initialization mode
-        // Build simulation based on initialization mode
-        match self.input {
-            SequenceInput::Uniform { .. } => {
-                // For uniform, we need repeat structure
+        match &self.config {
+            SequenceConfig::Generate { mode, .. } => {
+                // For generation (Uniform/Random), we need repeat structure
                 let ru_length = self.ru_length.ok_or(BuilderError::MissingRequired(
                     "ru_length (via repeat_structure)",
                 ))?;
@@ -314,82 +332,53 @@ impl SimulationBuilder {
                 ))?;
 
                 let structure = UniformRepeatStructure::new(
-                    self.init_base,
+                    if *mode == GenerationMode::Uniform {
+                        self.init_base
+                    } else {
+                        Nucleotide::A
+                    },
                     ru_length,
                     rus_per_hor,
                     hors_per_chr,
                     self.chrs_per_hap,
                 );
 
-                // Update input with actual structure
-                let input = SequenceInput::Uniform {
+                // Update config with actual structure
+                let seq_config = SequenceConfig::Generate {
                     structure: structure.clone(),
+                    mode: *mode,
                 };
 
-                Simulation::from_sequences(
-                    input,
+                Simulation::from_config(
+                    seq_config,
                     Some(structure),
                     mutation,
                     recombination,
                     self.fitness,
                     config,
                 )
-                .map_err(|e| BuilderError::InvalidParameter(e))
+                .map_err(BuilderError::InvalidParameter)
             }
 
-            SequenceInput::Random => {
-                // For random, we need repeat structure
-                let ru_length = self.ru_length.ok_or(BuilderError::MissingRequired(
-                    "ru_length (via repeat_structure)",
-                ))?;
-                let rus_per_hor = self.rus_per_hor.ok_or(BuilderError::MissingRequired(
-                    "rus_per_hor (via repeat_structure)",
-                ))?;
-                let hors_per_chr = self.hors_per_chr.ok_or(BuilderError::MissingRequired(
-                    "hors_per_chr (via repeat_structure)",
-                ))?;
+            SequenceConfig::Load {
+                source: _source,
+                structure,
+            } => {
+                // If structure is provided in config (e.g. FastaUniform), use it.
+                // Otherwise, check if user provided structure via builder methods (optional for Load).
+                // But builder structure params (ru_length etc) are ignored for Load unless we want to enforce validation.
+                // Current logic: use structure from config if present.
 
-                let structure = UniformRepeatStructure::new(
-                    Nucleotide::A, // Doesn't matter for random init
-                    ru_length,
-                    rus_per_hor,
-                    hors_per_chr,
-                    self.chrs_per_hap,
-                );
-
-                Self::build_from_source_static(
-                    SequenceInput::Random,
-                    Some(structure),
-                    mutation,
-                    recombination,
-                    self.fitness,
-                    config,
-                )
-            }
-
-            SequenceInput::FastaUniform { path, structure } => Self::build_from_source_static(
-                SequenceInput::FastaUniform {
-                    path,
-                    structure: structure.clone(),
-                },
-                Some(structure),
-                mutation,
-                recombination,
-                self.fitness,
-                config,
-            ),
-
-            // For other inputs, we pass None as structure unless we want to support it
-            other => {
+                // If user tried to use init_with_map (not implemented fully)
                 if self.repeat_map.is_some() {
                     return Err(BuilderError::InvalidParameter(
                         "init_with_map not fully implemented yet".into(),
                     ));
                 }
 
-                Self::build_from_source_static(
-                    other,
-                    None,
+                Self::build_from_config_static(
+                    self.config.clone(),
+                    structure.clone(),
                     mutation,
                     recombination,
                     self.fitness,
@@ -399,17 +388,24 @@ impl SimulationBuilder {
         }
     }
 
-    /// Helper to build simulation from imported sequence source.
-    fn build_from_source_static(
-        source: SequenceInput,
+    /// Helper to build simulation from configuration.
+    fn build_from_config_static(
+        seq_config: SequenceConfig,
         structure: Option<UniformRepeatStructure>,
         mutation: MutationConfig,
         recombination: RecombinationConfig,
         fitness: FitnessConfig,
         config: SimulationConfig,
     ) -> Result<Simulation, BuilderError> {
-        Simulation::from_sequences(source, structure, mutation, recombination, fitness, config)
-            .map_err(|e| BuilderError::SequenceImport(e.to_string()))
+        Simulation::from_config(
+            seq_config,
+            structure,
+            mutation,
+            recombination,
+            fitness,
+            config,
+        )
+        .map_err(|e| BuilderError::SequenceImport(e.to_string()))
     }
 }
 

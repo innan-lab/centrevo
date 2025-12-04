@@ -15,19 +15,20 @@
 //!   with sensible defaults and validation.
 
 pub mod builder;
+pub mod configs;
 pub mod engine;
-pub mod inputs;
-pub mod parameters;
 pub mod population;
+pub mod sequence;
 
 pub use builder::SimulationBuilder;
+pub use configs::{
+    BuilderEmpty, BuilderInitialized, FitnessConfig, FitnessConfigBuilder, GenerationMode,
+    MutationConfig, RecombinationConfig, SequenceConfig, SequenceSource, SimulationConfig,
+    UniformRepeatStructure,
+};
 pub use engine::Simulation;
-pub use inputs::{
-    SequenceEntry, SequenceInput, create_individuals_from_sequences, initialize_from_source,
+pub use population::Population;
+pub use sequence::{
+    SequenceEntry, SequenceEntryWithIndices, create_individuals_from_sequences, initialize,
     load_from_database, parse_fasta, parse_json, validate_sequences,
 };
-pub use parameters::{
-    BuilderEmpty, BuilderInitialized, FitnessConfig, FitnessConfigBuilder, MutationConfig,
-    RecombinationConfig, SimulationConfig, UniformRepeatStructure,
-};
-pub use population::Population;

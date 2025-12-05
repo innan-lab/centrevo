@@ -1,7 +1,29 @@
 //! Recombination operations for sequences.
 //!
-//! This module provides recombination functionality including crossover
-//! and gene conversion events.
+//! This module simulates sexual reproduction through recombination, the process by
+//! which genetic material from two parents is shuffled to create offspring with new
+//! combinations of alleles. This is a fundamental mechanism driving genetic diversity
+//! and the efficacy of natural selection.
+//!
+//! ## Recombination Types
+//!
+//! ### Crossover (Reciprocal Recombination)
+//! DNA strands from two chromosomes break at the same (or different) positions and
+//! rejoin in crossed patterns. This results in both chromosomes having new combinations
+//! of alleles. Crossovers are balanced - both parents lose sequence at the break point
+//! but gain sequence from the other parent.
+//!
+//! ### Gene Conversion (Non-Reciprocal Recombination)
+//! A segment from the donor chromosome is copied to the recipient chromosome, replacing
+//! the local alleles. Unlike crossover, this is non-reciprocal: the donor is unchanged.
+//! Gene conversion is thought to be the mechanism for "homogenization" of tandem repeats.
+//!
+//! ## How Recombination Works in This Model
+//!
+//! 1. **Break Sites**: Meiosis creates double-strand breaks at random positions (Poisson process)
+//! 2. **Homology Search**: The break site searches for matching sequence in the homologous chromosome
+//! 3. **Repair Choice**: The break is repaired as either crossover or gene conversion
+//! 4. **Tract Extension**: Gene conversion tracts extend stochastically along the chromosome
 
 pub use crate::errors::RecombinationError;
 use rand::Rng;
@@ -10,8 +32,16 @@ use serde::{Deserialize, Serialize};
 
 /// Type of recombination event that can occur on a sequence.
 ///
-/// Variants describe whether no recombination occurred, a crossover at a
-/// specific position, or a gene conversion tract (start..end).
+/// During meiosis, when two homologous chromosomes pair up, recombination events
+/// can occur to shuffle genetic material. This enum describes what happened at each
+/// recombination point:
+///
+/// - **None**: No recombination (used for neutral regions or modeling)
+/// - **Crossover**: Reciprocal exchange at two positions (one per chromosome)
+/// - **Gene Conversion**: Unidirectional copying from donor to recipient chromosome
+///
+/// Biologically, these represent different mechanistic outcomes of meiotic DSBs
+/// (double-strand breaks) during prophase I of meiosis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RecombinationType {
     /// No recombination occurs
@@ -31,10 +61,21 @@ pub enum RecombinationType {
 
 /// Parameters controlling recombination behavior.
 ///
-/// These parameters determine the per-base break probability and how breaks
-/// are resolved (crossover vs gene conversion) as well as the extension
-/// behavior of gene conversion tracts. Use `RecombinationModel::builder()` to
-/// construct a new instance with validation.
+/// These parameters model the key biological aspects of meiotic recombination:
+/// - How frequently breaks occur (break_prob)
+/// - Whether breaks resolve as crossovers or gene conversions (crossover_prob)
+/// - How long gene conversion tracts extend (gc_extension_prob)
+/// - How sensitive the cell is to homology when choosing repair templates (homology_strength)
+/// - Where the cell searches for homologous sequences (search_window, kmer_size)
+///
+/// The parameters reflect mechanistic details observed in real meiosis:
+/// 1. **Break Frequency**: Determined by meiotic machinery; ~1-3 breaks per chromosome arm
+/// 2. **Break Resolution**: DSBs can be repaired as crossovers (~1 per arm, constrained) or
+///    gene conversions (many per arm, homology-dependent)
+/// 3. **Homology Search**: Meiotic complexes search locally for homologous sequence
+/// 4. **GC Tract Length**: Real gene conversion tracts average ~1-4 kb in fungi, ~0.5-2 kb in mammals
+///
+/// Use `RecombinationModel::builder()` to construct a new instance with validation.
 ///
 /// # Examples
 ///
@@ -243,15 +284,26 @@ impl RecombinationModel {
 
     /// Sample recombination events for a sequence of given length.
     ///
-    /// Returns a list of events that occurred, sorted by position.
-    /// This uses a geometric distribution to correctly simulate the per-base
-    /// break probability, ensuring that the probability of at least one break
-    /// scales correctly with sequence length.
+    /// This simulates meiosis for a chromosome: we generate break sites stochastically
+    /// using a Bernoulli process (which approximates a Poisson process for rare events).
+    ///
+    /// The process mimics real meiosis:
+    /// 1. Meiotic DSBs occur at random intervals along the chromosome. We sample the
+    ///    distance between breaks using a Geometric distribution, which describes the
+    ///    inter-arrival time of a Bernoulli process.
+    /// 2. RAD51/DMC1 proteins coat the single-stranded DNA and search for homology
+    /// 3. Homology-directed strand invasion initiates repair
+    /// 4. Breaks are resolved as crossovers (~50% via BLM helicase dissolution) or
+    ///    gene conversions (~50% via nuclease resolution)
     ///
     /// # Arguments
-    /// * `seq1` - The first chromosome (recipient/break source)
-    /// * `seq2` - The second chromosome (donor/repair template)
+    /// * `seq1` - The first chromosome (recipient for gene conversion, one strand of crossover)
+    /// * `seq2` - The second chromosome (donor for gene conversion, homolog for pairing)
     /// * `rng` - Random number generator
+    ///
+    /// # Returns
+    /// A list of RecombinationType events, sorted by position in seq1. The events
+    /// represent what actually happened to the sequence during meiosis.
     ///
     /// # Examples
     ///
@@ -355,6 +407,23 @@ impl RecombinationModel {
     }
 
     /// Find a homologous site in the target chromosome.
+    ///
+    /// This models the strand invasion and homology search process during meiotic
+    /// recombination. After a DSB, the 5'-3' exonuclease degrades one strand,
+    /// creating a 3' single-stranded tail. RAD51 and DMC1 proteins then:
+    ///
+    /// 1. Load onto the 3' tail
+    /// 2. Probe the partner chromosome for homologous sequence
+    /// 3. Search a local window around the syntenic position (expected position based
+    ///    on chromosome alignment)
+    /// 4. Score candidates by similarity (k-mer matching)
+    /// 5. Weight candidates by homology strength (biological: stronger homology = preference)
+    /// 6. Sample a site proportional to these weights
+    /// 7. Invade and prime DNA synthesis
+    ///
+    /// The algorithm implements weighted random sampling: higher-similarity sequences
+    /// are more likely to be chosen, but with randomness reflecting biological variance
+    /// in the meiotic machinery.
     fn find_homologous_site<R: Rng + ?Sized>(
         &self,
         source: &crate::genome::Chromosome,
@@ -440,7 +509,15 @@ impl RecombinationModel {
 
     /// Perform crossover between two sequences at the given position.
     ///
-    /// Creates two offspring by swapping sequence content after the crossover point.
+    /// Crossover (recombination) creates two recombinant chromosomes by reciprocal
+    /// exchange of sequence. If seq1 is broken at pos1 and seq2 is broken at pos2,
+    /// the results are:
+    /// - Offspring 1: [seq1 before pos1] + [seq2 from pos2]
+    /// - Offspring 2: [seq2 before pos2] + [seq1 from pos1]
+    ///
+    /// Biologically: both offspring inherit new combinations of alleles around the
+    /// crossover point, increasing genetic diversity. For two parents of equal fitness,
+    /// crossover produces balanced offspring (no allele loss).
     ///
     /// # Returns
     /// A tuple of two new sequences (offspring1, offspring2).
@@ -455,20 +532,29 @@ impl RecombinationModel {
         pos1: usize,
         pos2: usize,
     ) -> Result<(crate::genome::Chromosome, crate::genome::Chromosome), RecombinationError> {
-        seq1.crossover(seq2, pos1, pos2).map_err(|_| {
-            RecombinationError::InvalidPosition {
+        seq1.crossover(seq2, pos1, pos2)
+            .map_err(|_| RecombinationError::InvalidPosition {
                 position: pos1,
                 length: seq1.len(),
-            }
-        }) // Simplified error mapping
+            }) // Simplified error mapping
     }
 
     /// Perform gene conversion by copying a tract from donor to recipient.
     ///
-    /// Copies the sequence content from `donor` to `recipient` in the range [start, end).
+    /// Gene conversion replaces a segment of the recipient chromosome with the
+    /// corresponding segment from the donor. Unlike crossover (reciprocal), only
+    /// the recipient changes; the donor is unmodified.
+    ///
+    /// Biologically: gene conversion arises from asymmetric resolution of recombination
+    /// intermediates. The tract length reflects processivity of meiotic exonucleases:
+    /// longer tracts = more processive exonucleases; shorter tracts = pausing/dissociation.
+    ///
+    /// Evolutionary consequence: gene conversion can homogenize sequences within
+    /// tandem repeats, reducing sequence divergence between copies (important for
+    /// maintaining repeat unit similarity).
     ///
     /// # Returns
-    /// A new sequence with the converted tract.
+    /// A new sequence with the converted tract replaced by donor sequence.
     ///
     /// # Errors
     /// Returns an error if the provided indices are invalid for the given

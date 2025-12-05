@@ -359,7 +359,7 @@ impl Simulation {
                     // Apply substitutions
                     self.mutation
                         .substitution
-                        .mutate_sequence_poisson(seq, &mut local_rng);
+                        .mutate_sequence_sparse(seq, &mut local_rng);
 
                     // Apply indels if configured
                     if let Some(indel_model) = &self.mutation.indel {
@@ -373,7 +373,7 @@ impl Simulation {
                     // Apply substitutions
                     self.mutation
                         .substitution
-                        .mutate_sequence_poisson(seq, &mut local_rng);
+                        .mutate_sequence_sparse(seq, &mut local_rng);
 
                     // Apply indels if configured
                     if let Some(indel_model) = &self.mutation.indel {

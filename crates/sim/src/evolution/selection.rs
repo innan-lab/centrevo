@@ -1,7 +1,22 @@
 //! Selection and fitness functions for individuals.
 //!
-//! This module provides fitness scoring capabilities including GC content,
-//! length-based, and sequence similarity fitness functions.
+//! This module provides fitness scoring capabilities for simulating natural selection.
+//! Fitness determines reproductive success: individuals with higher fitness contribute
+//! more offspring to the next generation, driving allele frequencies toward beneficial
+//! variants and maintaining harmful variation at mutation-selection balance.
+//!
+//! ## Fitness Functions
+//!
+//! ### Haplotype Fitness (Single Chromosome)
+//! Fitness of a single chromosome, typically based on sequence properties:
+//! - **GC Content**: Many organisms have GC-content-dependent fitness, reflecting
+//!   GC-bias mutations or selection for stability (GC bonds are stronger)
+//! - **Length**: Longer sequences might be more robust (more genes) or costly (more to replicate)
+//!
+//! ### Individual Fitness (Diploid Organism)
+//! Fitness of a whole organism with two chromosome copies (alleles). Can be:
+//! - **Multiplicative**: `fitness = haplotype1_fitness × haplotype2_fitness` (default, models additive effects)
+//! - **Interactive**: `fitness = f(haplotype1, haplotype2)` (models dominance, overdominance, etc.)
 
 use crate::base::{FitnessValue, Nucleotide};
 use crate::errors::FitnessError;
@@ -13,6 +28,11 @@ use serde::{Deserialize, Serialize};
 /// Implementors should provide a `haplotype_fitness` method that computes a
 /// non-negative fitness value for the haplotype. The default implementation
 /// returns neutral fitness of 1.0.
+///
+/// Biologically: haplotype fitness represents the relative survival and
+/// reproductive success of individuals carrying a particular allele or chromosome.
+/// Fitness is typically measured relative to a reference (often the wild-type),
+/// so values > 1 are beneficial and < 1 are deleterious.
 pub trait HaplotypeFitness {
     /// Calculate fitness score for a single haplotype.
     ///
@@ -31,6 +51,12 @@ pub trait HaplotypeFitness {
 /// haplotype fitness values. Override `individual_fitness` when the fitness
 /// depends on interactions between haplotypes (for example sequence similarity
 /// or length similarity).
+///
+/// Biologically: diploid fitness reflects how the two alleles interact:
+/// - **Multiplicative (default)**: Assumes additive/independent effects (common for weak selection)
+/// - **Dominance**: One allele masks the effect of another (classic Mendelian pattern)
+/// - **Overdominance**: Heterozygotes more fit than either homozygote (heterozygote advantage)
+/// - **Underdominance**: Heterozygotes less fit than homozygotes (reproductive incompatibility)
 ///
 /// Example (override default):
 ///
@@ -60,7 +86,24 @@ pub trait IndividualFitness: HaplotypeFitness {
 
 /// GC content-based fitness function.
 ///
-/// Fitness is maximized when the GC content is close to the optimum value.
+/// Fitness follows a Beta distribution centered on the optimal GC content.
+/// This models real biological phenomena:
+///
+/// 1. **GC-Bias Mutations**: Most organisms have biased mutation patterns favoring GC
+///    or AT, shifting genome-wide GC content over time
+/// 2. **GC-Dependent Fitness**: GC content affects:
+///    - Codon usage bias (translation efficiency)
+///    - mRNA stability (GC bonds are stronger)
+///    - Thermodynamic stability of DNA secondary structures
+///    - Horizontal gene transfer barriers (foreign DNA can have unusual GC)
+/// 3. **Selection-Mutation Balance**: Optimal GC reflects balance between mutation bias
+///    and stabilizing selection
+///
+/// The Beta distribution provides a biologically realistic fitness landscape:
+/// - Smooth optimum: selection is weak near the optimum
+/// - Symmetric: allows modeling any optimum from 0 to 1
+/// - Peaked at the optimum: strong selection against deviations
+/// - Concentration parameter controls the sharpness (higher = stronger selection)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GCContentFitness {
     /// Optimal GC content (between 0.0 and 1.0)
@@ -73,8 +116,14 @@ impl GCContentFitness {
     /// Create a new GC content fitness function.
     ///
     /// # Arguments
-    /// * `optimum` - Optimal GC content (must be between 0.0 and 1.0, exclusive)
+    /// * `optimum` - Optimal GC content (must be between 0.0 and 1.0, inclusive)
+    ///   - 0.0 = AT-rich sequences are optimal (e.g., parasites, thermophiles)
+    ///   - 0.5 = GC-neutral (no preference)
+    ///   - 1.0 = GC-rich sequences are optimal (e.g., some bacteria, mammalian CpG islands)
     /// * `concentration` - Sharpness of fitness curve (must be > 0.0)
+    ///   - 0.5 = very weak selection (broad fitness landscape)
+    ///   - 1.0 = moderate selection (typical for real organisms)
+    ///   - 5.0+ = very strong selection (narrow tolerance for deviations)
     ///
     /// # Errors
     /// Returns an error if parameters are outside valid ranges.
@@ -122,6 +171,21 @@ impl IndividualFitness for GCContentFitness {}
 /// Length-based fitness function.
 ///
 /// Fitness follows a log-normal distribution centered around the optimal length.
+/// This models real biological trade-offs:
+///
+/// 1. **Genome Size Constraints**: Organisms face pressure to maintain compact genomes
+///    (replication cost) versus having sufficient genes (functional complexity)
+/// 2. **Indel Mutations**: Insertions and deletions push sequences away from optimum
+/// 3. **Length Polymorphisms**: Real populations show length variation (e.g., STRs)
+///    with fitness effects
+///
+/// The log-normal distribution is biologically motivated:
+/// - Asymmetric: sequences much smaller than optimum are more deleterious
+///   than sequences much larger (truncated genomes lose genes)
+/// - Accounts for both mutation pressure and selection
+///
+/// Example: If optimum=1000bp and std_dev=0.2, sequences 500-2000bp have reasonable
+/// fitness, but 100bp (95% reduction) or 10000bp (10-fold increase) are severely deleterious.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LengthFitness {
     /// Optimal sequence length in bases
@@ -134,8 +198,13 @@ impl LengthFitness {
     /// Create a new length-based fitness function.
     ///
     /// # Arguments
-    /// * `optimum` - Optimal sequence length (must be > 0)
-    /// * `std_dev` - Standard deviation (must be > 0.0)
+    /// * `optimum` - Optimal sequence length in bases (must be > 0)
+    ///   - Typical values: 1000-10000 for viruses, 100kb-1Mb for bacteria, 1-100 Mb for eukaryotes
+    /// * `std_dev` - Standard deviation on log scale (must be > 0.0)
+    ///   - Measures tolerance for length deviations: log scale reflects exponential effects
+    ///   - 0.1 = very tight length constraint (±10% has significant fitness cost)
+    ///   - 0.5 = moderate tolerance (sequences 0.6-1.6× optimum are reasonably fit)
+    ///   - 1.0 = wide tolerance (even 0.4-2.5× optimum viable)
     ///
     /// # Errors
     /// Returns an error if parameters are outside valid ranges.
@@ -174,7 +243,19 @@ impl IndividualFitness for LengthFitness {}
 
 /// Sequence similarity fitness function.
 ///
-/// Fitness is higher when two haplotypes are more similar.
+/// Fitness is higher when two haplotypes have more similar sequences. This models
+/// biological scenarios where sequence divergence reduces fitness:
+///
+/// 1. **Reproductive Incompatibility**: Divergent alleles may not interact properly
+/// 2. **Gene Dosage Balance**: Some genes require stoichiometric expression of protein products
+/// 3. **Intragenic Complementation**: Within-gene diversity can interfere with splicing or folding
+/// 4. **Heterozygote Disadvantage**: Underdominance where heterozygotes are less fit than homozygotes
+///
+/// The fitness function is based on Hamming distance (counting differences):
+/// - Identical sequences: fitness = 1.0 (perfect compatibility)
+/// - Completely different sequences: fitness = 0.0 (lethal incompatibility)
+/// - Partial difference: fitness between 0 and 1 (proportional to similarity)
+/// - Shape parameter controls how sharply fitness declines with divergence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SequenceSimilarityFitness {
     /// Shape parameter controlling decline rate (higher = steeper decline)
@@ -186,6 +267,10 @@ impl SequenceSimilarityFitness {
     ///
     /// # Arguments
     /// * `shape` - Shape parameter (must be > 0.0)
+    ///   - Controls how sharply fitness declines with sequence divergence
+    ///   - 0.5 = gradual decline (weak selection against incompatibility)
+    ///   - 1.0 = linear decline with distance (moderate selection)
+    ///   - 2.0+ = steep decline (strong selection for compatibility)
     ///
     /// # Errors
     /// Returns an error if shape is not positive.
@@ -224,7 +309,8 @@ impl IndividualFitness for SequenceSimilarityFitness {
         let min_len = chr1.len().min(chr2.len());
         let max_len = chr1.len().max(chr2.len());
 
-        // Compare up to the shorter length
+        // Compare up to the shorter length (compare actual sequence content)
+        // Count differences using Hamming distance
         let distance = Self::hamming_distance(
             &chr1.sequence().as_slice()[..min_len],
             &chr2.sequence().as_slice()[..min_len],
@@ -306,7 +392,6 @@ impl IndividualFitness for LengthSimilarityFitness {
     }
 }
 
-// Removed FitnessError definition, imported from crate::errors
 
 #[cfg(test)]
 mod tests {

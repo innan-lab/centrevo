@@ -536,29 +536,32 @@ mod tests {
     use super::*;
     use crate::base::Nucleotide;
     use crate::evolution::SubstitutionModel;
+    use crate::simulation::SimulationBuilder;
 
-    fn create_test_config() -> (
-        UniformRepeatStructure,
-        MutationConfig,
-        RecombinationConfig,
-        FitnessConfig,
-        SimulationConfig,
-    ) {
-        let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
-
-        let mutation = MutationConfig::uniform(0.001).unwrap();
-        let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
-        let fitness = FitnessConfig::neutral();
-        let config = SimulationConfig::new(10, 5, Some(42));
-
-        (structure, mutation, recombination, fitness, config)
+    /// Helper function to create a test simulation with standard configuration.
+    ///
+    /// Creates a simulation with:
+    /// - Population size: 10
+    /// - Generations: 5
+    /// - Repeat structure: 10 ru_length, 5 rus_per_hor, 10 hors_per_chr
+    /// - Mutation rate: 0.001
+    /// - Recombination: standard(0.01, 0.7, 0.1)
+    /// - Seed: 42 (reproducible)
+    fn create_test_simulation() -> Simulation {
+        SimulationBuilder::new()
+            .population_size(10)
+            .generations(5)
+            .repeat_structure(10, 5, 10)
+            .mutation_rate(0.001)
+            .recombination(0.01, 0.7, 0.1)
+            .seed(42)
+            .build()
+            .unwrap()
     }
 
     #[test]
     fn test_simulation_new() {
-        let (structure, mutation, recombination, fitness, config) = create_test_config();
-
-        let sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+        let sim = create_test_simulation();
 
         assert_eq!(sim.population().size(), 10);
         assert_eq!(sim.generation(), 0);
@@ -566,9 +569,7 @@ mod tests {
 
     #[test]
     fn test_simulation_initial_population() {
-        let (structure, mutation, recombination, fitness, config) = create_test_config();
-
-        let sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+        let sim = create_test_simulation();
 
         // Check that all individuals have the correct structure
         for individual in sim.population().individuals() {
@@ -585,9 +586,7 @@ mod tests {
 
     #[test]
     fn test_simulation_step() {
-        let (structure, mutation, recombination, fitness, config) = create_test_config();
-
-        let mut sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+        let mut sim = create_test_simulation();
 
         assert_eq!(sim.generation(), 0);
 
@@ -606,9 +605,7 @@ mod tests {
 
     #[test]
     fn test_simulation_run_for() {
-        let (structure, mutation, recombination, fitness, config) = create_test_config();
-
-        let mut sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+        let mut sim = create_test_simulation();
 
         assert_eq!(sim.generation(), 0);
 
@@ -620,9 +617,7 @@ mod tests {
 
     #[test]
     fn test_simulation_run() {
-        let (structure, mutation, recombination, fitness, config) = create_test_config();
-
-        let mut sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+        let mut sim = create_test_simulation();
 
         sim.run().unwrap();
 
@@ -632,16 +627,17 @@ mod tests {
 
     #[test]
     fn test_create_uniform_individual() {
-        let structure = UniformRepeatStructure::new(Nucleotide::C, 10, 5, 10, 2);
+        let sim = SimulationBuilder::new()
+            .population_size(1)
+            .generations(1)
+            .repeat_structure(10, 5, 10)
+            .chromosomes_per_haplotype(2)
+            .init_uniform(Nucleotide::C)
+            .mutation_rate(0.0)
+            .recombination(0.0, 0.0, 0.0)
+            .build()
+            .unwrap();
 
-        // We moved this logic to inputs, so we test it via inputs or integration
-        // Here we can test via Simulation::new which uses it
-        let mutation = MutationConfig::uniform(0.0).unwrap();
-        let recombination = RecombinationConfig::standard(0.0, 0.0, 0.0).unwrap();
-        let fitness = FitnessConfig::neutral();
-        let config = SimulationConfig::new(1, 1, None);
-
-        let sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
         let ind = sim.population().get(0).unwrap();
 
         assert_eq!(ind.id(), "ind_0");
@@ -659,13 +655,15 @@ mod tests {
     #[test]
     fn test_apply_event_to_pair_gene_conversion_clamps() {
         // Create a small simulation with trivial configs
-        let structure = UniformRepeatStructure::new(Nucleotide::A, 1, 1, 6, 1); // chr len 6
-        let mutation = MutationConfig::uniform(0.0).unwrap();
-        let recombination = RecombinationConfig::standard(0.0, 0.5, 0.5).unwrap();
-        let fitness = FitnessConfig::neutral();
-        let config = SimulationConfig::new(1, 1, Some(42));
-
-        let sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+        let sim = SimulationBuilder::new()
+            .population_size(1)
+            .generations(1)
+            .repeat_structure(1, 1, 6) // chr len 6
+            .mutation_rate(0.0)
+            .recombination(0.0, 0.5, 0.5)
+            .seed(42)
+            .build()
+            .unwrap();
 
         // Chron 1: donor (length 6), Chron 2: recipient (length 4)
         let mut donor = Chromosome::uniform("d", Nucleotide::A, 1, 1, 6);
@@ -687,13 +685,15 @@ mod tests {
 
     #[test]
     fn test_apply_event_to_pair_gene_conversion_skip_when_out_of_bounds() {
-        let structure = UniformRepeatStructure::new(Nucleotide::A, 1, 1, 4, 1);
-        let mutation = MutationConfig::uniform(0.0).unwrap();
-        let recombination = RecombinationConfig::standard(0.0, 0.5, 0.5).unwrap();
-        let fitness = FitnessConfig::neutral();
-        let config = SimulationConfig::new(1, 1, Some(42));
-
-        let sim = Simulation::new(structure, mutation, recombination, fitness, config).unwrap();
+        let sim = SimulationBuilder::new()
+            .population_size(1)
+            .generations(1)
+            .repeat_structure(1, 1, 4)
+            .mutation_rate(0.0)
+            .recombination(0.0, 0.5, 0.5)
+            .seed(42)
+            .build()
+            .unwrap();
 
         let mut donor = Chromosome::uniform("d", Nucleotide::A, 1, 1, 4);
         let mut recipient = Chromosome::uniform("r", Nucleotide::T, 1, 1, 4);

@@ -365,20 +365,42 @@ impl SimulationBuilder {
                 structure,
             } => {
                 // If structure is provided in config (e.g. FastaUniform), use it.
-                // Otherwise, check if user provided structure via builder methods (optional for Load).
-                // But builder structure params (ru_length etc) are ignored for Load unless we want to enforce validation.
-                // Current logic: use structure from config if present.
+                // If not, check if builder parameters were provided.
+                let effective_structure = structure.clone().or_else(|| {
+                    if let (Some(ru), Some(rus), Some(hors)) =
+                        (self.ru_length, self.rus_per_hor, self.hors_per_chr)
+                    {
+                        Some(UniformRepeatStructure::new(
+                            self.init_base, // Defaults to A if not set via init_uniform (which shouldn't be used with Load, but we need a base)
+                            ru,
+                            rus,
+                            hors,
+                            self.chrs_per_hap,
+                        ))
+                    } else {
+                        None
+                    }
+                });
 
-                // If user tried to use init_with_map (not implemented fully)
                 if self.repeat_map.is_some() {
                     return Err(BuilderError::InvalidParameter(
                         "init_with_map not fully implemented yet".into(),
                     ));
                 }
 
+                // Update config with effective structure to ensure it's available for validation
+                let updated_config = if let SequenceConfig::Load { source, .. } = &self.config {
+                    SequenceConfig::Load {
+                        source: source.clone(),
+                        structure: effective_structure.clone(),
+                    }
+                } else {
+                    self.config.clone()
+                };
+
                 Self::build_from_config_static(
-                    self.config.clone(),
-                    structure.clone(),
+                    updated_config,
+                    effective_structure,
                     mutation,
                     recombination,
                     self.fitness,

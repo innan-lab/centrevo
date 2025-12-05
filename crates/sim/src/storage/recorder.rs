@@ -389,6 +389,15 @@ impl Recorder {
                 )
                 .map_err(|e| DatabaseError::Insert(e.to_string()))?;
 
+            // Clear any existing data for this generation to prevent duplicates
+            tx.execute(
+                "DELETE FROM population_state WHERE sim_id = ?1 AND generation = ?2",
+                params![self.sim_id.as_ref(), generation as i64],
+            )
+            .map_err(|e| {
+                DatabaseError::Insert(format!("Failed to clear existing generation: {e}"))
+            })?;
+
             for snapshot in snapshots {
                 stmt.execute(params![
                     self.sim_id.as_ref(),

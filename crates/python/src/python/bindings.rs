@@ -2,17 +2,17 @@
 //!
 //! This module provides Python interfaces to all major Centrevo functionality.
 
-use pyo3::prelude::*;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::{PyList, PyDict};
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
 use std::path::PathBuf;
 
 use centrevo_sim::base::Nucleotide;
 use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 use centrevo_sim::simulation::{
-    Population, RepeatStructure, SimulationConfig, Simulation,
-    MutationConfig, RecombinationConfig, FitnessConfig, FitnessConfigBuilder,
-    BuilderEmpty, BuilderInitialized, SequenceInput, SimulationBuilder,
+    BuilderEmpty, BuilderInitialized, FitnessConfig, FitnessConfigBuilder, MutationConfig,
+    Population, RecombinationConfig, RepeatStructure, SequenceInput, Simulation, SimulationBuilder,
+    SimulationConfig,
 };
 use centrevo_sim::storage::{QueryBuilder, Recorder, RecordingStrategy, SimulationSnapshot};
 
@@ -85,25 +85,33 @@ impl PyNucleotide {
     #[staticmethod]
     #[allow(non_snake_case)]
     fn A() -> Self {
-        Self { inner: Nucleotide::A }
+        Self {
+            inner: Nucleotide::A,
+        }
     }
 
     #[staticmethod]
     #[allow(non_snake_case)]
     fn C() -> Self {
-        Self { inner: Nucleotide::C }
+        Self {
+            inner: Nucleotide::C,
+        }
     }
 
     #[staticmethod]
     #[allow(non_snake_case)]
     fn G() -> Self {
-        Self { inner: Nucleotide::G }
+        Self {
+            inner: Nucleotide::G,
+        }
     }
 
     #[staticmethod]
     #[allow(non_snake_case)]
     fn T() -> Self {
-        Self { inner: Nucleotide::T }
+        Self {
+            inner: Nucleotide::T,
+        }
     }
 }
 
@@ -124,13 +132,7 @@ impl PyChromosome {
         rus_per_hor: usize,
     ) -> Self {
         Self {
-            inner: Chromosome::uniform(
-                id,
-                base.inner,
-                length,
-                ru_length,
-                rus_per_hor,
-            ),
+            inner: Chromosome::uniform(id, base.inner, length, ru_length, rus_per_hor),
         }
     }
 
@@ -152,7 +154,11 @@ impl PyChromosome {
     }
 
     fn __repr__(&self) -> String {
-        format!("Chromosome(id='{id}', length={len})", id = self.inner.id(), len = self.inner.len())
+        format!(
+            "Chromosome(id='{id}', length={len})",
+            id = self.inner.id(),
+            len = self.inner.len()
+        )
     }
 }
 
@@ -173,10 +179,7 @@ impl PyHaplotype {
 
     #[staticmethod]
     fn from_chromosomes(chromosomes: Vec<PyRef<PyChromosome>>) -> Self {
-        let chrs: Vec<Chromosome> = chromosomes
-            .iter()
-            .map(|c| c.inner.clone())
-            .collect();
+        let chrs: Vec<Chromosome> = chromosomes.iter().map(|c| c.inner.clone()).collect();
 
         Self {
             inner: Haplotype::from_chromosomes(chrs),
@@ -237,7 +240,11 @@ impl PyIndividual {
     }
 
     fn __repr__(&self) -> String {
-        format!("Individual(id='{id}', cached_fitness={cached:?})", id = self.inner.id(), cached = self.inner.cached_fitness())
+        format!(
+            "Individual(id='{id}', cached_fitness={cached:?})",
+            id = self.inner.id(),
+            cached = self.inner.cached_fitness()
+        )
     }
 }
 
@@ -251,10 +258,7 @@ pub(super) struct PyPopulation {
 impl PyPopulation {
     #[new]
     fn new(id: String, individuals: Vec<PyRef<PyIndividual>>) -> Self {
-        let inds: Vec<Individual> = individuals
-            .iter()
-            .map(|i| i.inner.clone())
-            .collect();
+        let inds: Vec<Individual> = individuals.iter().map(|i| i.inner.clone()).collect();
 
         Self {
             inner: Population::new(id, inds),
@@ -439,12 +443,8 @@ struct PyRecorder {
 impl PyRecorder {
     #[new]
     fn new(db_path: String, sim_id: String, strategy: &PyRecordingStrategy) -> PyResult<Self> {
-        let recorder = Recorder::new(
-            PathBuf::from(db_path),
-            sim_id,
-            strategy.inner.clone(),
-        )
-        .map_err(|e| PyRuntimeError::new_err(format!("Failed to create recorder: {e}")))?;
+        let recorder = Recorder::new(PathBuf::from(db_path), sim_id, strategy.inner.clone())
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create recorder: {e}")))?;
 
         Ok(Self {
             inner: Some(recorder),
@@ -631,7 +631,11 @@ impl PyQueryBuilder {
             let hor_len = ru_len * rus_per_hor;
             let hors_per_chr = if hor_len > 0 { seq1.len() / hor_len } else { 0 };
 
-            let map = centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+            let map = centrevo_sim::genome::repeat_map::RepeatMap::uniform(
+                ru_len,
+                rus_per_hor,
+                hors_per_chr,
+            );
 
             let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, map.clone());
             let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, map);
@@ -693,27 +697,24 @@ impl PyQueryBuilder {
 
 /// Helper function to create initial population.
 #[pyfunction]
-fn create_initial_population(
-    size: usize,
-    structure: &PyRepeatStructure,
-) -> PyResult<PyPopulation> {
+fn create_initial_population(size: usize, structure: &PyRepeatStructure) -> PyResult<PyPopulation> {
     let mut individuals = Vec::with_capacity(size);
 
     for i in 0..size {
         let chr1 = Chromosome::uniform(
             format!("ind{}_h1_chr1", i),
             structure.inner.init_base,
-            structure.inner.chr_length(),
             structure.inner.ru_length,
             structure.inner.rus_per_hor,
+            structure.inner.hors_per_chr,
         );
 
         let chr2 = Chromosome::uniform(
             format!("ind{}_h2_chr1", i),
             structure.inner.init_base,
-            structure.inner.chr_length(),
             structure.inner.ru_length,
             structure.inner.rus_per_hor,
+            structure.inner.hors_per_chr,
         );
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
@@ -760,7 +761,9 @@ impl PyRecombinationConfig {
     #[staticmethod]
     fn standard(break_prob: f64, crossover_prob: f64, gc_extension_prob: f64) -> PyResult<Self> {
         let config = RecombinationConfig::standard(break_prob, crossover_prob, gc_extension_prob)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create recombination config: {e}")))?;
+            .map_err(|e| {
+            PyValueError::new_err(format!("Failed to create recombination config: {e}"))
+        })?;
         Ok(Self { inner: config })
     }
 
@@ -788,7 +791,9 @@ impl PyFitnessConfig {
     #[staticmethod]
     fn with_gc_content(optimum: f64, concentration: f64) -> PyResult<PyFitnessConfigBuilder> {
         let builder = FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(optimum, concentration)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create GC content fitness: {e}")))?;
+            .map_err(|e| {
+                PyValueError::new_err(format!("Failed to create GC content fitness: {e}"))
+            })?;
         Ok(PyFitnessConfigBuilder { inner: builder })
     }
 
@@ -801,8 +806,10 @@ impl PyFitnessConfig {
 
     #[staticmethod]
     fn with_similarity(shape: f64) -> PyResult<PyFitnessConfigBuilder> {
-        let builder = FitnessConfigBuilder::<BuilderEmpty>::with_similarity(shape)
-            .map_err(|e| PyValueError::new_err(format!("Failed to create similarity fitness: {e}")))?;
+        let builder =
+            FitnessConfigBuilder::<BuilderEmpty>::with_similarity(shape).map_err(|e| {
+                PyValueError::new_err(format!("Failed to create similarity fitness: {e}"))
+            })?;
         Ok(PyFitnessConfigBuilder { inner: builder })
     }
 
@@ -838,23 +845,28 @@ struct PyFitnessConfigBuilder {
 #[pymethods]
 impl PyFitnessConfigBuilder {
     fn with_gc_content(&self, optimum: f64, concentration: f64) -> PyResult<Self> {
-        let builder = self.inner.clone()
+        let builder = self
+            .inner
+            .clone()
             .with_gc_content(optimum, concentration)
             .map_err(|e| PyValueError::new_err(format!("Failed to add GC content fitness: {e}")))?;
         Ok(Self { inner: builder })
     }
 
     fn with_length(&self, optimum: usize, std_dev: f64) -> PyResult<Self> {
-        let builder = self.inner.clone()
+        let builder = self
+            .inner
+            .clone()
             .with_length(optimum, std_dev)
             .map_err(|e| PyValueError::new_err(format!("Failed to add length fitness: {e}")))?;
         Ok(Self { inner: builder })
     }
 
     fn with_similarity(&self, shape: f64) -> PyResult<Self> {
-        let builder = self.inner.clone()
-            .with_similarity(shape)
-            .map_err(|e| PyValueError::new_err(format!("Failed to add similarity fitness: {e}")))?;
+        let builder =
+            self.inner.clone().with_similarity(shape).map_err(|e| {
+                PyValueError::new_err(format!("Failed to add similarity fitness: {e}"))
+            })?;
         Ok(Self { inner: builder })
     }
 
@@ -928,9 +940,8 @@ impl PySimulation {
             "fasta" => SequenceInput::Fasta(source_path),
             "json" => SequenceInput::Json(source_path),
             "database" => {
-                let id = sim_id.ok_or_else(|| {
-                    PyValueError::new_err("sim_id required for database source")
-                })?;
+                let id = sim_id
+                    .ok_or_else(|| PyValueError::new_err("sim_id required for database source"))?;
                 SequenceInput::Database {
                     path: source_path,
                     sim_id: id,
@@ -1079,12 +1090,18 @@ impl PySimulationBuilder {
         rus_per_hor: usize,
         hors_per_chr: usize,
     ) -> PyRefMut<'_, Self> {
-        slf.inner = slf.inner.clone().repeat_structure(ru_length, rus_per_hor, hors_per_chr);
+        slf.inner = slf
+            .inner
+            .clone()
+            .repeat_structure(ru_length, rus_per_hor, hors_per_chr);
         slf
     }
 
     /// Set the number of chromosomes per haplotype (default: 1).
-    fn chromosomes_per_haplotype(mut slf: PyRefMut<'_, Self>, chrs_per_hap: usize) -> PyRefMut<'_, Self> {
+    fn chromosomes_per_haplotype(
+        mut slf: PyRefMut<'_, Self>,
+        chrs_per_hap: usize,
+    ) -> PyRefMut<'_, Self> {
         slf.inner = slf.inner.clone().chromosomes_per_haplotype(chrs_per_hap);
         slf
     }
@@ -1126,7 +1143,10 @@ impl PySimulationBuilder {
         sim_id: String,
         generation: Option<usize>,
     ) -> PyRefMut<'_, Self> {
-        slf.inner = slf.inner.clone().init_from_checkpoint(db_path, sim_id, generation);
+        slf.inner = slf
+            .inner
+            .clone()
+            .init_from_checkpoint(db_path, sim_id, generation);
         slf
     }
 
@@ -1148,7 +1168,10 @@ impl PySimulationBuilder {
         crossover_prob: f64,
         gc_extension_prob: f64,
     ) -> PyRefMut<'_, Self> {
-        slf.inner = slf.inner.clone().recombination(break_prob, crossover_prob, gc_extension_prob);
+        slf.inner = slf
+            .inner
+            .clone()
+            .recombination(break_prob, crossover_prob, gc_extension_prob);
         slf
     }
 
@@ -1186,7 +1209,10 @@ impl PySimulationBuilder {
     /// * `ValueError` - If required parameters are missing or invalid
     /// * `RuntimeError` - If simulation creation fails
     fn build(&self) -> PyResult<PySimulation> {
-        let sim = self.inner.clone().build()
+        let sim = self
+            .inner
+            .clone()
+            .build()
             .map_err(|e| PyValueError::new_err(format!("Failed to build simulation: {}", e)))?;
 
         Ok(PySimulation { inner: Some(sim) })
@@ -1196,4 +1222,3 @@ impl PySimulationBuilder {
         "SimulationBuilder(...)".to_string()
     }
 }
-

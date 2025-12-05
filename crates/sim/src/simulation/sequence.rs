@@ -356,11 +356,7 @@ pub fn load_from_database(
         .get_generation(sim_id, target_gen)
         .map_err(|e| InitializationError::Database(format!("Failed to load generation: {e}")))?;
 
-    // Get config to convert indices to strings
-    let _config = query
-        .get_full_config(sim_id)
-        .map_err(|e| InitializationError::Database(format!("Failed to load config: {e}")))?;
-
+    // Close query builder directly since we don't need the config (sequences are self-contained)
     query
         .close()
         .map_err(|e| InitializationError::Database(format!("Failed to close database: {e}")))?;

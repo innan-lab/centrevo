@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use centrevo_sim::base::{FitnessValue, Nucleotide};
 use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 use centrevo_sim::simulation::{
-    FitnessConfig, MutationConfig, Population, RecombinationConfig, Simulation, SimulationConfig,
+    FitnessConfig, Population, Simulation, SimulationBuilder, SimulationConfig,
     UniformRepeatStructure,
 };
 use centrevo_sim::storage::{QueryBuilder, Recorder, RecordingStrategy};
@@ -493,38 +493,32 @@ fn run_simulation(
         query.close().ok();
 
         // Setup simulation components
-        let structure = UniformRepeatStructure::new(
-            Nucleotide::A,
-            171, // TODO: These should match init params from database
-            12,
-            100,
-            1,
-        );
+        let fitness_config = FitnessConfig::neutral();
 
-        let mutation = MutationConfig::uniform(mutation_rate).map_err(|e| anyhow::anyhow!(e))?;
-        let recombination = RecombinationConfig::standard(recomb_rate, crossover_prob, 0.1)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        let fitness = FitnessConfig::neutral();
-        let config = SimulationConfig::new(info.pop_size, info.num_generations, None);
-
-        // Create simulation engine
-        let mut sim = Simulation::new(
-            structure.clone(),
-            mutation.clone(),
-            recombination.clone(),
-            fitness.clone(),
-            config.clone(),
-        )
-        .map_err(|e| anyhow::anyhow!(e))?;
+        // Create simulation engine using Builder, loading Gen 0 from database
+        let mut sim = SimulationBuilder::new()
+            .population_size(info.pop_size)
+            .generations(info.num_generations)
+            .repeat_structure(171, 12, 100) // Preserving hardcoded defaults for now as per plan
+            // Explicitly load Generation 0
+            .init_from_checkpoint(database.to_string_lossy(), name, Some(0))
+            .mutation_rate(mutation_rate)
+            .recombination(recomb_rate, crossover_prob, 0.1)
+            .fitness(fitness_config.clone())
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to build simulation: {e}"))?;
 
         // Setup recorder
         use centrevo_sim::storage::SimulationSnapshot;
         let snapshot = SimulationSnapshot {
-            structure,
-            mutation,
-            recombination,
-            fitness,
-            config: config.clone(),
+            structure: sim
+                .structure()
+                .cloned()
+                .expect("Structure not found in simulation"),
+            mutation: sim.mutation().clone(),
+            recombination: sim.recombination().clone(),
+            fitness: sim.fitness().clone(),
+            config: sim.config().clone(),
         };
 
         let mut recorder = Recorder::new(database, name, RecordingStrategy::EveryN(record_every))
@@ -651,17 +645,17 @@ fn create_initial_population(size: usize, structure: &UniformRepeatStructure) ->
         let chr1 = Chromosome::uniform(
             format!("ind{i}_h1_chr1"),
             structure.init_base,
-            structure.chr_length(),
             structure.ru_length,
             structure.rus_per_hor,
+            structure.hors_per_chr,
         );
 
         let chr2 = Chromosome::uniform(
             format!("ind{i}_h2_chr1"),
             structure.init_base,
-            structure.chr_length(),
             structure.ru_length,
             structure.rus_per_hor,
+            structure.hors_per_chr,
         );
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
@@ -1415,5 +1409,27 @@ fn prompt_confirm(prompt: &str, default: bool) -> Result<bool> {
         Ok(false)
     } else {
         anyhow::bail!("Please answer 'y' or 'n'")
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use centrevo_sim::base::Nucleotide;
+
+    #[test]
+    fn test_create_initial_population_regression() {
+        // Use small structure for testing
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 2, 1);
+        let pop = create_initial_population(10, &structure);
+
+        assert_eq!(pop.size(), 10);
+        let ind = pop.get(0).unwrap();
+        // Check chromosome length: 10 * 5 * 2 = 100
+        assert_eq!(ind.haplotype1().len(), 1);
+        assert_eq!(ind.haplotype1().total_length(), 100);
+
+        // Before the fix, this would have been much larger (if it didn't crash)
+        // The bug passed chr_length (100) as ru_length, ru_length (10) as rus_per_hor, rus_per_hor (5) as num_hors.
+        // Incorrect length would be: 100 * 10 * 5 = 5000.
     }
 }

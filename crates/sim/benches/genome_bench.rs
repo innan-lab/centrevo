@@ -29,7 +29,7 @@ fn bench_chromosome_ops(c: &mut Criterion) {
         let chr2 = Chromosome::uniform("chr2", Nucleotide::T, ru_length, hors, 1);
 
         for &k in &kmer_sizes {
-            let parameter_string = format!("hors={}/k={}", hors, k);
+            let parameter_string = format!("hors={hors}/k={k}");
 
             group.bench_with_input(
                 BenchmarkId::new("calculate_similarity", &parameter_string),

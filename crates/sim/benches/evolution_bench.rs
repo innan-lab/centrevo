@@ -20,28 +20,68 @@ fn bench_mutation(c: &mut Criterion) {
         group.throughput(Throughput::Elements(len as u64));
 
         for &rate in &rates {
-            let model = SubstitutionModel::uniform(rate).unwrap();
-            let parameter_string = format!("len={}/rate={}", len, rate);
+            // Optimized Uniform model
+            let uniform_model = SubstitutionModel::uniform(rate).unwrap();
 
+            // General model with same uniform rates
+            let r = rate / 3.0;
+            let matrix = [
+                [0.0, r, r, r],
+                [r, 0.0, r, r],
+                [r, r, 0.0, r],
+                [r, r, r, 0.0],
+            ];
+            let general_model = SubstitutionModel::new(matrix).unwrap();
+
+            let parameter_string = format!("len={len}/rate={rate}");
+
+            // 1. Uniform Variant Direct
             group.bench_with_input(
-                BenchmarkId::new("direct", &parameter_string),
+                BenchmarkId::new("uniform_direct", &parameter_string),
                 &(len, rate),
                 |b, _| {
                     b.iter_batched(
                         || sequence.clone(),
-                        |mut seq| model.mutate_sequence(&mut seq, &mut rng),
+                        |mut seq| uniform_model.mutate_sequence(&mut seq, &mut rng),
                         criterion::BatchSize::SmallInput,
                     )
                 },
             );
 
+            // 2. Uniform Variant Sparse
             group.bench_with_input(
-                BenchmarkId::new("sparse", &parameter_string),
+                BenchmarkId::new("uniform_sparse", &parameter_string),
                 &(len, rate),
                 |b, _| {
                     b.iter_batched(
                         || sequence.clone(),
-                        |mut seq| model.mutate_sequence_sparse(&mut seq, &mut rng),
+                        |mut seq| uniform_model.mutate_sequence_sparse(&mut seq, &mut rng),
+                        criterion::BatchSize::SmallInput,
+                    )
+                },
+            );
+
+            // 3. General Variant Direct
+            group.bench_with_input(
+                BenchmarkId::new("general_direct", &parameter_string),
+                &(len, rate),
+                |b, _| {
+                    b.iter_batched(
+                        || sequence.clone(),
+                        |mut seq| general_model.mutate_sequence(&mut seq, &mut rng),
+                        criterion::BatchSize::SmallInput,
+                    )
+                },
+            );
+
+            // 4. General Variant Sparse
+            group.bench_with_input(
+                BenchmarkId::new("general_sparse", &parameter_string),
+                &(len, rate),
+                |b, _| {
+                    b.iter_batched(
+                        || sequence.clone(),
+                        |mut seq| general_model.mutate_sequence_sparse(&mut seq, &mut rng),
                         criterion::BatchSize::SmallInput,
                     )
                 },
@@ -70,7 +110,7 @@ fn bench_indels(c: &mut Criterion) {
             for &p in &length_params {
                 // Use same rate for insertion and deletion for benchmarking simplicity
                 let model = IndelModel::new(rate, rate, p).unwrap();
-                let parameter_string = format!("len={}/rate={}/p={}", len, rate, p);
+                let parameter_string = format!("len={len}/rate={rate}/p={p}");
 
                 group.bench_with_input(
                     BenchmarkId::new("apply_indels", &parameter_string),
@@ -113,7 +153,7 @@ fn bench_recombination(c: &mut Criterion) {
                 .build()
                 .unwrap();
 
-            let parameter_string = format!("break={}/cross={}", break_prob, crossover_prob);
+            let parameter_string = format!("break={break_prob}/cross={crossover_prob}");
 
             group.bench_with_input(
                 BenchmarkId::new("sample_events", &parameter_string),

@@ -39,8 +39,160 @@ use serde::{Deserialize, Serialize};
 /// (no nucleotide can "mutate" to itself).
 ///
 /// Nucleotides are indexed as: A=0, C=1, G=2, T=3
+/// Trait representing a substitution model variant.
+pub trait SubstitutionVariant: std::fmt::Debug + Send + Sync {
+    /// Get the rate matrix (upper triangle).
+    fn rates(&self) -> [f64; 6];
+
+    /// Get the total mutation rate for a specific base.
+    fn total_rate(&self, base: Nucleotide) -> f64;
+
+    /// Get the rate for a specific substitution.
+    fn rate(&self, from: Nucleotide, to: Nucleotide) -> f64;
+
+    /// Mutate a single base.
+    fn mutate_base<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide;
+
+    /// Mutate a sequence in place (standard approach).
+    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize;
+
+    /// Mutate a sequence using sparse sampling.
+    fn mutate_sequence_sparse<R: Rng + ?Sized>(
+        &self,
+        sequence: &mut Sequence,
+        rng: &mut R,
+    ) -> usize;
+}
+
+/// Uniform substitution model (all substitutions have equal rate).
+/// Optimized for performance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SubstitutionModel {
+pub struct UniformSubstitution {
+    /// Total mutation rate per base (sum of 3 possible substitutions)
+    pub rate: f64,
+}
+
+impl UniformSubstitution {
+    /// Create a new uniform substitution model.
+    pub fn new(rate: f64) -> Result<Self, MutationError> {
+        if !(0.0..=1.0).contains(&rate) {
+            return Err(MutationError::InvalidMutationRate(rate));
+        }
+        Ok(Self { rate })
+    }
+}
+
+impl SubstitutionVariant for UniformSubstitution {
+    #[inline]
+    fn rates(&self) -> [f64; 6] {
+        let r = self.rate / 3.0;
+        [r, r, r, r, r, r]
+    }
+
+    #[inline]
+    fn total_rate(&self, _base: Nucleotide) -> f64 {
+        self.rate
+    }
+
+    #[inline]
+    fn rate(&self, from: Nucleotide, to: Nucleotide) -> f64 {
+        if from == to { 0.0 } else { self.rate / 3.0 }
+    }
+
+    #[inline]
+    fn mutate_base<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
+        if rng.random::<f64>() >= self.rate {
+            return base;
+        }
+
+        // Mutate to one of the other 3 bases uniformly
+        // We can pick a random offset (1, 2, or 3) and add it modulo 4
+        let offset = rng.random_range(1..4);
+        let base_idx = base.to_index();
+        let new_idx = (base_idx + offset) % 4;
+        Nucleotide::from_index(new_idx).unwrap()
+    }
+
+    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize {
+        let len = sequence.len();
+        if len == 0 || self.rate <= 0.0 {
+            return 0;
+        }
+
+        let mut mutation_count = 0;
+        let indices = sequence.as_mut_slice();
+
+        // Optimized loop
+        for i in 0..len {
+            if rng.random::<f64>() < self.rate {
+                // Mutate
+                let base = indices[i];
+                // Select new base uniformly from other 3
+                let offset = rng.random_range(1..4);
+                let base_idx = base.to_index();
+                let new_idx = (base_idx + offset) % 4;
+                indices[i] = Nucleotide::from_index(new_idx).unwrap();
+                mutation_count += 1;
+            }
+        }
+
+        mutation_count
+    }
+
+    fn mutate_sequence_sparse<R: Rng + ?Sized>(
+        &self,
+        sequence: &mut Sequence,
+        rng: &mut R,
+    ) -> usize {
+        let len = sequence.len();
+        if len == 0 || self.rate <= 0.0 {
+            return 0;
+        }
+
+        // Fallback for high rates
+        if self.rate > 0.1 {
+            return self.mutate_sequence(sequence, rng);
+        }
+
+        let mut mutation_count = 0;
+        let indices = sequence.as_mut_slice();
+        let mut current_pos = 0;
+
+        // Geometric distribution logic
+        let log_1_minus_p = (1.0 - self.rate).ln();
+
+        loop {
+            // Skip non-mutating bases
+            let u: f64 = rng.random();
+            let skip = (u.ln() / log_1_minus_p).floor() as usize;
+            current_pos += skip;
+
+            if current_pos >= len {
+                break;
+            }
+
+            // Optimization: No second check needed!
+            // In uniform model, max_rate == total_rate for all bases.
+            // So acceptance_prob = total_rate / max_rate = 1.0.
+            // We ALWAYS mutate when we land here.
+
+            let base = indices[current_pos];
+            let offset = rng.random_range(1..4);
+            let base_idx = base.to_index();
+            let new_idx = (base_idx + offset) % 4;
+            indices[current_pos] = Nucleotide::from_index(new_idx).unwrap();
+
+            mutation_count += 1;
+            current_pos += 1;
+        }
+
+        mutation_count
+    }
+}
+
+/// General substitution model with arbitrary rate matrix.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneralSubstitution {
     /// Rate for A <-> C substitutions
     rate_a_c: f64,
     /// Rate for A <-> G substitutions
@@ -59,30 +211,7 @@ pub struct SubstitutionModel {
     total_rates: [f64; 4],
 }
 
-impl SubstitutionModel {
-    /// Create a new substitution model with the given rate matrix.
-    ///
-    /// The rate matrix specifies mutation probabilities. Each entry matrix[i][j]
-    /// is the per-base, per-generation probability that nucleotide i mutates to j.
-    /// Rates should be small (e.g., 0.001 to 0.01) for realistic evolutionary timescales.
-    ///
-    /// The total mutation rate for each base (sum across all possible targets)
-    /// must not exceed 1.0, since probabilities cannot exceed 1. In practice,
-    /// total rates are much lower (e.g., 0.01-0.10) except in very fast-evolving
-    /// sequences or extreme simulation conditions.
-    ///
-    /// # Arguments
-    /// * `matrix` - 4x4 rate matrix where matrix[i][j] is the rate from nucleotide i to j.
-    ///   Rows/columns are ordered as [A, C, G, T] (indices 0-3).
-    ///   Matrix must be symmetric (reversible evolution) and have zero diagonal
-    ///   (biology: nucleotides don't "mutate" to themselves).
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - Any rate is negative or greater than 1.0
-    /// - Matrix is not symmetric (violates reversibility assumption)
-    /// - Diagonal is not zero (biology violation)
-    /// - Total mutation rate for any base exceeds 1.0 (probability violation)
+impl GeneralSubstitution {
     pub fn new(matrix: [[f64; 4]; 4]) -> Result<Self, MutationError> {
         // Validate diagonal is zero
         for (i, row) in matrix.iter().enumerate() {
@@ -99,23 +228,18 @@ impl SubstitutionModel {
         }
 
         // Extract unique rates (upper triangle)
-        // Matrix indices: A=0, C=1, G=2, T=3
-        let rate_a_c = matrix[0][1]; // A->C
-        let rate_a_g = matrix[0][2]; // A->G
-        let rate_a_t = matrix[0][3]; // A->T
-        let rate_c_g = matrix[1][2]; // C->G
-        let rate_c_t = matrix[1][3]; // C->T
-        let rate_g_t = matrix[2][3]; // G->T
+        let rate_a_c = matrix[0][1];
+        let rate_a_g = matrix[0][2];
+        let rate_a_t = matrix[0][3];
+        let rate_c_g = matrix[1][2];
+        let rate_c_t = matrix[1][3];
+        let rate_g_t = matrix[2][3];
 
         // Compute total mutation rate for each base
         let mut total_rates = [0.0; 4];
-        // A (index 0): sum of A->C, A->G, A->T
         total_rates[0] = rate_a_c + rate_a_g + rate_a_t;
-        // C (index 1): sum of C->A, C->G, C->T
         total_rates[1] = rate_a_c + rate_c_g + rate_c_t;
-        // G (index 2): sum of G->A, G->C, G->T
         total_rates[2] = rate_a_g + rate_c_g + rate_g_t;
-        // T (index 3): sum of T->A, T->C, T->G
         total_rates[3] = rate_a_t + rate_c_t + rate_g_t;
 
         // Validate that total rates don't exceed 1.0
@@ -136,138 +260,6 @@ impl SubstitutionModel {
         })
     }
 
-    /// Create a JC69 (Jukes-Cantor 1969) substitution model for DNA sequences.
-    ///
-    /// JC69 is the simplest and most symmetric substitution model. It assumes all
-    /// mutations are equally likely - an A is equally likely to become a C, G, or T.
-    /// While unrealistic (transitions are typically more common than transversions
-    /// in real DNA), JC69 is useful for baseline comparisons and neutral evolution
-    /// simulations.
-    ///
-    /// Given a total mutation rate mu, the model divides it equally:
-    /// - Each of the 3 possible substitutions has rate mu/3
-    /// - Total rate per base = mu
-    /// - Biologically: mu ≈ 0.001-0.01 for typical sequences
-    ///
-    /// # Arguments
-    /// * `mu` - Total mutation rate per base per generation (must be between 0.0 and 1.0).
-    ///   Typical values: 0.0 (no evolution), 0.01 (1% per base per generation),
-    ///   0.1 (highly mutable region)
-    pub fn jc69(mu: f64) -> Result<Self, MutationError> {
-        if !(0.0..=1.0).contains(&mu) {
-            return Err(MutationError::InvalidMutationRate(mu));
-        }
-        let rate = mu / 3.0;
-
-        // Create symmetric matrix with equal off-diagonal rates
-        // Rows/columns: [A, C, G, T]
-        let matrix = [
-            [0.0, rate, rate, rate], // A -> [A, C, G, T]
-            [rate, 0.0, rate, rate], // C -> [A, C, G, T]
-            [rate, rate, 0.0, rate], // G -> [A, C, G, T]
-            [rate, rate, rate, 0.0], // T -> [A, C, G, T]
-        ];
-
-        Self::new(matrix)
-    }
-
-    /// Create a uniform substitution model.
-    ///
-    /// All off-diagonal transitions occur with equal probability.
-    /// This is equivalent to JC69.
-    pub fn uniform(mu: f64) -> Result<Self, MutationError> {
-        Self::jc69(mu)
-    }
-
-    /// Get the rate matrix (upper triangle).
-    /// Returns array: [A->C, A->G, A->T, C->G, C->T, G->T]
-    #[inline]
-    pub fn rates(&self) -> [f64; 6] {
-        [
-            self.rate_a_c,
-            self.rate_a_g,
-            self.rate_a_t,
-            self.rate_c_g,
-            self.rate_c_t,
-            self.rate_g_t,
-        ]
-    }
-
-    /// Get the total mutation rate for a specific base.
-    #[inline]
-    pub fn total_rate(&self, base: Nucleotide) -> f64 {
-        self.total_rates[base.to_index() as usize]
-    }
-
-    /// Get the rate for a specific substitution.
-    ///
-    /// # Arguments
-    /// * `from` - Source nucleotide
-    /// * `to` - Target nucleotide
-    ///
-    /// # Returns
-    /// The substitution rate, or 0.0 if from == to
-    #[inline]
-    pub fn rate(&self, from: Nucleotide, to: Nucleotide) -> f64 {
-        // Use individual fields for clarity
-        match (from, to) {
-            // Self-mutations have zero rate
-            (Nucleotide::A, Nucleotide::A)
-            | (Nucleotide::C, Nucleotide::C)
-            | (Nucleotide::G, Nucleotide::G)
-            | (Nucleotide::T, Nucleotide::T) => 0.0,
-
-            // Symmetric substitutions
-            (Nucleotide::A, Nucleotide::C) | (Nucleotide::C, Nucleotide::A) => self.rate_a_c,
-            (Nucleotide::A, Nucleotide::G) | (Nucleotide::G, Nucleotide::A) => self.rate_a_g,
-            (Nucleotide::A, Nucleotide::T) | (Nucleotide::T, Nucleotide::A) => self.rate_a_t,
-            (Nucleotide::C, Nucleotide::G) | (Nucleotide::G, Nucleotide::C) => self.rate_c_g,
-            (Nucleotide::C, Nucleotide::T) | (Nucleotide::T, Nucleotide::C) => self.rate_c_t,
-            (Nucleotide::G, Nucleotide::T) | (Nucleotide::T, Nucleotide::G) => self.rate_g_t,
-        }
-    }
-
-    /// Mutate a single base according to the substitution model.
-    ///
-    /// This implements the stochastic process: for a given base, we randomly decide
-    /// whether a mutation occurs (based on the total mutation rate), and if so,
-    /// randomly select which nucleotide it mutates to (weighted by substitution rates).
-    ///
-    /// Biologically: this represents a single potential mutation event that might
-    /// occur during DNA replication or repair.
-    ///
-    /// # Returns
-    /// Either the original base (no mutation) or a new base (if mutation occurred).
-    #[inline]
-    pub fn mutate_base<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
-        let base_idx = base.to_index() as usize;
-        let total_rate = self.total_rates[base_idx];
-
-        // Check if mutation occurs
-        if rng.random::<f64>() >= total_rate {
-            return base; // No mutation
-        }
-
-        // Mutation occurs - select target base proportional to rates
-        let r = rng.random::<f64>() * total_rate;
-
-        // Get the three possible target bases and their rates
-        let (targets, rates) = self.get_target_bases_and_rates(base);
-
-        // Select target based on cumulative probabilities
-        let mut cumulative = 0.0;
-        for i in 0..3 {
-            cumulative += rates[i];
-            if r < cumulative {
-                return targets[i];
-            }
-        }
-
-        // Fallback (should not reach here due to floating point precision)
-        targets[2]
-    }
-
-    /// Get the three possible target bases and their rates for a given source base.
     #[inline]
     fn get_target_bases_and_rates(&self, base: Nucleotide) -> ([Nucleotide; 3], [f64; 3]) {
         match base {
@@ -290,178 +282,6 @@ impl SubstitutionModel {
         }
     }
 
-    /// Mutate a sequence in place according to the substitution model.
-    ///
-    /// This simulates the standard molecular evolution process: go through each base,
-    /// decide independently if it mutates (based on the substitution model's rates),
-    /// and if so, randomly select its new nucleotide.
-    ///
-    /// Biologically: this represents one generation of sequence evolution, where
-    /// mutations accumulate across the sequence according to the model's parameters.
-    /// Expected number of mutations = sequence_length × average_mutation_rate.
-    ///
-    /// For example, a 1000 bp sequence with mu=0.01 would have ~10 mutations per generation.
-    ///
-    /// Performance note: this method examines every base (O(N) complexity), making it
-    /// efficient for high mutation rates but wasteful when mutation rates are very low
-    /// (in which case see mutate_sequence_sparse).
-    ///
-    /// # Arguments
-    /// * `sequence` - The sequence to mutate (modified in place).
-    /// * `rng` - Random number generator.
-    ///
-    /// # Returns
-    /// The number of mutations that actually occurred.
-    pub fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize {
-        let len = sequence.len();
-        if len == 0 {
-            return 0;
-        }
-
-        let mut mutation_count = 0;
-        let indices = sequence.as_mut_slice();
-
-        // Bulk generate random floats for both mutation decisions and target selection
-        let mut random_floats = vec![0.0f64; len * 2];
-        rng.fill(&mut random_floats[..]);
-
-        for i in 0..len {
-            let base = indices[i];
-            let base_idx = base.to_index() as usize;
-            let total_rate = self.total_rates[base_idx];
-
-            // Check if mutation occurs using pre-generated random float
-            if random_floats[i] < total_rate {
-                // Mutation occurs - select target base
-                let r = random_floats[len + i] * total_rate;
-
-                let (targets, rates) = self.get_target_bases_and_rates(base);
-
-                // Select target based on cumulative probabilities
-                let mut cumulative = 0.0;
-                let mut new_base = targets[2]; // Default fallback
-                for j in 0..3 {
-                    cumulative += rates[j];
-                    if r < cumulative {
-                        new_base = targets[j];
-                        break;
-                    }
-                }
-
-                indices[i] = new_base;
-                mutation_count += 1;
-            }
-        }
-
-        mutation_count
-    }
-
-    /// Mutate a sequence using a sparse sampling approach for better performance.
-    ///
-    /// This is an optimization for very low mutation rates (< 1%). Instead of
-    /// checking every base (most of which don't mutate), we use inverse transform
-    /// sampling to skip directly to the next likely mutation site. This is a
-    /// form of rejection sampling (also called "thinning").
-    ///
-    /// The process:
-    /// 1. Sample the distance to the next potential mutation using Geometric distribution
-    /// 2. Check if that position actually mutates based on its specific rate
-    /// 3. Repeat until we pass the end of the sequence
-    ///
-    /// Why this works:
-    /// - With max_rate (the highest mutation rate across all bases), we know a mutation
-    ///   event is rare
-    /// - We can efficiently find gaps between potential mutations
-    /// - When we land on a base, we accept/reject based on individual rates
-    /// - The overall probability is mathematically identical to checking every base
-    ///
-    /// Biologically: same outcome as mutate_sequence, but much faster for sparse mutations.
-    /// This is crucial for large genomes with conserved regions.
-    ///
-    /// # Arguments
-    /// * `sequence` - The sequence to mutate (modified in place).
-    /// * `rng` - Random number generator.
-    ///
-    /// # Returns
-    /// The number of mutations that occurred.
-    ///
-    /// # Performance
-    /// - Low mutation rates (< 1%): O(K) where K = number of mutations (10-1000× faster)
-    /// - Medium mutation rates: O(N) worst case, but still efficient
-    /// - High mutation rates (> 10%): Automatically falls back to standard O(N) method
-    #[inline]
-    pub fn mutate_sequence_sparse<R: Rng + ?Sized>(
-        &self,
-        sequence: &mut Sequence,
-        rng: &mut R,
-    ) -> usize {
-        let len = sequence.len();
-        if len == 0 {
-            return 0;
-        }
-
-        // Calculate max mutation rate across all bases
-        let max_rate = self.total_rates.iter().fold(0.0f64, |a, &b| a.max(b));
-
-        if max_rate <= 0.0 {
-            return 0;
-        }
-
-        // Special case: if max mutation rate is very high, use standard approach
-        // The crossover point is roughly where we expect to visit every base anyway
-        if max_rate > 0.1 {
-            return self.mutate_sequence(sequence, rng);
-        }
-
-        let mut mutation_count = 0;
-        let indices = sequence.as_mut_slice();
-        let mut current_pos = 0;
-
-        // Geometric distribution: how many non-mutating bases until the next mutation?
-        // P(X=k) = (1-p)^k * p, where p = max_rate
-        // We use inverse transform sampling: if u ~ Uniform(0,1), then
-        // X = floor(log(u) / log(1-p)) gives a geometric random variate
-        // This efficiently computes the skip distance without iterating each base
-        let log_1_minus_p = (1.0 - max_rate).ln();
-
-        loop {
-            // Step 1: Jump to next candidate position
-            // Use inverse transform sampling to skip non-mutating bases
-            let u: f64 = rng.random();
-            let skip = (u.ln() / log_1_minus_p).floor() as usize;
-            current_pos += skip;
-
-            // Have we passed the end of the sequence?
-            if current_pos >= len {
-                break;
-            }
-
-            // Step 2: At this candidate position, check if mutation actually occurs
-            // (Rejection sampling step)
-            let base = indices[current_pos];
-            let base_idx = base.to_index() as usize;
-            let total_rate = self.total_rates[base_idx];
-
-            // Acceptance: did we land on a position that actually mutates?
-            // We sampled using max_rate, but this position's actual rate might be lower.
-            // Accept with probability = (actual_rate / max_rate)
-            // This ensures the final distribution is identical to checking every base.
-            let acceptance_prob = total_rate / max_rate;
-
-            if rng.random_bool(acceptance_prob) {
-                // Mutation occurs: select new nucleotide
-                indices[current_pos] = self.mutate_base_direct(base, rng);
-                mutation_count += 1;
-            }
-
-            // Move to next position to continue sampling
-            current_pos += 1;
-        }
-
-        mutation_count
-    }
-
-    /// Mutate a base directly (used internally, assumes mutation should occur)
     #[inline]
     fn mutate_base_direct<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
         let base_idx = base.to_index() as usize;
@@ -481,6 +301,230 @@ impl SubstitutionModel {
         }
 
         targets[2]
+    }
+}
+
+impl SubstitutionVariant for GeneralSubstitution {
+    #[inline]
+    fn rates(&self) -> [f64; 6] {
+        [
+            self.rate_a_c,
+            self.rate_a_g,
+            self.rate_a_t,
+            self.rate_c_g,
+            self.rate_c_t,
+            self.rate_g_t,
+        ]
+    }
+
+    #[inline]
+    fn total_rate(&self, base: Nucleotide) -> f64 {
+        self.total_rates[base.to_index() as usize]
+    }
+
+    #[inline]
+    fn rate(&self, from: Nucleotide, to: Nucleotide) -> f64 {
+        match (from, to) {
+            (Nucleotide::A, Nucleotide::A)
+            | (Nucleotide::C, Nucleotide::C)
+            | (Nucleotide::G, Nucleotide::G)
+            | (Nucleotide::T, Nucleotide::T) => 0.0,
+            (Nucleotide::A, Nucleotide::C) | (Nucleotide::C, Nucleotide::A) => self.rate_a_c,
+            (Nucleotide::A, Nucleotide::G) | (Nucleotide::G, Nucleotide::A) => self.rate_a_g,
+            (Nucleotide::A, Nucleotide::T) | (Nucleotide::T, Nucleotide::A) => self.rate_a_t,
+            (Nucleotide::C, Nucleotide::G) | (Nucleotide::G, Nucleotide::C) => self.rate_c_g,
+            (Nucleotide::C, Nucleotide::T) | (Nucleotide::T, Nucleotide::C) => self.rate_c_t,
+            (Nucleotide::G, Nucleotide::T) | (Nucleotide::T, Nucleotide::G) => self.rate_g_t,
+        }
+    }
+
+    #[inline]
+    fn mutate_base<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
+        let base_idx = base.to_index() as usize;
+        let total_rate = self.total_rates[base_idx];
+
+        if rng.random::<f64>() >= total_rate {
+            return base;
+        }
+
+        // Mutation occurs
+        self.mutate_base_direct(base, rng)
+    }
+
+    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize {
+        let len = sequence.len();
+        if len == 0 {
+            return 0;
+        }
+
+        let mut mutation_count = 0;
+        let indices = sequence.as_mut_slice();
+
+        // Bulk generate random floats
+        let mut random_floats = vec![0.0f64; len * 2];
+        rng.fill(&mut random_floats[..]);
+
+        for i in 0..len {
+            let base = indices[i];
+            let base_idx = base.to_index() as usize;
+            let total_rate = self.total_rates[base_idx];
+
+            if random_floats[i] < total_rate {
+                let r = random_floats[len + i] * total_rate;
+                let (targets, rates) = self.get_target_bases_and_rates(base);
+
+                let mut cumulative = 0.0;
+                let mut new_base = targets[2];
+                for j in 0..3 {
+                    cumulative += rates[j];
+                    if r < cumulative {
+                        new_base = targets[j];
+                        break;
+                    }
+                }
+
+                indices[i] = new_base;
+                mutation_count += 1;
+            }
+        }
+
+        mutation_count
+    }
+
+    fn mutate_sequence_sparse<R: Rng + ?Sized>(
+        &self,
+        sequence: &mut Sequence,
+        rng: &mut R,
+    ) -> usize {
+        let len = sequence.len();
+        if len == 0 {
+            return 0;
+        }
+
+        let max_rate = self.total_rates.iter().fold(0.0f64, |a, &b| a.max(b));
+
+        if max_rate <= 0.0 {
+            return 0;
+        }
+
+        if max_rate > 0.1 {
+            return self.mutate_sequence(sequence, rng);
+        }
+
+        let mut mutation_count = 0;
+        let indices = sequence.as_mut_slice();
+        let mut current_pos = 0;
+
+        let log_1_minus_p = (1.0 - max_rate).ln();
+
+        loop {
+            let u: f64 = rng.random();
+            let skip = (u.ln() / log_1_minus_p).floor() as usize;
+            current_pos += skip;
+
+            if current_pos >= len {
+                break;
+            }
+
+            let base = indices[current_pos];
+            let base_idx = base.to_index() as usize;
+            let total_rate = self.total_rates[base_idx];
+
+            let acceptance_prob = total_rate / max_rate;
+
+            if rng.random_bool(acceptance_prob) {
+                indices[current_pos] = self.mutate_base_direct(base, rng);
+                mutation_count += 1;
+            }
+
+            current_pos += 1;
+        }
+
+        mutation_count
+    }
+}
+
+/// Substitution model wrapper enum.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum SubstitutionModel {
+    Uniform(UniformSubstitution),
+    General(GeneralSubstitution),
+}
+
+impl SubstitutionModel {
+    /// Create a new substitution model with the given rate matrix.
+    pub fn new(matrix: [[f64; 4]; 4]) -> Result<Self, MutationError> {
+        let model = GeneralSubstitution::new(matrix)?;
+        Ok(Self::General(model))
+    }
+
+    /// Create a JC69/Uniform substitution model.
+    pub fn jc69(mu: f64) -> Result<Self, MutationError> {
+        let model = UniformSubstitution::new(mu)?;
+        Ok(Self::Uniform(model))
+    }
+
+    /// Create a uniform substitution model.
+    pub fn uniform(mu: f64) -> Result<Self, MutationError> {
+        Self::jc69(mu)
+    }
+
+    /// Get the rate matrix (upper triangle).
+    #[inline]
+    pub fn rates(&self) -> [f64; 6] {
+        match self {
+            Self::Uniform(m) => m.rates(),
+            Self::General(m) => m.rates(),
+        }
+    }
+
+    /// Get the total mutation rate for a specific base.
+    #[inline]
+    pub fn total_rate(&self, base: Nucleotide) -> f64 {
+        match self {
+            Self::Uniform(m) => m.total_rate(base),
+            Self::General(m) => m.total_rate(base),
+        }
+    }
+
+    /// Get the rate for a specific substitution.
+    #[inline]
+    pub fn rate(&self, from: Nucleotide, to: Nucleotide) -> f64 {
+        match self {
+            Self::Uniform(m) => m.rate(from, to),
+            Self::General(m) => m.rate(from, to),
+        }
+    }
+
+    /// Mutate a single base.
+    #[inline]
+    pub fn mutate_base<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide {
+        match self {
+            Self::Uniform(m) => m.mutate_base(base, rng),
+            Self::General(m) => m.mutate_base(base, rng),
+        }
+    }
+
+    /// Mutate a sequence in place.
+    pub fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize {
+        match self {
+            Self::Uniform(m) => m.mutate_sequence(sequence, rng),
+            Self::General(m) => m.mutate_sequence(sequence, rng),
+        }
+    }
+
+    /// Mutate a sequence using sparse sampling.
+    #[inline]
+    pub fn mutate_sequence_sparse<R: Rng + ?Sized>(
+        &self,
+        sequence: &mut Sequence,
+        rng: &mut R,
+    ) -> usize {
+        match self {
+            Self::Uniform(m) => m.mutate_sequence_sparse(sequence, rng),
+            Self::General(m) => m.mutate_sequence_sparse(sequence, rng),
+        }
     }
 }
 

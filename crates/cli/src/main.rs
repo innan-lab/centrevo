@@ -370,7 +370,7 @@ fn init_simulation(
 
     // Create mutation and recombination configs
     let mutation = MutationConfig::uniform(mutation_rate)
-        .map_err(|e| anyhow::anyhow!("Failed to create mutation configuration: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create mutation configuration: {e}"))?;
 
     let recomb_params = centrevo_sim::evolution::RecombinationModel::builder()
         .break_prob(recomb_rate)
@@ -379,7 +379,7 @@ fn init_simulation(
         .homology_strength(homology_strength)
         .search_window(search_window)
         .build()
-        .map_err(|e| anyhow::anyhow!("Failed to create recombination model: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create recombination model: {e}"))?;
     let recombination = RecombinationConfig::new(recomb_params);
 
     let fitness = FitnessConfig::neutral();

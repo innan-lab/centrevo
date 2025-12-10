@@ -143,42 +143,46 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
         }
     }
 
+    use crate::args::InitArgs;
+
     // Initialize simulation
     println!("\n🚀 Starting simulation setup...\n");
 
-    init_simulation(
-        &name,
-        &database,
+    let args = InitArgs {
+        name: name.clone(),
+        output: database.clone(),
         population_size,
         generations,
         ru_length,
         rus_per_hor,
         hors_per_chr,
-        1, // chrs_per_hap default
-        Some(mutation_rate),
-        None, // rate_ac
-        None, // rate_ag
-        None, // rate_at
-        None, // rate_cg
-        None, // rate_ct
-        None, // rate_gt
-        0.0,  // indel_ins_rate
-        0.0,  // indel_del_rate
-        0.5,  // indel_length_p
+        chrs_per_hap: 1, // default
+        mutation_rate: Some(mutation_rate),
+        rate_ac: None,
+        rate_ag: None,
+        rate_at: None,
+        rate_cg: None,
+        rate_ct: None,
+        rate_gt: None,
+        indel_ins_rate: 0.0,
+        indel_del_rate: 0.0,
+        indel_length_p: 0.5,
         recomb_rate,
         crossover_prob,
-        0.95, // gc_extension_prob default (was 0.1 in setup but 0.95 in main.rs! Syncing to 0.95)
-        5.0,  // homology_strength default (was 0.0 in setup but 5.0 in main.rs! Syncing to 5.0)
-        100,  // search_window default (was 0 in setup but 100 in main.rs! Syncing to 100)
-        None, // fit_gc_opt
-        None, // fit_gc_conc
-        None, // fit_len_opt
-        None, // fit_len_std
-        None, // fit_seq_sim
-        None, // fit_len_sim
+        gc_extension_prob: 0.95,
+        homology_strength: 5.0,
+        search_window: 100,
+        fit_gc_opt: None,
+        fit_gc_conc: None,
+        fit_len_opt: None,
+        fit_len_std: None,
+        fit_seq_sim: None,
+        fit_len_sim: None,
         record_every,
         seed,
-    )?;
+    };
+
+    init_simulation(&args)?;
 
     // Ask if user wants to run now
     let should_run = if defaults {

@@ -9,183 +9,26 @@ use centrevo_sim::simulation::{
 use centrevo_sim::storage::{Recorder, RecordingStrategy, SimulationSnapshot};
 use std::path::PathBuf;
 
+use crate::args::InitArgs;
 use crate::printing::print_parameters;
 
 #[allow(clippy::too_many_arguments)]
-pub fn init_simulation(
-    name: &str,
-    output: &PathBuf,
-    population_size: usize,
-    generations: usize,
-    ru_length: usize,
-    rus_per_hor: usize,
-    hors_per_chr: usize,
-    chrs_per_hap: usize,
-    mutation_rate: Option<f64>,
-    rate_ac: Option<f64>,
-    rate_ag: Option<f64>,
-    rate_at: Option<f64>,
-    rate_cg: Option<f64>,
-    rate_ct: Option<f64>,
-    rate_gt: Option<f64>,
-    indel_ins_rate: f64,
-    indel_del_rate: f64,
-    indel_length_p: f64,
-    recomb_rate: f64,
-    crossover_prob: f64,
-    gc_extension_prob: f64,
-    homology_strength: f64,
-    search_window: usize,
-    fit_gc_opt: Option<f64>,
-    fit_gc_conc: Option<f64>,
-    fit_len_opt: Option<usize>,
-    fit_len_std: Option<f64>,
-    fit_seq_sim: Option<f64>,
-    fit_len_sim: Option<f64>,
-    record_every: usize,
-    seed: Option<u64>,
-) -> Result<()> {
+pub fn init_simulation(args: &InitArgs) -> Result<()> {
+    let name = &args.name;
+    let output = &args.output;
+    let population_size = args.population_size;
+    let generations = args.generations;
+    let record_every = args.record_every;
+
     println!("🧬 Centrevo - Centromeric Evolution Simulator");
     println!("============================================\n");
     println!("Initializing simulation: {name}");
 
-    // Create configurations
-    let structure = UniformRepeatStructure::new(
-        Nucleotide::A,
-        ru_length,
-        rus_per_hor,
-        hors_per_chr,
-        chrs_per_hap,
-    );
+    let (structure, config, mutation, recombination, fitness) = build_configs(args)?;
 
-    let config = SimulationConfig::new(population_size, generations, seed);
+    // Logic moved to build_configs
 
-    // Create mutation configuration
-    // Check for advanced mutation rates
-    let substitution = if let (Some(ac), Some(ag), Some(at), Some(cg), Some(ct), Some(gt)) =
-        (rate_ac, rate_ag, rate_at, rate_cg, rate_ct, rate_gt)
-    {
-        // Construct matrix (upper triangle provided)
-        // A=0, C=1, G=2, T=3
-        let matrix = [
-            [0.0, ac, ag, at],
-            [ac, 0.0, cg, ct],
-            [ag, cg, 0.0, gt],
-            [at, ct, gt, 0.0],
-        ];
-        SubstitutionModel::new(matrix)
-            .map_err(|e| anyhow::anyhow!("Failed to create substitution model: {e}"))?
-    } else if let Some(rate) = mutation_rate {
-        // Uniform
-        SubstitutionModel::uniform(rate)
-            .map_err(|e| anyhow::anyhow!("Failed to create substitution model: {e}"))?
-    } else {
-        // Fallback or Error?
-        // Since main.rs defines mutation_rate default, this branch might be unreachable if logic is tight,
-        // BUT main.rs default implies mutation_rate is strictly set unless user overrides?
-        // Wait, I changed mutation_rate to Option<f64> but I kept default_value="1e-5".
-        // Clap will parse the default value into Some(1e-5) if not provided.
-        // So this else should strictly be unreachable unless I messed up Clap config.
-        // However, if the user provides explicit rates, 'mutation_rate' encounters conflict.
-        // So mutation_rate being None means explicit rates MUST be provided.
-        // But what if the user provides 5 explicit rates and forgets 1?
-        // My main.rs didn't enforce "All or Nothing" for explicit rates group.
-        // So I should check that here.
-        if rate_ac.is_some()
-            || rate_ag.is_some()
-            || rate_at.is_some()
-            || rate_cg.is_some()
-            || rate_ct.is_some()
-            || rate_gt.is_some()
-        {
-            anyhow::bail!(
-                "When using specific mutation rates, ALL 6 rates (ac, ag, at, cg, ct, gt) must be provided."
-            );
-        }
-        // If we really get here with everything None, it's weird. defaulting to 1e-5.
-        SubstitutionModel::uniform(1e-5)
-            .map_err(|e| anyhow::anyhow!("Failed to create substitution model: {e}"))?
-    };
-
-    let mut mutation = MutationConfig::new(substitution);
-
-    // Add Indels if enabled
-    if indel_ins_rate > 0.0 || indel_del_rate > 0.0 {
-        let indel_model = IndelModel::new(indel_ins_rate, indel_del_rate, indel_length_p)
-            .map_err(|e| anyhow::anyhow!("Failed to create indel model: {e}"))?;
-        mutation.indel = Some(indel_model);
-    }
-
-    let recomb_params = centrevo_sim::evolution::RecombinationModel::builder()
-        .break_prob(recomb_rate)
-        .crossover_prob(crossover_prob)
-        .gc_extension_prob(gc_extension_prob)
-        .homology_strength(homology_strength)
-        .search_window(search_window)
-        .build()
-        .map_err(|e| anyhow::anyhow!("Failed to create recombination model: {e}"))?;
-    let recombination = RecombinationConfig::new(recomb_params);
-
-    // Build Fitness Config
-    // Since neutral() returns FitnessConfig, not a builder... wait.
-    // The builder API: FitnessConfigBuilder::<BuilderEmpty>::neutral() returns FitnessConfig directly.
-    // But FitnessConfigBuilder::<BuilderEmpty>::with_gc_content(...) returns a Builder.
-    // I need to chain conditional `with_` calls.
-    // But the builder types change! This is a type-state builder.
-    // FitnessConfigBuilder<BuilderEmpty>.with_gc() -> FitnessConfigBuilder<BuilderInitialized>
-    // Ah, this makes conditional chaining hard in Rust without boxing or fancy traits.
-    // Actually, looking at configs.rs:
-    // BuilderInitialized has `with_gc_content` too.
-    // So I can transition to Initialized state once, then chain.
-    // But how to start?
-    // BuilderEmpty only has `neutral` (returns Config) or `with_*` (returns BuilderInitialized).
-    // I can't start with an "empty initialized builder".
-    // I might need to painstakingly check each option.
-
-    // Better approach: Reconstruct the FitnessConfig manually using its `new` constructor since I have all options.
-    // The Builder is useful for fluent API but maybe overkill here if I have all parts.
-    // FitnessConfig::new(gc, length, sim, len_sim)
-    // Let's check FitnessConfig::new signature in configs.rs.
-    // pub fn new(gc, length, seq_sim, length_sim) -> Self.
-    // Yes! That's much easier than fighting the type-state builder in dynamic code.
-
-    let gc_fitness = if let (Some(opt), Some(conc)) = (fit_gc_opt, fit_gc_conc) {
-        Some(
-            centrevo_sim::evolution::GCContentFitness::new(opt, conc)
-                .map_err(|e| anyhow::anyhow!("Invalid GC Fitness: {e}"))?,
-        )
-    } else {
-        None
-    };
-
-    let len_fitness = if let (Some(opt), Some(std)) = (fit_len_opt, fit_len_std) {
-        Some(
-            centrevo_sim::evolution::LengthFitness::new(opt, std)
-                .map_err(|e| anyhow::anyhow!("Invalid Length Fitness: {e}"))?,
-        )
-    } else {
-        None
-    };
-
-    let seq_sim_fitness = if let Some(shape) = fit_seq_sim {
-        Some(
-            centrevo_sim::evolution::SequenceSimilarityFitness::new(shape)
-                .map_err(|e| anyhow::anyhow!("Invalid Seq Sim Fitness: {e}"))?,
-        )
-    } else {
-        None
-    };
-
-    let len_sim_fitness = if let Some(shape) = fit_len_sim {
-        Some(
-            centrevo_sim::evolution::LengthSimilarityFitness::new(shape)
-                .map_err(|e| anyhow::anyhow!("Invalid Len Sim Fitness: {e}"))?,
-        )
-    } else {
-        None
-    };
-
-    let fitness = FitnessConfig::new(gc_fitness, len_fitness, seq_sim_fitness, len_sim_fitness);
+    println!("\nConfiguration:");
 
     println!("\nConfiguration:");
     print_parameters(
@@ -206,8 +49,12 @@ pub fn init_simulation(
 
     // Setup database recorder
     println!("\nSetting up database...");
-    let mut recorder = Recorder::new(output, name, RecordingStrategy::EveryN(record_every))
-        .context("Failed to create recorder")?;
+    let mut recorder = Recorder::new(
+        output,
+        name.as_str(),
+        RecordingStrategy::EveryN(record_every),
+    )
+    .context("Failed to create recorder")?;
 
     // Record full configuration
     let snapshot = SimulationSnapshot {
@@ -266,6 +113,130 @@ fn create_initial_population(size: usize, structure: &UniformRepeatStructure) ->
     Population::new("initial_pop", individuals)
 }
 
+pub fn build_configs(
+    args: &InitArgs,
+) -> Result<(
+    UniformRepeatStructure,
+    SimulationConfig,
+    MutationConfig,
+    RecombinationConfig,
+    FitnessConfig,
+)> {
+    let structure = UniformRepeatStructure::new(
+        Nucleotide::A,
+        args.ru_length,
+        args.rus_per_hor,
+        args.hors_per_chr,
+        args.chrs_per_hap,
+    );
+
+    let config = SimulationConfig::new(args.population_size, args.generations, args.seed);
+
+    // Create mutation configuration
+    // Check for advanced mutation rates
+    let substitution = if let (Some(ac), Some(ag), Some(at), Some(cg), Some(ct), Some(gt)) = (
+        args.rate_ac,
+        args.rate_ag,
+        args.rate_at,
+        args.rate_cg,
+        args.rate_ct,
+        args.rate_gt,
+    ) {
+        // Construct matrix (upper triangle provided)
+        // A=0, C=1, G=2, T=3
+        let matrix = [
+            [0.0, ac, ag, at],
+            [ac, 0.0, cg, ct],
+            [ag, cg, 0.0, gt],
+            [at, ct, gt, 0.0],
+        ];
+        SubstitutionModel::new(matrix)
+            .map_err(|e| anyhow::anyhow!("Failed to create substitution model: {e}"))?
+    } else if let Some(rate) = args.mutation_rate {
+        // Uniform
+        SubstitutionModel::uniform(rate)
+            .map_err(|e| anyhow::anyhow!("Failed to create substitution model: {e}"))?
+    } else {
+        if args.rate_ac.is_some()
+            || args.rate_ag.is_some()
+            || args.rate_at.is_some()
+            || args.rate_cg.is_some()
+            || args.rate_ct.is_some()
+            || args.rate_gt.is_some()
+        {
+            anyhow::bail!(
+                "When using specific mutation rates, ALL 6 rates (ac, ag, at, cg, ct, gt) must be provided."
+            );
+        }
+        // Fallback to default if no rates provided (though CLI default handles this, manual construction might pass None)
+        SubstitutionModel::uniform(1e-5)
+            .map_err(|e| anyhow::anyhow!("Failed to create substitution model: {e}"))?
+    };
+
+    let mut mutation = MutationConfig::new(substitution);
+
+    // Add Indels if enabled
+    if args.indel_ins_rate > 0.0 || args.indel_del_rate > 0.0 {
+        let indel_model = IndelModel::new(
+            args.indel_ins_rate,
+            args.indel_del_rate,
+            args.indel_length_p,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create indel model: {e}"))?;
+        mutation.indel = Some(indel_model);
+    }
+
+    let recomb_params = centrevo_sim::evolution::RecombinationModel::builder()
+        .break_prob(args.recomb_rate)
+        .crossover_prob(args.crossover_prob)
+        .gc_extension_prob(args.gc_extension_prob)
+        .homology_strength(args.homology_strength)
+        .search_window(args.search_window)
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to create recombination model: {e}"))?;
+    let recombination = RecombinationConfig::new(recomb_params);
+
+    let gc_fitness = if let (Some(opt), Some(conc)) = (args.fit_gc_opt, args.fit_gc_conc) {
+        Some(
+            centrevo_sim::evolution::GCContentFitness::new(opt, conc)
+                .map_err(|e| anyhow::anyhow!("Invalid GC Fitness: {e}"))?,
+        )
+    } else {
+        None
+    };
+
+    let len_fitness = if let (Some(opt), Some(std)) = (args.fit_len_opt, args.fit_len_std) {
+        Some(
+            centrevo_sim::evolution::LengthFitness::new(opt, std)
+                .map_err(|e| anyhow::anyhow!("Invalid Length Fitness: {e}"))?,
+        )
+    } else {
+        None
+    };
+
+    let seq_sim_fitness = if let Some(shape) = args.fit_seq_sim {
+        Some(
+            centrevo_sim::evolution::SequenceSimilarityFitness::new(shape)
+                .map_err(|e| anyhow::anyhow!("Invalid Seq Sim Fitness: {e}"))?,
+        )
+    } else {
+        None
+    };
+
+    let len_sim_fitness = if let Some(shape) = args.fit_len_sim {
+        Some(
+            centrevo_sim::evolution::LengthSimilarityFitness::new(shape)
+                .map_err(|e| anyhow::anyhow!("Invalid Len Sim Fitness: {e}"))?,
+        )
+    } else {
+        None
+    };
+
+    let fitness = FitnessConfig::new(gc_fitness, len_fitness, seq_sim_fitness, len_sim_fitness);
+
+    Ok((structure, config, mutation, recombination, fitness))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,4 +254,219 @@ mod tests {
         assert_eq!(ind.haplotype1().len(), 1);
         assert_eq!(ind.haplotype1().total_length(), 100);
     }
+}
+
+#[test]
+fn test_build_configs_defaults() {
+    let args = InitArgs {
+        name: "test".to_string(),
+        output: PathBuf::from("test.db"),
+        population_size: 100,
+        generations: 100,
+        ru_length: 171,
+        rus_per_hor: 12,
+        hors_per_chr: 10,
+        chrs_per_hap: 1,
+        mutation_rate: Some(1e-5),
+        rate_ac: None,
+        rate_ag: None,
+        rate_at: None,
+        rate_cg: None,
+        rate_ct: None,
+        rate_gt: None,
+        indel_ins_rate: 0.0,
+        indel_del_rate: 0.0,
+        indel_length_p: 0.5,
+        recomb_rate: 0.01,
+        crossover_prob: 0.01,
+        gc_extension_prob: 0.95,
+        homology_strength: 5.0,
+        search_window: 100,
+        fit_gc_opt: None,
+        fit_gc_conc: None,
+        fit_len_opt: None,
+        fit_len_std: None,
+        fit_seq_sim: None,
+        fit_len_sim: None,
+        record_every: 100,
+        seed: None,
+    };
+
+    let (structure, config, mutation, _recombination, fitness) = build_configs(&args).unwrap();
+
+    assert_eq!(config.population_size, 100);
+    assert_eq!(structure.ru_length, 171);
+    // Default mutation is uniform
+    // Note: checking internal state of mutation model is hard without public accessors,
+    // but we can check enabled flags if any.
+    assert!(mutation.indel.is_none());
+    assert!(fitness.gc_content.is_none());
+}
+
+#[test]
+fn test_build_configs_fitness() {
+    let args = InitArgs {
+        name: "test".to_string(),
+        output: PathBuf::from("test.db"),
+        population_size: 100,
+        generations: 100,
+        ru_length: 171,
+        rus_per_hor: 12,
+        hors_per_chr: 10,
+        chrs_per_hap: 1,
+        mutation_rate: Some(1e-5),
+        rate_ac: None,
+        rate_ag: None,
+        rate_at: None,
+        rate_cg: None,
+        rate_ct: None,
+        rate_gt: None,
+        indel_ins_rate: 0.0,
+        indel_del_rate: 0.0,
+        indel_length_p: 0.5,
+        recomb_rate: 0.01,
+        crossover_prob: 0.01,
+        gc_extension_prob: 0.95,
+        homology_strength: 5.0,
+        search_window: 100,
+        fit_gc_opt: Some(0.4),
+        fit_gc_conc: Some(10.0),
+        fit_len_opt: None,
+        fit_len_std: None,
+        fit_seq_sim: None,
+        fit_len_sim: None,
+        record_every: 100,
+        seed: None,
+    };
+
+    let (_, _, _, _, fitness) = build_configs(&args).unwrap();
+    assert!(fitness.gc_content.is_some());
+    assert!(fitness.length.is_none());
+}
+
+#[test]
+fn test_build_configs_advanced_mutation() {
+    let args = InitArgs {
+        name: "test".to_string(),
+        output: PathBuf::from("test.db"),
+        population_size: 100,
+        generations: 100,
+        ru_length: 171,
+        rus_per_hor: 12,
+        hors_per_chr: 10,
+        chrs_per_hap: 1,
+        mutation_rate: None,
+        rate_ac: Some(1e-6),
+        rate_ag: Some(1e-6),
+        rate_at: Some(1e-6),
+        rate_cg: Some(1e-6),
+        rate_ct: Some(1e-6),
+        rate_gt: Some(1e-6),
+        indel_ins_rate: 0.0,
+        indel_del_rate: 0.0,
+        indel_length_p: 0.5,
+        recomb_rate: 0.01,
+        crossover_prob: 0.01,
+        gc_extension_prob: 0.95,
+        homology_strength: 5.0,
+        search_window: 100,
+        fit_gc_opt: None,
+        fit_gc_conc: None,
+        fit_len_opt: None,
+        fit_len_std: None,
+        fit_seq_sim: None,
+        fit_len_sim: None,
+        record_every: 100,
+        seed: None,
+    };
+
+    let (_, _, _mutation, _, _) = build_configs(&args).unwrap();
+    // Should be General substitution model
+    // We can't easily introspect Enum variant without public access or matching.
+    // But if it didn't error, it worked.
+}
+
+#[test]
+fn test_build_configs_indels() {
+    let args = InitArgs {
+        name: "test".to_string(),
+        output: PathBuf::from("test.db"),
+        population_size: 100,
+        generations: 100,
+        ru_length: 171,
+        rus_per_hor: 12,
+        hors_per_chr: 10,
+        chrs_per_hap: 1,
+        mutation_rate: Some(1e-5),
+        rate_ac: None,
+        rate_ag: None,
+        rate_at: None,
+        rate_cg: None,
+        rate_ct: None,
+        rate_gt: None,
+        indel_ins_rate: 0.001,
+        indel_del_rate: 0.001,
+        indel_length_p: 0.5,
+        recomb_rate: 0.01,
+        crossover_prob: 0.01,
+        gc_extension_prob: 0.95,
+        homology_strength: 5.0,
+        search_window: 100,
+        fit_gc_opt: None,
+        fit_gc_conc: None,
+        fit_len_opt: None,
+        fit_len_std: None,
+        fit_seq_sim: None,
+        fit_len_sim: None,
+        record_every: 100,
+        seed: None,
+    };
+
+    let (_, _, mutation, _, _) = build_configs(&args).unwrap();
+    assert!(mutation.indel.is_some());
+}
+
+#[test]
+fn test_build_configs_conflict() {
+    let args = InitArgs {
+        name: "test".to_string(),
+        output: PathBuf::from("test.db"),
+        population_size: 100,
+        generations: 100,
+        ru_length: 171,
+        rus_per_hor: 12,
+        hors_per_chr: 10,
+        chrs_per_hap: 1,
+        mutation_rate: None, // Missing logic
+        rate_ac: Some(1e-6), // Partial
+        rate_ag: None,
+        rate_at: None,
+        rate_cg: None,
+        rate_ct: None,
+        rate_gt: None,
+        indel_ins_rate: 0.0,
+        indel_del_rate: 0.0,
+        indel_length_p: 0.5,
+        recomb_rate: 0.01,
+        crossover_prob: 0.01,
+        gc_extension_prob: 0.95,
+        homology_strength: 5.0,
+        search_window: 100,
+        fit_gc_opt: None,
+        fit_gc_conc: None,
+        fit_len_opt: None,
+        fit_len_std: None,
+        fit_seq_sim: None,
+        fit_len_sim: None,
+        record_every: 100,
+        seed: None,
+    };
+
+    // Should return error because strict mode for explicit rates requires all 6
+    let result = build_configs(&args);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "When using specific mutation rates, ALL 6 rates (ac, ag, at, cg, ct, gt) must be provided."
+    );
 }

@@ -154,12 +154,28 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
         ru_length,
         rus_per_hor,
         hors_per_chr,
-        mutation_rate,
+        1, // chrs_per_hap default
+        Some(mutation_rate),
+        None, // rate_ac
+        None, // rate_ag
+        None, // rate_at
+        None, // rate_cg
+        None, // rate_ct
+        None, // rate_gt
+        0.0,  // indel_ins_rate
+        0.0,  // indel_del_rate
+        0.5,  // indel_length_p
         recomb_rate,
         crossover_prob,
-        0.1, // gc_extension_prob default
-        0.0, // homology_strength default
-        0,   // search_window default
+        0.95, // gc_extension_prob default (was 0.1 in setup but 0.95 in main.rs! Syncing to 0.95)
+        5.0,  // homology_strength default (was 0.0 in setup but 5.0 in main.rs! Syncing to 5.0)
+        100,  // search_window default (was 0 in setup but 100 in main.rs! Syncing to 100)
+        None, // fit_gc_opt
+        None, // fit_gc_conc
+        None, // fit_len_opt
+        None, // fit_len_std
+        None, // fit_seq_sim
+        None, // fit_len_sim
         record_every,
         seed,
     )?;

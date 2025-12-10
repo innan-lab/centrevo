@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 pub use crate::errors::RepeatMapError;
+use serde::{Deserialize, Serialize};
 
 /// Maps the structure of a sequence into Repeat Units (RUs) and Higher-Order Repeats (HORs).
 ///
@@ -51,13 +51,16 @@ impl RepeatMap {
     /// # Arguments
     /// * `ru_offsets` - Start indices of RUs. Must start with 0. Last element is total sequence length.
     /// * `hor_offsets` - Indices into `ru_offsets` for HOR starts. Must start with 0. Last element is number of RUs.
-    pub fn new(ru_offsets: Vec<usize>, hor_idx_offsets: Vec<usize>) -> Result<Self, RepeatMapError> {
+    pub fn new(
+        ru_offsets: Vec<usize>,
+        hor_idx_offsets: Vec<usize>,
+    ) -> Result<Self, RepeatMapError> {
         // Validate RU offsets
         if ru_offsets.is_empty() || ru_offsets[0] != 0 {
             return Err(RepeatMapError::InvalidOffsets);
         }
         for i in 0..ru_offsets.len() - 1 {
-            if ru_offsets[i] > ru_offsets[i+1] {
+            if ru_offsets[i] > ru_offsets[i + 1] {
                 return Err(RepeatMapError::InvalidOffsets);
             }
         }
@@ -71,7 +74,7 @@ impl RepeatMap {
             return Err(RepeatMapError::InvalidHorOffsets);
         }
         for i in 0..hor_idx_offsets.len() - 1 {
-            if hor_idx_offsets[i] > hor_idx_offsets[i+1] {
+            if hor_idx_offsets[i] > hor_idx_offsets[i + 1] {
                 return Err(RepeatMapError::InvalidHorOffsets);
             }
         }
@@ -147,7 +150,7 @@ impl RepeatMap {
 
         // Binary search for the position
         match self.ru_offsets.binary_search(&position) {
-            Ok(idx) => Some(idx), // Exact match (start of RU)
+            Ok(idx) => Some(idx),      // Exact match (start of RU)
             Err(idx) => Some(idx - 1), // Inside RU
         }
     }
@@ -159,7 +162,7 @@ impl RepeatMap {
             return None;
         }
         match self.hor_idx_offsets.binary_search(&ru_index) {
-            Ok(idx) => Some(idx), // Exact match (start of HOR)
+            Ok(idx) => Some(idx),      // Exact match (start of HOR)
             Err(idx) => Some(idx - 1), // Inside HOR
         }
     }
@@ -188,19 +191,21 @@ impl RepeatMap {
         if position == 0 {
             return Ok((
                 Self::new(vec![0], vec![0])?, // Empty map
-                self.clone()
+                self.clone(),
             ));
         }
 
         if position == self.total_length() {
             return Ok((
                 self.clone(),
-                Self::new(vec![0], vec![0])? // Empty map
+                Self::new(vec![0], vec![0])?, // Empty map
             ));
         }
 
         // Find which RU contains or starts at the split position
-        let split_ru_idx = self.find_ru_index(position).ok_or(RepeatMapError::IndexOutOfBounds)?;
+        let split_ru_idx = self
+            .find_ru_index(position)
+            .ok_or(RepeatMapError::IndexOutOfBounds)?;
 
         // Check if we are splitting exactly at an RU boundary
         let is_boundary = self.ru_offsets[split_ru_idx] == position;
@@ -216,7 +221,7 @@ impl RepeatMap {
             // but replace the end boundary with the split position
             // Example: split at 50 with offsets [0, 100, 200]
             // split_ru_idx=0, we take [0, 100] and change to [0, 50]
-            let mut offsets = self.ru_offsets[0..=split_ru_idx+1].to_vec();
+            let mut offsets = self.ru_offsets[0..=split_ru_idx + 1].to_vec();
             *offsets.last_mut().unwrap() = position;
             offsets
         };
@@ -227,7 +232,7 @@ impl RepeatMap {
         // - Interior: RUs from split_ru_idx+1 onward (split_ru_idx is partially in both)
         // In both cases, we rebase by subtracting the split position
         let mut right_ru_offsets = vec![0];
-        for &offset in &self.ru_offsets[split_ru_idx+1..] {
+        for &offset in &self.ru_offsets[split_ru_idx + 1..] {
             right_ru_offsets.push(offset - position);
         }
 
@@ -281,7 +286,7 @@ impl RepeatMap {
 
         Ok((
             Self::new(left_ru_offsets, left_hor_offsets)?,
-            Self::new(right_ru_offsets, right_hor_offsets)?
+            Self::new(right_ru_offsets, right_hor_offsets)?,
         ))
     }
 

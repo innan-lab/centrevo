@@ -550,6 +550,24 @@ impl IndelModel {
         })
     }
 
+    /// Get the insertion rate.
+    #[inline]
+    pub fn insertion_rate(&self) -> f64 {
+        self.insertion_rate
+    }
+
+    /// Get the deletion rate.
+    #[inline]
+    pub fn deletion_rate(&self) -> f64 {
+        self.deletion_rate
+    }
+
+    /// Get the length parameter p.
+    #[inline]
+    pub fn length_p(&self) -> f64 {
+        self.length_p
+    }
+
     /// Apply indels to a sequence.
     ///
     /// This simulates one generation of indel mutations. For each base, we determine
@@ -627,7 +645,10 @@ impl IndelModel {
             // Length: sample from Geometric distribution (add 1 because Geometric starts at 0)
             // This gives realistic indel length distribution (small indels most common)
             let indel_len = (geo.sample(rng) + 1) as usize;
-            event_list.push(IndelEvent::Insertion { pos, len: indel_len });
+            event_list.push(IndelEvent::Insertion {
+                pos,
+                len: indel_len,
+            });
         }
 
         // Generate deletion events
@@ -639,7 +660,10 @@ impl IndelModel {
             let pos = rng.random_range(0..len);
             // Length: again from Geometric (realistic distribution)
             let indel_len = (geo.sample(rng) + 1) as usize;
-            event_list.push(IndelEvent::Deletion { pos, len: indel_len });
+            event_list.push(IndelEvent::Deletion {
+                pos,
+                len: indel_len,
+            });
         }
 
         // Sort events by position descending (highest position first)

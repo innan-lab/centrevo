@@ -453,6 +453,25 @@ impl RecombinationModel {
         let start_idx = syntenic_ru_idx.saturating_sub(window);
         let end_idx = (syntenic_ru_idx + window).min(target_num_rus - 1);
 
+        // OPTIMIZATION: Fast path for Random Homology (strength == 0.0)
+        // If strength is 0, weights are all 1.0 (Uniform).
+        // We can just sample a random index in [start_idx, end_idx]
+        if self.homology_strength == 0.0 {
+            if start_idx > end_idx {
+                return syntenic_ru_idx;
+            }
+            let target_ru_idx = rng.random_range(start_idx..=end_idx);
+
+            // Map offset within Source RU to Target RU
+            return self.map_offset_to_target(
+                source,
+                source_pos,
+                source_ru_idx,
+                target,
+                target_ru_idx,
+            );
+        }
+
         // 4. Score Candidates
         let mut candidates = Vec::with_capacity(end_idx - start_idx + 1);
         let mut total_weight = 0.0;
@@ -462,11 +481,8 @@ impl RecombinationModel {
                 source.calculate_similarity(source_ru_idx, target, idx, self.kmer_size);
 
             // Weight = Similarity ^ Strength
-            let weight = if self.homology_strength == 0.0 {
-                1.0 // Uniform
-            } else {
-                similarity.powf(self.homology_strength)
-            };
+            // We already handled strength == 0.0 above
+            let weight = similarity.powf(self.homology_strength);
 
             if weight > 0.0 {
                 candidates.push((idx, weight));
@@ -491,6 +507,18 @@ impl RecombinationModel {
         };
 
         // 6. Map offset within Source RU to Target RU
+        self.map_offset_to_target(source, source_pos, source_ru_idx, target, target_ru_idx)
+    }
+
+    /// Helper to map the offset from a source RU to a target RU.
+    fn map_offset_to_target(
+        &self,
+        source: &crate::genome::Chromosome,
+        source_pos: usize,
+        source_ru_idx: usize,
+        target: &crate::genome::Chromosome,
+        target_ru_idx: usize,
+    ) -> usize {
         let (s_start, s_end) = source.map().get_ru_interval(source_ru_idx).unwrap();
         let (t_start, t_end) = target.map().get_ru_interval(target_ru_idx).unwrap();
 

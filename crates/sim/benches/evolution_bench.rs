@@ -134,30 +134,44 @@ fn bench_recombination(c: &mut Criterion) {
     let mut group = c.benchmark_group("recombination");
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
-    let break_probs = [1e-6, 1e-3, 0.1];
-    let crossover_probs = [0.1, 0.5, 0.9];
-    let seq_len = 100_000; // Fixed length for recombination bench
+    let break_probs = [1e-3, 0.1]; // Test valid range
+    // We only need one standard crossover probability
+    let crossover_prob = 0.5;
+
+    // Test parameters: Window=100 (standard), Homology=0.0 (Random) vs 2.0 (Strong)
+    // We compare random (fast path) vs actual homology search
+    let homology_strengths = [0.0, 2.0];
+    let seq_len = 100_000;
 
     // Setup chromosomes
     let seq_str = "A".repeat(seq_len);
     let seq = Sequence::from_str(&seq_str).unwrap();
+    // Uniform map: 1bp RUs -> 100,000 candidates
     let map = RepeatMap::uniform(1, 1, seq_len);
     let chr1 = Chromosome::new("chr1", seq.clone(), map.clone());
     let chr2 = Chromosome::new("chr2", seq, map);
 
     for &break_prob in &break_probs {
-        for &crossover_prob in &crossover_probs {
+        for &strength in &homology_strengths {
+            // Build model
             let model = RecombinationModel::builder()
                 .break_prob(break_prob)
                 .crossover_prob(crossover_prob)
+                .homology_strength(strength)
+                .search_window(100) // 100 RUs window
                 .build()
                 .unwrap();
 
-            let parameter_string = format!("break={break_prob}/cross={crossover_prob}");
+            let type_str = if strength == 0.0 {
+                "random"
+            } else {
+                "homology"
+            };
+            let parameter_string = format!("break={break_prob}/type={type_str}");
 
             group.bench_with_input(
                 BenchmarkId::new("sample_events", &parameter_string),
-                &(break_prob, crossover_prob),
+                &(break_prob, strength),
                 |b, _| {
                     b.iter(|| {
                         black_box(model.sample_events(

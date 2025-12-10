@@ -123,15 +123,15 @@ impl SubstitutionVariant for UniformSubstitution {
         let indices = sequence.as_mut_slice();
 
         // Optimized loop
-        for i in 0..len {
+        for base_mut in indices {
             if rng.random::<f64>() < self.rate {
                 // Mutate
-                let base = indices[i];
+                let current_base = *base_mut;
                 // Select new base uniformly from other 3
                 let offset = rng.random_range(1..4);
-                let base_idx = base.to_index();
+                let base_idx = current_base.to_index();
                 let new_idx = (base_idx + offset) % 4;
-                indices[i] = Nucleotide::from_index(new_idx).unwrap();
+                *base_mut = Nucleotide::from_index(new_idx).unwrap();
                 mutation_count += 1;
             }
         }

@@ -491,7 +491,7 @@ mod tests {
     fn test_mutation_config_uniform() {
         let config = MutationConfig::uniform(0.001).unwrap();
         // Just check it was created successfully
-        assert!(matches!(config.substitution, SubstitutionModel { .. }));
+        assert!(matches!(config.substitution, SubstitutionModel::Uniform(_)));
         assert!(config.indel.is_none());
     }
 

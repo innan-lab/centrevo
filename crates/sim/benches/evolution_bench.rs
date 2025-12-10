@@ -20,28 +20,68 @@ fn bench_mutation(c: &mut Criterion) {
         group.throughput(Throughput::Elements(len as u64));
 
         for &rate in &rates {
-            let model = SubstitutionModel::uniform(rate).unwrap();
+            // Optimized Uniform model
+            let uniform_model = SubstitutionModel::uniform(rate).unwrap();
+
+            // General model with same uniform rates
+            let r = rate / 3.0;
+            let matrix = [
+                [0.0, r, r, r],
+                [r, 0.0, r, r],
+                [r, r, 0.0, r],
+                [r, r, r, 0.0],
+            ];
+            let general_model = SubstitutionModel::new(matrix).unwrap();
+
             let parameter_string = format!("len={len}/rate={rate}");
 
+            // 1. Uniform Variant Direct
             group.bench_with_input(
-                BenchmarkId::new("direct", &parameter_string),
+                BenchmarkId::new("uniform_direct", &parameter_string),
                 &(len, rate),
                 |b, _| {
                     b.iter_batched(
                         || sequence.clone(),
-                        |mut seq| model.mutate_sequence(&mut seq, &mut rng),
+                        |mut seq| uniform_model.mutate_sequence(&mut seq, &mut rng),
                         criterion::BatchSize::SmallInput,
                     )
                 },
             );
 
+            // 2. Uniform Variant Sparse
             group.bench_with_input(
-                BenchmarkId::new("sparse", &parameter_string),
+                BenchmarkId::new("uniform_sparse", &parameter_string),
                 &(len, rate),
                 |b, _| {
                     b.iter_batched(
                         || sequence.clone(),
-                        |mut seq| model.mutate_sequence_sparse(&mut seq, &mut rng),
+                        |mut seq| uniform_model.mutate_sequence_sparse(&mut seq, &mut rng),
+                        criterion::BatchSize::SmallInput,
+                    )
+                },
+            );
+
+            // 3. General Variant Direct
+            group.bench_with_input(
+                BenchmarkId::new("general_direct", &parameter_string),
+                &(len, rate),
+                |b, _| {
+                    b.iter_batched(
+                        || sequence.clone(),
+                        |mut seq| general_model.mutate_sequence(&mut seq, &mut rng),
+                        criterion::BatchSize::SmallInput,
+                    )
+                },
+            );
+
+            // 4. General Variant Sparse
+            group.bench_with_input(
+                BenchmarkId::new("general_sparse", &parameter_string),
+                &(len, rate),
+                |b, _| {
+                    b.iter_batched(
+                        || sequence.clone(),
+                        |mut seq| general_model.mutate_sequence_sparse(&mut seq, &mut rng),
                         criterion::BatchSize::SmallInput,
                     )
                 },

@@ -56,16 +56,40 @@ enum Commands {
         hors_per_chr: usize,
 
         /// Mutation rate
-        #[arg(long, default_value = "0.001")]
+        ///
+        /// Defaults to 1e-5. Although typical per-base mutation rate is ~1e-8, 1e-5 is useful for simulation timescales.
+        #[arg(long, default_value = "1e-5")]
         mutation_rate: f64,
 
         /// Recombination break probability
-        #[arg(long, default_value = "0.01")]
+        ///
+        /// Defaults to 1e-6 or approx. 1 DSB per Mb per generation.
+        #[arg(long, default_value = "1e-6")]
         recomb_rate: f64,
 
         /// Crossover probability (given break)
-        #[arg(long, default_value = "0.7")]
+        ///
+        /// Defaults to 0.01. Crossovers are heavily suppressed in centromeres; most events are gene conversions.
+        #[arg(long, default_value = "0.01")]
         crossover_prob: f64,
+
+        /// Gene conversion extension probability
+        ///
+        /// Defaults to 0.95. Results in average tract length ~20bp (1/(1-0.95)).
+        #[arg(long, default_value = "0.95")]
+        gc_extension_prob: f64,
+
+        /// Homology strength (0.0 = random, >0.0 = preference for similarity)
+        ///
+        /// Defaults to 5.0. (Strong preference for homologous sequences to drive homogenization)
+        #[arg(long, default_value = "5.0")]
+        homology_strength: f64,
+
+        /// Search window for homology (in RUs)
+        ///
+        /// Defaults to 100. (Allows interaction with neighboring ~10-20kb of sequence)
+        #[arg(long, default_value = "100")]
+        search_window: usize,
 
         /// Default recording interval (record every N generations)
         #[arg(long, default_value = "100")]
@@ -224,6 +248,9 @@ fn main() -> Result<()> {
             mutation_rate,
             recomb_rate,
             crossover_prob,
+            gc_extension_prob,
+            homology_strength,
+            search_window,
             record_every,
             seed,
         } => {
@@ -238,6 +265,9 @@ fn main() -> Result<()> {
                 mutation_rate,
                 recomb_rate,
                 crossover_prob,
+                gc_extension_prob,
+                homology_strength,
+                search_window,
                 record_every,
                 seed,
             )?;
@@ -322,6 +352,9 @@ fn init_simulation(
     mutation_rate: f64,
     recomb_rate: f64,
     crossover_prob: f64,
+    gc_extension_prob: f64,
+    homology_strength: f64,
+    search_window: usize,
     record_every: usize,
     seed: Option<u64>,
 ) -> Result<()> {
@@ -337,9 +370,18 @@ fn init_simulation(
 
     // Create mutation and recombination configs
     let mutation = MutationConfig::uniform(mutation_rate)
-        .map_err(|e| anyhow::anyhow!("Failed to create mutation configuration: {}", e))?;
-    let recombination = RecombinationConfig::standard(recomb_rate, crossover_prob, 0.1)
-        .map_err(|e| anyhow::anyhow!("Failed to create recombination configuration: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create mutation configuration: {e}"))?;
+
+    let recomb_params = centrevo_sim::evolution::RecombinationModel::builder()
+        .break_prob(recomb_rate)
+        .crossover_prob(crossover_prob)
+        .gc_extension_prob(gc_extension_prob)
+        .homology_strength(homology_strength)
+        .search_window(search_window)
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to create recombination model: {e}"))?;
+    let recombination = RecombinationConfig::new(recomb_params);
+
     let fitness = FitnessConfig::neutral();
 
     println!("\nConfiguration:");
@@ -1380,6 +1422,9 @@ fn setup_wizard(use_defaults: bool) -> Result<()> {
         mutation_rate,
         recomb_rate,
         crossover_prob,
+        0.1, // gc_extension_prob default
+        0.0, // homology_strength default
+        0,   // search_window default
         record_every,
         seed,
     )?;

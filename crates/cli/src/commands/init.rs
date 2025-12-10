@@ -7,7 +7,6 @@ use centrevo_sim::simulation::{
     UniformRepeatStructure,
 };
 use centrevo_sim::storage::{Recorder, RecordingStrategy, SimulationSnapshot};
-use std::path::PathBuf;
 
 use crate::args::InitArgs;
 use crate::printing::print_parameters;
@@ -241,6 +240,7 @@ pub fn build_configs(
 mod tests {
     use super::*;
     use centrevo_sim::base::Nucleotide;
+    use std::path::PathBuf;
 
     #[test]
     fn test_create_initial_population_regression() {
@@ -254,219 +254,219 @@ mod tests {
         assert_eq!(ind.haplotype1().len(), 1);
         assert_eq!(ind.haplotype1().total_length(), 100);
     }
-}
 
-#[test]
-fn test_build_configs_defaults() {
-    let args = InitArgs {
-        name: "test".to_string(),
-        output: PathBuf::from("test.db"),
-        population_size: 100,
-        generations: 100,
-        ru_length: 171,
-        rus_per_hor: 12,
-        hors_per_chr: 10,
-        chrs_per_hap: 1,
-        mutation_rate: Some(1e-5),
-        rate_ac: None,
-        rate_ag: None,
-        rate_at: None,
-        rate_cg: None,
-        rate_ct: None,
-        rate_gt: None,
-        indel_ins_rate: 0.0,
-        indel_del_rate: 0.0,
-        indel_length_p: 0.5,
-        recomb_rate: 0.01,
-        crossover_prob: 0.01,
-        gc_extension_prob: 0.95,
-        homology_strength: 5.0,
-        search_window: 100,
-        fit_gc_opt: None,
-        fit_gc_conc: None,
-        fit_len_opt: None,
-        fit_len_std: None,
-        fit_seq_sim: None,
-        fit_len_sim: None,
-        record_every: 100,
-        seed: None,
-    };
+    #[test]
+    fn test_build_configs_defaults() {
+        let args = InitArgs {
+            name: "test".to_string(),
+            output: PathBuf::from("test.db"),
+            population_size: 100,
+            generations: 100,
+            ru_length: 171,
+            rus_per_hor: 12,
+            hors_per_chr: 10,
+            chrs_per_hap: 1,
+            mutation_rate: Some(1e-5),
+            rate_ac: None,
+            rate_ag: None,
+            rate_at: None,
+            rate_cg: None,
+            rate_ct: None,
+            rate_gt: None,
+            indel_ins_rate: 0.0,
+            indel_del_rate: 0.0,
+            indel_length_p: 0.5,
+            recomb_rate: 0.01,
+            crossover_prob: 0.01,
+            gc_extension_prob: 0.95,
+            homology_strength: 5.0,
+            search_window: 100,
+            fit_gc_opt: None,
+            fit_gc_conc: None,
+            fit_len_opt: None,
+            fit_len_std: None,
+            fit_seq_sim: None,
+            fit_len_sim: None,
+            record_every: 100,
+            seed: None,
+        };
 
-    let (structure, config, mutation, _recombination, fitness) = build_configs(&args).unwrap();
+        let (structure, config, mutation, _recombination, fitness) = build_configs(&args).unwrap();
 
-    assert_eq!(config.population_size, 100);
-    assert_eq!(structure.ru_length, 171);
-    // Default mutation is uniform
-    // Note: checking internal state of mutation model is hard without public accessors,
-    // but we can check enabled flags if any.
-    assert!(mutation.indel.is_none());
-    assert!(fitness.gc_content.is_none());
-}
+        assert_eq!(config.population_size, 100);
+        assert_eq!(structure.ru_length, 171);
+        // Default mutation is uniform
+        // Note: checking internal state of mutation model is hard without public accessors,
+        // but we can check enabled flags if any.
+        assert!(mutation.indel.is_none());
+        assert!(fitness.gc_content.is_none());
+    }
 
-#[test]
-fn test_build_configs_fitness() {
-    let args = InitArgs {
-        name: "test".to_string(),
-        output: PathBuf::from("test.db"),
-        population_size: 100,
-        generations: 100,
-        ru_length: 171,
-        rus_per_hor: 12,
-        hors_per_chr: 10,
-        chrs_per_hap: 1,
-        mutation_rate: Some(1e-5),
-        rate_ac: None,
-        rate_ag: None,
-        rate_at: None,
-        rate_cg: None,
-        rate_ct: None,
-        rate_gt: None,
-        indel_ins_rate: 0.0,
-        indel_del_rate: 0.0,
-        indel_length_p: 0.5,
-        recomb_rate: 0.01,
-        crossover_prob: 0.01,
-        gc_extension_prob: 0.95,
-        homology_strength: 5.0,
-        search_window: 100,
-        fit_gc_opt: Some(0.4),
-        fit_gc_conc: Some(10.0),
-        fit_len_opt: None,
-        fit_len_std: None,
-        fit_seq_sim: None,
-        fit_len_sim: None,
-        record_every: 100,
-        seed: None,
-    };
+    #[test]
+    fn test_build_configs_fitness() {
+        let args = InitArgs {
+            name: "test".to_string(),
+            output: PathBuf::from("test.db"),
+            population_size: 100,
+            generations: 100,
+            ru_length: 171,
+            rus_per_hor: 12,
+            hors_per_chr: 10,
+            chrs_per_hap: 1,
+            mutation_rate: Some(1e-5),
+            rate_ac: None,
+            rate_ag: None,
+            rate_at: None,
+            rate_cg: None,
+            rate_ct: None,
+            rate_gt: None,
+            indel_ins_rate: 0.0,
+            indel_del_rate: 0.0,
+            indel_length_p: 0.5,
+            recomb_rate: 0.01,
+            crossover_prob: 0.01,
+            gc_extension_prob: 0.95,
+            homology_strength: 5.0,
+            search_window: 100,
+            fit_gc_opt: Some(0.4),
+            fit_gc_conc: Some(10.0),
+            fit_len_opt: None,
+            fit_len_std: None,
+            fit_seq_sim: None,
+            fit_len_sim: None,
+            record_every: 100,
+            seed: None,
+        };
 
-    let (_, _, _, _, fitness) = build_configs(&args).unwrap();
-    assert!(fitness.gc_content.is_some());
-    assert!(fitness.length.is_none());
-}
+        let (_, _, _, _, fitness) = build_configs(&args).unwrap();
+        assert!(fitness.gc_content.is_some());
+        assert!(fitness.length.is_none());
+    }
 
-#[test]
-fn test_build_configs_advanced_mutation() {
-    let args = InitArgs {
-        name: "test".to_string(),
-        output: PathBuf::from("test.db"),
-        population_size: 100,
-        generations: 100,
-        ru_length: 171,
-        rus_per_hor: 12,
-        hors_per_chr: 10,
-        chrs_per_hap: 1,
-        mutation_rate: None,
-        rate_ac: Some(1e-6),
-        rate_ag: Some(1e-6),
-        rate_at: Some(1e-6),
-        rate_cg: Some(1e-6),
-        rate_ct: Some(1e-6),
-        rate_gt: Some(1e-6),
-        indel_ins_rate: 0.0,
-        indel_del_rate: 0.0,
-        indel_length_p: 0.5,
-        recomb_rate: 0.01,
-        crossover_prob: 0.01,
-        gc_extension_prob: 0.95,
-        homology_strength: 5.0,
-        search_window: 100,
-        fit_gc_opt: None,
-        fit_gc_conc: None,
-        fit_len_opt: None,
-        fit_len_std: None,
-        fit_seq_sim: None,
-        fit_len_sim: None,
-        record_every: 100,
-        seed: None,
-    };
+    #[test]
+    fn test_build_configs_advanced_mutation() {
+        let args = InitArgs {
+            name: "test".to_string(),
+            output: PathBuf::from("test.db"),
+            population_size: 100,
+            generations: 100,
+            ru_length: 171,
+            rus_per_hor: 12,
+            hors_per_chr: 10,
+            chrs_per_hap: 1,
+            mutation_rate: None,
+            rate_ac: Some(1e-6),
+            rate_ag: Some(1e-6),
+            rate_at: Some(1e-6),
+            rate_cg: Some(1e-6),
+            rate_ct: Some(1e-6),
+            rate_gt: Some(1e-6),
+            indel_ins_rate: 0.0,
+            indel_del_rate: 0.0,
+            indel_length_p: 0.5,
+            recomb_rate: 0.01,
+            crossover_prob: 0.01,
+            gc_extension_prob: 0.95,
+            homology_strength: 5.0,
+            search_window: 100,
+            fit_gc_opt: None,
+            fit_gc_conc: None,
+            fit_len_opt: None,
+            fit_len_std: None,
+            fit_seq_sim: None,
+            fit_len_sim: None,
+            record_every: 100,
+            seed: None,
+        };
 
-    let (_, _, _mutation, _, _) = build_configs(&args).unwrap();
-    // Should be General substitution model
-    // We can't easily introspect Enum variant without public access or matching.
-    // But if it didn't error, it worked.
-}
+        let (_, _, _mutation, _, _) = build_configs(&args).unwrap();
+        // Should be General substitution model
+        // We can't easily introspect Enum variant without public access or matching.
+        // But if it didn't error, it worked.
+    }
 
-#[test]
-fn test_build_configs_indels() {
-    let args = InitArgs {
-        name: "test".to_string(),
-        output: PathBuf::from("test.db"),
-        population_size: 100,
-        generations: 100,
-        ru_length: 171,
-        rus_per_hor: 12,
-        hors_per_chr: 10,
-        chrs_per_hap: 1,
-        mutation_rate: Some(1e-5),
-        rate_ac: None,
-        rate_ag: None,
-        rate_at: None,
-        rate_cg: None,
-        rate_ct: None,
-        rate_gt: None,
-        indel_ins_rate: 0.001,
-        indel_del_rate: 0.001,
-        indel_length_p: 0.5,
-        recomb_rate: 0.01,
-        crossover_prob: 0.01,
-        gc_extension_prob: 0.95,
-        homology_strength: 5.0,
-        search_window: 100,
-        fit_gc_opt: None,
-        fit_gc_conc: None,
-        fit_len_opt: None,
-        fit_len_std: None,
-        fit_seq_sim: None,
-        fit_len_sim: None,
-        record_every: 100,
-        seed: None,
-    };
+    #[test]
+    fn test_build_configs_indels() {
+        let args = InitArgs {
+            name: "test".to_string(),
+            output: PathBuf::from("test.db"),
+            population_size: 100,
+            generations: 100,
+            ru_length: 171,
+            rus_per_hor: 12,
+            hors_per_chr: 10,
+            chrs_per_hap: 1,
+            mutation_rate: Some(1e-5),
+            rate_ac: None,
+            rate_ag: None,
+            rate_at: None,
+            rate_cg: None,
+            rate_ct: None,
+            rate_gt: None,
+            indel_ins_rate: 0.001,
+            indel_del_rate: 0.001,
+            indel_length_p: 0.5,
+            recomb_rate: 0.01,
+            crossover_prob: 0.01,
+            gc_extension_prob: 0.95,
+            homology_strength: 5.0,
+            search_window: 100,
+            fit_gc_opt: None,
+            fit_gc_conc: None,
+            fit_len_opt: None,
+            fit_len_std: None,
+            fit_seq_sim: None,
+            fit_len_sim: None,
+            record_every: 100,
+            seed: None,
+        };
 
-    let (_, _, mutation, _, _) = build_configs(&args).unwrap();
-    assert!(mutation.indel.is_some());
-}
+        let (_, _, mutation, _, _) = build_configs(&args).unwrap();
+        assert!(mutation.indel.is_some());
+    }
 
-#[test]
-fn test_build_configs_conflict() {
-    let args = InitArgs {
-        name: "test".to_string(),
-        output: PathBuf::from("test.db"),
-        population_size: 100,
-        generations: 100,
-        ru_length: 171,
-        rus_per_hor: 12,
-        hors_per_chr: 10,
-        chrs_per_hap: 1,
-        mutation_rate: None, // Missing logic
-        rate_ac: Some(1e-6), // Partial
-        rate_ag: None,
-        rate_at: None,
-        rate_cg: None,
-        rate_ct: None,
-        rate_gt: None,
-        indel_ins_rate: 0.0,
-        indel_del_rate: 0.0,
-        indel_length_p: 0.5,
-        recomb_rate: 0.01,
-        crossover_prob: 0.01,
-        gc_extension_prob: 0.95,
-        homology_strength: 5.0,
-        search_window: 100,
-        fit_gc_opt: None,
-        fit_gc_conc: None,
-        fit_len_opt: None,
-        fit_len_std: None,
-        fit_seq_sim: None,
-        fit_len_sim: None,
-        record_every: 100,
-        seed: None,
-    };
+    #[test]
+    fn test_build_configs_conflict() {
+        let args = InitArgs {
+            name: "test".to_string(),
+            output: PathBuf::from("test.db"),
+            population_size: 100,
+            generations: 100,
+            ru_length: 171,
+            rus_per_hor: 12,
+            hors_per_chr: 10,
+            chrs_per_hap: 1,
+            mutation_rate: None, // Missing logic
+            rate_ac: Some(1e-6), // Partial
+            rate_ag: None,
+            rate_at: None,
+            rate_cg: None,
+            rate_ct: None,
+            rate_gt: None,
+            indel_ins_rate: 0.0,
+            indel_del_rate: 0.0,
+            indel_length_p: 0.5,
+            recomb_rate: 0.01,
+            crossover_prob: 0.01,
+            gc_extension_prob: 0.95,
+            homology_strength: 5.0,
+            search_window: 100,
+            fit_gc_opt: None,
+            fit_gc_conc: None,
+            fit_len_opt: None,
+            fit_len_std: None,
+            fit_seq_sim: None,
+            fit_len_sim: None,
+            record_every: 100,
+            seed: None,
+        };
 
-    // Should return error because strict mode for explicit rates requires all 6
-    let result = build_configs(&args);
-    assert!(result.is_err());
-    assert_eq!(
-        result.unwrap_err().to_string(),
-        "When using specific mutation rates, ALL 6 rates (ac, ag, at, cg, ct, gt) must be provided."
-    );
+        // Should return error because strict mode for explicit rates requires all 6
+        let result = build_configs(&args);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "When using specific mutation rates, ALL 6 rates (ac, ag, at, cg, ct, gt) must be provided."
+        );
+    }
 }

@@ -10,83 +10,213 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
     println!("========================\n");
     println!("This wizard will guide you through setting up and running a simulation.\n");
 
+    use crate::defaults;
+
     // Simulation configuration
     let name = if defaults {
-        "simulation".to_string()
+        defaults::SIMULATION_NAME.to_string()
     } else {
-        prompt_string("Simulation name", Some("simulation"))?
+        prompt_string("Simulation name", Some(defaults::SIMULATION_NAME))?
     };
 
     let database = if defaults {
-        PathBuf::from("simulation.db")
+        PathBuf::from(defaults::OUTPUT_DB)
     } else {
-        PathBuf::from(prompt_string("Database file", Some("simulation.db"))?)
+        PathBuf::from(prompt_string("Database file", Some(defaults::OUTPUT_DB))?)
     };
 
     println!("\n📐 Population Parameters");
     println!("-----------------------");
 
     let population_size = if defaults {
-        100
+        defaults::POPULATION_SIZE
     } else {
-        prompt_usize("Population size", Some(100))?
+        prompt_usize("Population size", Some(defaults::POPULATION_SIZE))?
     };
 
     let generations = if defaults {
-        1000
+        defaults::GENERATIONS
     } else {
-        prompt_usize("Number of generations", Some(1000))?
+        prompt_usize("Number of generations", Some(defaults::GENERATIONS))?
     };
 
     println!("\n🧬 Genome Structure");
     println!("------------------");
 
     let ru_length = if defaults {
-        171
+        defaults::RU_LENGTH
     } else {
-        prompt_usize("Repeat unit (RU) length (bp)", Some(171))?
+        prompt_usize("Repeat unit (RU) length (bp)", Some(defaults::RU_LENGTH))?
     };
 
     let rus_per_hor = if defaults {
-        12
+        defaults::RUS_PER_HOR
     } else {
-        prompt_usize("RUs per Higher-Order Repeat (HOR)", Some(12))?
+        prompt_usize(
+            "RUs per Higher-Order Repeat (HOR)",
+            Some(defaults::RUS_PER_HOR),
+        )?
     };
 
     let hors_per_chr = if defaults {
-        100
+        defaults::HORS_PER_CHR
     } else {
-        prompt_usize("HORs per chromosome", Some(100))?
+        prompt_usize("HORs per chromosome", Some(defaults::HORS_PER_CHR))?
     };
 
     println!("\n🧪 Evolution Parameters");
     println!("----------------------");
 
-    let mutation_rate = if defaults {
-        0.001
+    let (mutation_rate, rate_ac, rate_ag, rate_at, rate_cg, rate_ct, rate_gt) = if defaults {
+        (
+            Some(defaults::MUTATION_RATE),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    } else if !prompt_confirm(
+        "Configure advanced mutation model (e.g. specific rates)?",
+        false,
+    )? {
+        let rate = prompt_f64("Mutation rate (uniform)", Some(defaults::MUTATION_RATE))?;
+        (Some(rate), None, None, None, None, None, None)
     } else {
-        prompt_f64("Mutation rate", Some(0.001))?
+        println!("  Enter substitution rates (probability per base per generation):");
+        let ac = prompt_f64("  Rate A<->C", Some(defaults::SPECIFIC_RATE_DEFAULT))?;
+        let ag = prompt_f64("  Rate A<->G", Some(defaults::SPECIFIC_RATE_DEFAULT))?;
+        let at = prompt_f64("  Rate A<->T", Some(defaults::SPECIFIC_RATE_DEFAULT))?;
+        let cg = prompt_f64("  Rate C<->G", Some(defaults::SPECIFIC_RATE_DEFAULT))?;
+        let ct = prompt_f64("  Rate C<->T", Some(defaults::SPECIFIC_RATE_DEFAULT))?;
+        let gt = prompt_f64("  Rate G<->T", Some(defaults::SPECIFIC_RATE_DEFAULT))?;
+        (
+            None,
+            Some(ac),
+            Some(ag),
+            Some(at),
+            Some(cg),
+            Some(ct),
+            Some(gt),
+        )
+    };
+
+    let (indel_ins_rate, indel_del_rate, indel_length_p) = if defaults {
+        (
+            defaults::INDEL_INS_RATE,
+            defaults::INDEL_DEL_RATE,
+            defaults::INDEL_LENGTH_P,
+        )
+    } else if prompt_confirm("Enable indel mutations?", false)? {
+        let ins = prompt_f64("  Insertion rate", Some(1e-5))?;
+        let del = prompt_f64("  Deletion rate", Some(1e-5))?;
+        let p = prompt_f64(
+            "  Indel length parameter p (0.0-1.0)",
+            Some(defaults::INDEL_LENGTH_P),
+        )?;
+        (ins, del, p)
+    } else {
+        (
+            defaults::INDEL_INS_RATE,
+            defaults::INDEL_DEL_RATE,
+            defaults::INDEL_LENGTH_P,
+        )
     };
 
     let recomb_rate = if defaults {
-        0.01
+        defaults::RECOMB_RATE
     } else {
-        prompt_f64("Recombination break probability", Some(0.01))?
+        prompt_f64(
+            "Recombination break probability",
+            Some(defaults::RECOMB_RATE),
+        )?
     };
 
     let crossover_prob = if defaults {
-        0.7
+        defaults::CROSSOVER_PROB
     } else {
-        prompt_f64("Crossover probability (given break)", Some(0.7))?
+        prompt_f64(
+            "Crossover probability (given break)",
+            Some(defaults::CROSSOVER_PROB),
+        )?
+    };
+
+    let (gc_extension_prob, homology_strength, search_window) = if defaults {
+        (
+            defaults::GC_EXTENSION_PROB,
+            defaults::HOMOLOGY_STRENGTH,
+            defaults::SEARCH_WINDOW,
+        )
+    } else if prompt_confirm("Configure advanced recombination parameters?", false)? {
+        let gc = prompt_f64(
+            "  Gene conversion extension prob",
+            Some(defaults::GC_EXTENSION_PROB),
+        )?;
+        let hom = prompt_f64("  Homology strength", Some(defaults::HOMOLOGY_STRENGTH))?;
+        let win = prompt_usize("  Search window (RUs)", Some(defaults::SEARCH_WINDOW))?;
+        (gc, hom, win)
+    } else {
+        (
+            defaults::GC_EXTENSION_PROB,
+            defaults::HOMOLOGY_STRENGTH,
+            defaults::SEARCH_WINDOW,
+        )
+    };
+
+    println!("\n🎯 Fitness & Selection");
+    println!("---------------------");
+
+    let (fit_gc_opt, fit_gc_conc) = if defaults {
+        (None, None)
+    } else if prompt_confirm("Enable GC content selection?", false)? {
+        let opt = prompt_f64("  Optimal GC content (0.0-1.0)", Some(defaults::FIT_GC_OPT))?;
+        let conc = prompt_f64("  Concentration parameter", Some(defaults::FIT_GC_CONC))?;
+        (Some(opt), Some(conc))
+    } else {
+        (None, None)
+    };
+
+    let (fit_len_opt, fit_len_std) = if defaults {
+        (None, None)
+    } else if prompt_confirm("Enable Chromosome Length selection?", false)? {
+        let total_bp_est = ru_length * rus_per_hor * hors_per_chr;
+        let opt = prompt_usize("  Optimal length (bp)", Some(total_bp_est))?;
+        let std = prompt_f64("  Length std dev (bp)", Some(defaults::FIT_LEN_STD))?;
+        (Some(opt), Some(std))
+    } else {
+        (None, None)
+    };
+
+    let fit_seq_sim = if defaults {
+        None
+    } else if prompt_confirm("Enable Sequence Similarity selection?", false)? {
+        Some(prompt_f64(
+            "  Similarity shape parameter",
+            Some(defaults::FIT_SEQ_SIM_SHAPE),
+        )?)
+    } else {
+        None
+    };
+
+    let fit_len_sim = if defaults {
+        None
+    } else if prompt_confirm("Enable Length Similarity selection?", false)? {
+        Some(prompt_f64(
+            "  Similarity shape parameter",
+            Some(defaults::FIT_LEN_SIM_SHAPE),
+        )?)
+    } else {
+        None
     };
 
     println!("\n💾 Recording Options");
     println!("-------------------");
 
     let record_every = if defaults {
-        100
+        defaults::RECORD_EVERY
     } else {
-        prompt_usize("Record every N generations", Some(100))?
+        prompt_usize("Record every N generations", Some(defaults::RECORD_EVERY))?
     };
 
     let seed = if defaults {
@@ -121,9 +251,39 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
     );
     println!();
     println!("Evolution:");
-    println!("  Mutation rate: {mutation_rate}");
+    println!("Evolution:");
+    if let Some(rate) = mutation_rate {
+        println!("  Mutation rate: {rate} (uniform)");
+    } else {
+        println!("  Mutation rate: Custom (Advanced)");
+    }
+    if indel_ins_rate > 0.0 {
+        println!("  Indels: Enabled (Ins={indel_ins_rate}, Del={indel_del_rate})");
+    } else {
+        println!("  Indels: Disabled");
+    }
     println!("  Recombination rate: {recomb_rate}");
     println!("  Crossover probability: {crossover_prob}");
+
+    let mut fitness_modes = Vec::new();
+    if fit_gc_opt.is_some() {
+        fitness_modes.push("GC");
+    }
+    if fit_len_opt.is_some() {
+        fitness_modes.push("Length");
+    }
+    if fit_seq_sim.is_some() {
+        fitness_modes.push("SeqSim");
+    }
+    if fit_len_sim.is_some() {
+        fitness_modes.push("LenSim");
+    }
+
+    if fitness_modes.is_empty() {
+        println!("  Fitness: Neutral");
+    } else {
+        println!("  Fitness: Selection ({})", fitness_modes.join(", "));
+    }
     println!();
     println!("Recording:");
     println!("  Every {record_every} generations");
@@ -157,27 +317,27 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
         rus_per_hor,
         hors_per_chr,
         chrs_per_hap: 1, // default
-        mutation_rate: Some(mutation_rate),
-        rate_ac: None,
-        rate_ag: None,
-        rate_at: None,
-        rate_cg: None,
-        rate_ct: None,
-        rate_gt: None,
-        indel_ins_rate: 0.0,
-        indel_del_rate: 0.0,
-        indel_length_p: 0.5,
+        mutation_rate,
+        rate_ac,
+        rate_ag,
+        rate_at,
+        rate_cg,
+        rate_ct,
+        rate_gt,
+        indel_ins_rate,
+        indel_del_rate,
+        indel_length_p,
         recomb_rate,
         crossover_prob,
-        gc_extension_prob: 0.95,
-        homology_strength: 5.0,
-        search_window: 100,
-        fit_gc_opt: None,
-        fit_gc_conc: None,
-        fit_len_opt: None,
-        fit_len_std: None,
-        fit_seq_sim: None,
-        fit_len_sim: None,
+        gc_extension_prob,
+        homology_strength,
+        search_window,
+        fit_gc_opt,
+        fit_gc_conc,
+        fit_len_opt,
+        fit_len_std,
+        fit_seq_sim,
+        fit_len_sim,
         record_every,
         seed,
     };

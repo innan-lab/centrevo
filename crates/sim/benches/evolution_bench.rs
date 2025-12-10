@@ -21,7 +21,7 @@ fn bench_mutation(c: &mut Criterion) {
 
         for &rate in &rates {
             let model = SubstitutionModel::uniform(rate).unwrap();
-            let parameter_string = format!("len={}/rate={}", len, rate);
+            let parameter_string = format!("len={len}/rate={rate}");
 
             group.bench_with_input(
                 BenchmarkId::new("direct", &parameter_string),
@@ -70,7 +70,7 @@ fn bench_indels(c: &mut Criterion) {
             for &p in &length_params {
                 // Use same rate for insertion and deletion for benchmarking simplicity
                 let model = IndelModel::new(rate, rate, p).unwrap();
-                let parameter_string = format!("len={}/rate={}/p={}", len, rate, p);
+                let parameter_string = format!("len={len}/rate={rate}/p={p}");
 
                 group.bench_with_input(
                     BenchmarkId::new("apply_indels", &parameter_string),
@@ -113,7 +113,7 @@ fn bench_recombination(c: &mut Criterion) {
                 .build()
                 .unwrap();
 
-            let parameter_string = format!("break={}/cross={}", break_prob, crossover_prob);
+            let parameter_string = format!("break={break_prob}/cross={crossover_prob}");
 
             group.bench_with_input(
                 BenchmarkId::new("sample_events", &parameter_string),

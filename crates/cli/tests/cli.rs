@@ -7,7 +7,7 @@ fn test_init_creates_database() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_sim.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_sim_default")
@@ -27,7 +27,7 @@ fn test_init_population_param() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_pop.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_pop_size")
@@ -45,7 +45,7 @@ fn test_init_generations_param() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_gen.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_gen_count")
@@ -63,7 +63,7 @@ fn test_init_mutation_rate_param() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_mut.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_mut")
@@ -80,7 +80,7 @@ fn test_init_advanced_mutation_params() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_adv_mut.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_adv_mut")
@@ -107,7 +107,7 @@ fn test_init_error_partial_mutation_rates() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_fail_mut.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_fail_mut")
@@ -126,7 +126,7 @@ fn test_init_indel_params() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_indel.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_indel")
@@ -145,7 +145,7 @@ fn test_init_recombination_params() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_recomb.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_recomb")
@@ -162,7 +162,7 @@ fn test_init_fitness_params() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_fit.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
         .arg("--name")
         .arg("test_fit")
@@ -181,7 +181,7 @@ fn test_init_defaults() {
     let temp = tempdir().unwrap();
     // Move to temp dir so default output "simulation.db" is written there
     // But Command::cargo_bin executes the binary, so we need to set current_dir
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.current_dir(&temp)
         .arg("init")
         .assert()
@@ -197,7 +197,7 @@ fn test_run_execution() {
     let db_path = temp.path().join("test_run.db");
 
     // Init first
-    let mut cmd_init = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd_init = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd_init
         .arg("init")
         .arg("--name")
@@ -219,7 +219,7 @@ fn test_run_execution() {
         .success();
 
     // Then run
-    let mut cmd_run = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd_run = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd_run
         .arg("run")
         .arg("--name")
@@ -236,7 +236,7 @@ fn test_run_error_missing_db() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("non_existent.db");
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("run")
         .arg("--name")
         .arg("test_run_missing")
@@ -262,7 +262,7 @@ fn test_setup_flag_defaults() {
     // To avoid cluttering repo, we should run this in temp dir?
     // assert_cmd current_dir can set CWD.
 
-    let mut cmd = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.current_dir(&temp)
         .arg("setup")
         .arg("--defaults")
@@ -277,7 +277,7 @@ fn test_list_displays_simulations() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_list.db");
 
-    let mut cmd_init = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd_init = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd_init
         .arg("init")
         .arg("--name")
@@ -287,7 +287,7 @@ fn test_list_displays_simulations() {
         .assert()
         .success();
 
-    let mut cmd_list = Command::cargo_bin("centrevo").unwrap();
+    let mut cmd_list = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd_list
         .arg("list")
         .arg("--database")
@@ -295,4 +295,67 @@ fn test_list_displays_simulations() {
         .assert()
         .success()
         .stdout(predicate::str::contains("my_simulation_name"));
+}
+
+#[test]
+fn test_init_recombination_advanced() {
+    let temp = tempdir().unwrap();
+    let db_path = temp.path().join("test_recomb_adv.db");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
+    cmd.arg("init")
+        .arg("--name")
+        .arg("test_recomb_adv")
+        .arg("--output")
+        .arg(&db_path)
+        .arg("--crossover-prob")
+        .arg("0.05")
+        .arg("--gc-extension-prob")
+        .arg("0.98")
+        .arg("--homology-strength")
+        .arg("10.0")
+        .arg("--search-window")
+        .arg("200")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_init_fitness_detailed() {
+    let temp = tempdir().unwrap();
+    let db_path = temp.path().join("test_fit_detailed.db");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
+    cmd.arg("init")
+        .arg("--name")
+        .arg("test_fit_detailed")
+        .arg("--output")
+        .arg(&db_path)
+        .arg("--fit-len-opt")
+        .arg("100000")
+        .arg("--fit-len-std")
+        .arg("1000.0")
+        .arg("--fit-seq-sim")
+        .arg("2.0")
+        .arg("--fit-len-sim")
+        .arg("3.0")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_init_indel_extended() {
+    let temp = tempdir().unwrap();
+    let db_path = temp.path().join("test_indel_ext.db");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
+    cmd.arg("init")
+        .arg("--name")
+        .arg("test_indel_ext")
+        .arg("--output")
+        .arg(&db_path)
+        .arg("--indel-length-p")
+        .arg("0.3")
+        .assert()
+        .success();
 }

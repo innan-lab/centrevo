@@ -85,15 +85,15 @@ pub fn print_parameters(
         recombination.params.crossover_prob()
     );
     println!(
-        "  • GC Extension Prob: {:.2}",
+        "  • GC Extension Prob: {:.2} [--gc-extension-prob]",
         recombination.params.gc_extension_prob()
     );
     println!(
-        "  • Homology Strength: {:.2}",
+        "  • Homology Strength: {:.2} [--homology-strength]",
         recombination.params.homology_strength()
     );
     println!(
-        "  • Search Window: {} RUs",
+        "  • Search Window: {} RUs [--search-window]",
         recombination.params.search_window()
     );
 

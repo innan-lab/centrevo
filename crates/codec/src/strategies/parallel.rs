@@ -6,8 +6,21 @@ use rayon::prelude::*;
 
 /// Strategy: Parallel Bit-packed (2 bits/base) + Reed-Solomon.
 ///
-/// Divides input into 1MB chunks (bases), processes them in parallel,
-/// and concatenates the result.
+/// # How it works
+///
+/// This strategy uses the same **2-bit packing** as `BitPackedRS`, but it processes
+/// the data in "chunks" (1MB each) simultaneously using multiple CPU cores.
+///
+/// # Analogy
+///
+/// Imagine a supermarket checkout:
+/// *   `BitPackedRS` is a single cashier scanning items one by one.
+/// *   `ParallelBitPackedRS` opens 10 lanes so 10 parts of the order are scanned at once.
+///
+/// # Why use this?
+///
+/// *   **Speed:** Much faster for very large files.
+/// *   **Overhead:** Slightly slower for tiny files (due to setting up the "lanes").
 pub struct ParallelBitPackedRS;
 
 // Size of input chunks (bases) to process in parallel

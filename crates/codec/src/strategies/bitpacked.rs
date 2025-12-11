@@ -3,6 +3,22 @@ use crate::traits::Codec;
 use crate::utils::{protect_data, unprotect_data};
 
 /// Strategy: Bit-packed (2 bits/base) + Reed-Solomon.
+///
+/// # How it works
+///
+/// Instead of using 8 bits (1 byte) for every DNA letter, we use only 2 bits.
+///
+/// *   `A` = `00`
+/// *   `C` = `01`
+/// *   `G` = `10`
+/// *   `T` = `11`
+///
+/// This means we can fit 4 letters into a single byte.
+///
+/// # Why use this?
+///
+/// *   **Space Efficiency:** Reduces data size by ~75% before error correction.
+/// *   **Ideal for:** Large biological simulations where memory is the bottleneck.
 pub struct BitPackedRS;
 
 impl Codec for BitPackedRS {

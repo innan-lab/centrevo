@@ -3,6 +3,22 @@ use crate::traits::Codec;
 use crate::utils::{protect_data, unprotect_data};
 
 /// Strategy: Unpacked (1 byte/base) + Reed-Solomon.
+///
+/// # How it works
+///
+/// This strategy stores the DNA sequence exactly as it is given, using **one full byte**
+/// for every letter (A=0, C=1, G=2, T=3).
+///
+/// # Why use this?
+///
+/// *   **Simplicity:** No need to pack or unpack bits.
+/// *   **Compatibility:** Might be easier to inspect or debug.
+/// *   **Protection:** Still includes Reed-Solomon redundancy to protect against data corruption.
+///
+/// # Trade-off
+///
+/// This uses 4x more memory than `BitPackedRS`. Only use this if you have a specific reason
+/// to avoid bit-packing.
 pub struct UnpackedRS;
 
 impl Codec for UnpackedRS {

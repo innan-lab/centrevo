@@ -1,6 +1,27 @@
 //! Sequence encoding and error correction library.
 //!
-//! Provides strategies for compressing and protecting DNA sequence data.
+//! # Overview
+//!
+//! This library provides tools to compress and protect DNA sequence data (A, C, G, T).
+//! It is designed to be used by simulation engines and storage systems that need
+//! efficient and reliable handling of genetic information.
+//!
+//! # Key Concepts
+//!
+//! ## 1. Compression (Bit-packing)
+//!
+//! DNA only has 4 possible letters (A, C, G, T). We can use a trick called **bit-packing** to
+//! squish 4 letters into a single byte.
+//!
+//! *   **Raw:** 4 bases = 4 bytes.
+//! *   **Packed:** 4 bases = 1 byte. (75% space savings!)
+//!
+//! ## 2. Error Correction (Reed-Solomon)
+//! Sometimes data gets corrupted (like a scratch on a CD). **Reed-Solomon (RS)** is a mathematical
+//! technique that adds some extra "redundancy" data. If part of your sequence is lost or changed,
+//! the RS algorithm can use this extra data to reconstruct the original sequence perfectly.
+//!
+//! This library combines these two concepts to give you compact, durable DNA storage.
 
 mod error;
 mod strategies;
@@ -14,14 +35,32 @@ pub use traits::Codec;
 
 use serde::{Deserialize, Serialize};
 
-/// strategies for encoding sequences.
+/// Strategies for encoding (compressing & protecting) DNA sequences.
+///
+/// Choose a strategy based on your needs for speed vs. space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CodecStrategy {
-    /// No compression (raw bytes) with RS protection.
+    /// **No Compression + Protection.**
+    ///
+    /// Stores the sequence as raw bytes (one byte per base).
+    /// *   **Pros:** Simplest, no packing overhead.
+    /// *   **Cons:** Uses the most memory/disk space.
     UnpackedRS,
-    /// Bit-packed into 4 bases/byte + Reed-Solomon(255, 223) ECC.
+
+    /// **Bit-Packing + Protection.**
+    ///
+    /// Compresses 4 bases into 1 byte.
+    /// *   **Pros:** Saves ~75% space.
+    /// *   **Cons:** Slightly slower unique to pack/unpack.
+    /// *   **Best for:** General usage.
     BitPackedRS,
-    /// Parallel Bit-packed (Chunked + Rayon).
+
+    /// **Parallel Bit-Packing + Protection.**
+    ///
+    /// Same as `BitPackedRS`, but processed in parallel chunks.
+    /// *   **Pros:** Faster on huge sequences (multi-core).
+    /// *   **Cons:** Slight overhead for small sequences.
+    /// *   **Best for:** Very large datasets.
     ParallelBitPackedRS,
 }
 

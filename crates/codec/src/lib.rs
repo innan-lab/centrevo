@@ -45,6 +45,38 @@ impl CodecStrategy {
     }
 }
 
+impl Default for CodecStrategy {
+    fn default() -> Self {
+        Self::ParallelBitPackedRS
+    }
+}
+
+impl std::fmt::Display for CodecStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnpackedRS => write!(f, "unpacked-rs"),
+            Self::BitPackedRS => write!(f, "packed-rs"),
+            Self::ParallelBitPackedRS => write!(f, "parallel-packed-rs"),
+        }
+    }
+}
+
+impl std::str::FromStr for CodecStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "unpacked-rs" => Ok(Self::UnpackedRS),
+            "packed-rs" => Ok(Self::BitPackedRS),
+            "parallel-packed-rs" => Ok(Self::ParallelBitPackedRS),
+            "unpacked" => Ok(Self::UnpackedRS), // Alias for backward compat/simplicity? Or maybe UnpackedNoRS if we had it exposed. User asked for simulation.
+            _ => Err(format!(
+                "Unknown codec strategy: {s}. Available: unpacked-rs, packed-rs, parallel-packed-rs"
+            )),
+        }
+    }
+}
+
 /// Helper to provide trait-like access if needed, though Enum dispatch is preferred.
 impl Codec for CodecStrategy {
     fn encode(&self, seq: &[u8]) -> Result<Vec<u8>, CodecError> {

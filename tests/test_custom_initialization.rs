@@ -2,8 +2,8 @@
 
 use centrevo::base::Nucleotide;
 use centrevo::simulation::{
-    FitnessConfig, MutationConfig, RecombinationConfig, RepeatStructure, SequenceInput, Simulation,
-    SimulationConfig, parse_fasta,
+    parse_fasta, CodecStrategy, FitnessConfig, MutationConfig, RecombinationConfig,
+    RepeatStructure, SequenceInput, Simulation, SimulationConfig,
 };
 use centrevo::storage::Recorder;
 use std::io::Write;
@@ -127,6 +127,7 @@ fn test_initialization_from_database() {
         db_path,
         "test_sim",
         centrevo::storage::RecordingStrategy::All,
+        CodecStrategy::default(),
     )
     .unwrap();
 

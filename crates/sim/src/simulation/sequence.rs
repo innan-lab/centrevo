@@ -369,8 +369,16 @@ pub fn load_from_database(
     // For multi-chromosome, database would need to be extended
     for (ind_idx, snapshot) in snapshots.iter().enumerate() {
         // Convert Vec<u8> indices to String
-        let hap0_seq = indices_to_string(&snapshot.haplotype1_seq)?;
-        let hap1_seq = indices_to_string(&snapshot.haplotype2_seq)?;
+        // Decode sequences (they are stored as BitPackedRS)
+        let decoded_hap0 = centrevo_codec::CodecStrategy::BitPackedRS
+            .decode(&snapshot.haplotype1_seq)
+            .map_err(|e| InitializationError::Database(format!("Failed to decode seq: {e}")))?;
+        let decoded_hap1 = centrevo_codec::CodecStrategy::BitPackedRS
+            .decode(&snapshot.haplotype2_seq)
+            .map_err(|e| InitializationError::Database(format!("Failed to decode seq: {e}")))?;
+
+        let hap0_seq = indices_to_string(&decoded_hap0)?;
+        let hap1_seq = indices_to_string(&decoded_hap1)?;
 
         // Add both haplotypes with explicit indices
         // Assuming single chromosome per haplotype (chr_idx = 0)

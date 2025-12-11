@@ -21,6 +21,7 @@ pub mod population;
 pub mod sequence;
 
 pub use builder::SimulationBuilder;
+pub use centrevo_codec::CodecStrategy;
 pub use configs::{
     BuilderEmpty, BuilderInitialized, FitnessConfig, FitnessConfigBuilder, GenerationMode,
     MutationConfig, RecombinationConfig, SequenceConfig, SequenceSource, SimulationConfig,

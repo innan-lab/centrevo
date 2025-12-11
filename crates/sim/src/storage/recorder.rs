@@ -8,6 +8,9 @@ use crate::simulation::{
     UniformRepeatStructure,
 };
 use crate::storage::Database;
+use bincode;
+use centrevo_codec::CodecStrategy;
+
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -55,92 +58,108 @@ impl RecordingStrategy {
 pub struct IndividualSnapshot {
     pub individual_id: String,
     pub haplotype1_chr_id: String,
-    pub haplotype1_seq: Vec<u8>,
+    pub haplotype1_seq: Vec<u8>,         // Encoded
+    pub haplotype1_map: Option<Vec<u8>>, // Encoded serialized map
     pub haplotype2_chr_id: String,
-    pub haplotype2_seq: Vec<u8>,
+    pub haplotype2_seq: Vec<u8>,         // Encoded
+    pub haplotype2_map: Option<Vec<u8>>, // Encoded serialized map
     pub fitness: Option<f64>,
 }
 
 impl IndividualSnapshot {
     /// Create a snapshot from an individual.
-    /// For simplicity, we record the first chromosome of each haplotype.
-    /// Can be extended to record all chromosomes if needed.
-    pub fn from_individual(ind: &Individual) -> Self {
+    /// Encodes sequence using the provided strategy.
+    /// Encodes structure using UnpackedRS (always).
+    pub fn from_individual(ind: &Individual, codec: &CodecStrategy) -> Self {
         let h1 = ind.haplotype1();
         let h2 = ind.haplotype2();
 
-        // Get first chromosome from each haplotype
-        let (h1_chr_id, h1_seq) = if let Some(chr) = h1.get(0) {
-            (
-                chr.id().to_string(),
-                chr.sequence()
-                    .as_slice()
-                    .iter()
-                    .map(|n| n.to_index())
-                    .collect(),
-            )
-        } else {
-            (String::new(), Vec::new())
-        };
+        // Helper to process chromosome
+        let process_chr =
+            |chr_opt: Option<&crate::genome::Chromosome>| -> (String, Vec<u8>, Option<Vec<u8>>) {
+                if let Some(chr) = chr_opt {
+                    // 1. Sequence -> Configured Codec
+                    // Convert Nucleotide -> u8 indices
+                    let raw_seq: Vec<u8> = chr
+                        .sequence()
+                        .as_slice()
+                        .iter()
+                        .map(|n| n.to_index())
+                        .collect();
 
-        let (h2_chr_id, h2_seq) = if let Some(chr) = h2.get(0) {
-            (
-                chr.id().to_string(),
-                chr.sequence()
-                    .as_slice()
-                    .iter()
-                    .map(|n| n.to_index())
-                    .collect(),
-            )
-        } else {
-            (String::new(), Vec::new())
-        };
+                    let encoded_seq = codec.encode(&raw_seq).expect("Failed to encode sequence");
+
+                    // 2. Map -> Serialize -> UnpackedRS (Fixed)
+                    let map_bytes = bincode::serialize(chr.map()).unwrap_or_default();
+                    let encoded_map = CodecStrategy::UnpackedRS.encode(&map_bytes).ok(); // Option
+
+                    (chr.id().to_string(), encoded_seq, encoded_map)
+                } else {
+                    (String::new(), Vec::new(), None)
+                }
+            };
+
+        let (h1_chr_id, h1_seq, h1_map) = process_chr(h1.get(0));
+        let (h2_chr_id, h2_seq, h2_map) = process_chr(h2.get(0));
 
         Self {
             individual_id: ind.id().to_string(),
             haplotype1_chr_id: h1_chr_id,
             haplotype1_seq: h1_seq,
+            haplotype1_map: h1_map,
             haplotype2_chr_id: h2_chr_id,
             haplotype2_seq: h2_seq,
+            haplotype2_map: h2_map,
             fitness: ind.cached_fitness().map(|f| *f),
         }
     }
 
     /// Reconstruct an Individual from a snapshot.
-    /// Requires the UniformRepeatStructure to rebuild the proper chromosome structure.
-    pub fn to_individual(
-        &self,
-        structure: &crate::simulation::UniformRepeatStructure,
-    ) -> Result<Individual, String> {
+    /// Uses the provided codec for sequence, and UnpackedRS for map.
+    pub fn to_individual(&self, codec: &CodecStrategy) -> Result<Individual, String> {
         use crate::base::{Nucleotide, Sequence};
         use crate::genome::repeat_map::RepeatMap;
         use crate::genome::{Chromosome, Haplotype};
 
-        // Reconstruct sequence from indices
-        let seq1_nucs: Vec<Nucleotide> = self
-            .haplotype1_seq
-            .iter()
-            .map(|&i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
-            .collect();
-        let seq1 = Sequence::from_nucleotides(seq1_nucs);
+        // Helper to reconstruct chromosome
+        let reconstruct_chr =
+            |id: &str, seq_data: &[u8], map_data: Option<&[u8]>| -> Result<Chromosome, String> {
+                // 1. Decode Sequence
+                let raw_seq = codec
+                    .decode(seq_data)
+                    .map_err(|e| format!("Seq Decode: {e}"))?;
 
-        let seq2_nucs: Vec<Nucleotide> = self
-            .haplotype2_seq
-            .iter()
-            .map(|&i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
-            .collect();
-        let seq2 = Sequence::from_nucleotides(seq2_nucs);
+                let nucs: Vec<Nucleotide> = raw_seq
+                    .iter()
+                    .map(|&i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
+                    .collect();
+                let seq = Sequence::from_nucleotides(nucs);
 
-        // Create uniform map
-        let map = RepeatMap::uniform(
-            structure.ru_length,
-            structure.rus_per_hor,
-            structure.hors_per_chr,
-        );
+                // 2. Decode Map
+                let map = if let Some(bytes) = map_data {
+                    let raw_map_bytes = CodecStrategy::UnpackedRS
+                        .decode(bytes)
+                        .map_err(|e| format!("Map Decode: {e}"))?;
 
-        // Create chromosomes
-        let chr1 = Chromosome::new(self.haplotype1_chr_id.clone(), seq1, map.clone());
-        let chr2 = Chromosome::new(self.haplotype2_chr_id.clone(), seq2, map);
+                    bincode::deserialize::<RepeatMap>(&raw_map_bytes)
+                        .map_err(|e| format!("Map Deser: {e}"))?
+                } else {
+                    return Err("Missing RepeatMap in snapshot".to_string());
+                };
+
+                Ok(Chromosome::new(id.to_string(), seq, map))
+            };
+
+        let chr1 = reconstruct_chr(
+            &self.haplotype1_chr_id,
+            &self.haplotype1_seq,
+            self.haplotype1_map.as_deref(),
+        )?;
+        let chr2 = reconstruct_chr(
+            &self.haplotype2_chr_id,
+            &self.haplotype2_seq,
+            self.haplotype2_map.as_deref(),
+        )?;
 
         // Create haplotypes
         let mut hap1 = Haplotype::new();
@@ -222,6 +241,7 @@ pub struct Recorder {
     sim_id: Arc<str>,
     strategy: RecordingStrategy,
     generations_recorded: usize,
+    codec: CodecStrategy,
 }
 
 impl Recorder {
@@ -230,6 +250,7 @@ impl Recorder {
         db_path: impl AsRef<std::path::Path>,
         sim_id: impl Into<Arc<str>>,
         strategy: RecordingStrategy,
+        codec: CodecStrategy,
     ) -> Result<Self, DatabaseError> {
         let db = Database::open(db_path)?;
         Ok(Self {
@@ -237,6 +258,7 @@ impl Recorder {
             sim_id: sim_id.into(),
             strategy,
             generations_recorded: 0,
+            codec,
         })
     }
 
@@ -349,9 +371,10 @@ impl Recorder {
         &mut self,
         population: &Population,
         generation: usize,
+        rng_state: &[u8],
     ) -> Result<bool, DatabaseError> {
         if self.should_record(generation) {
-            self.record_generation(population, generation)?;
+            self.record_generation(population, generation, rng_state)?;
             Ok(true)
         } else {
             Ok(false)
@@ -363,13 +386,15 @@ impl Recorder {
         &mut self,
         population: &Population,
         generation: usize,
+        rng_state: &[u8],
     ) -> Result<(), DatabaseError> {
         // Prepare snapshots in parallel
         use rayon::prelude::*;
+        let codec = &self.codec;
         let snapshots: Vec<IndividualSnapshot> = population
             .individuals()
             .par_iter()
-            .map(IndividualSnapshot::from_individual)
+            .map(|ind| IndividualSnapshot::from_individual(ind, codec))
             .collect();
 
         // Calculate fitness statistics
@@ -383,9 +408,10 @@ impl Recorder {
             let mut stmt = tx
                 .prepare_cached(
                     "INSERT INTO population_state
-                    (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_seq,
-                     haplotype2_chr_id, haplotype2_seq, fitness)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_map, haplotype1_seq,
+                     haplotype2_chr_id, haplotype2_map, haplotype2_seq, fitness)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+
                 )
                 .map_err(|e| DatabaseError::Insert(e.to_string()))?;
 
@@ -404,8 +430,10 @@ impl Recorder {
                     generation as i64,
                     snapshot.individual_id,
                     snapshot.haplotype1_chr_id,
+                    snapshot.haplotype1_map,
                     snapshot.haplotype1_seq,
                     snapshot.haplotype2_chr_id,
+                    snapshot.haplotype2_map,
                     snapshot.haplotype2_seq,
                     snapshot.fitness,
                 ])
@@ -425,6 +453,25 @@ impl Recorder {
                 stats.min,
                 stats.max,
                 stats.std,
+            ],
+        )
+        .map_err(|e| DatabaseError::Insert(e.to_string()))?;
+
+        // Insert checkpoint with RNG state
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        tx.execute(
+            "INSERT OR REPLACE INTO checkpoints
+            (sim_id, generation, rng_state, timestamp)
+            VALUES (?1, ?2, ?3, ?4)",
+            params![
+                self.sim_id.as_ref(),
+                generation as i64,
+                rng_state,
+                timestamp,
             ],
         )
         .map_err(|e| DatabaseError::Insert(e.to_string()))?;
@@ -536,11 +583,15 @@ mod tests {
     #[test]
     fn test_individual_snapshot() {
         let ind = create_test_individual("test_ind", 100);
-        let snapshot = IndividualSnapshot::from_individual(&ind);
+        let codec = CodecStrategy::BitPackedRS;
+        let snapshot = IndividualSnapshot::from_individual(&ind, &codec);
 
         assert_eq!(snapshot.individual_id, "test_ind");
-        assert_eq!(snapshot.haplotype1_seq.len(), 100);
-        assert_eq!(snapshot.haplotype2_seq.len(), 100);
+        assert_eq!(snapshot.individual_id, "test_ind");
+        // Length check is harder now as it is compressed.
+        assert!(snapshot.haplotype1_seq.len() > 0);
+        assert!(snapshot.haplotype2_seq.len() > 0);
+        assert!(snapshot.haplotype1_map.is_some());
     }
 
     #[test]
@@ -559,8 +610,13 @@ mod tests {
         let path = "/tmp/test_recorder.sqlite";
         let _ = std::fs::remove_file(path);
 
-        let recorder = Recorder::new(path, "test_sim", RecordingStrategy::EveryN(10))
-            .expect("Failed to create recorder");
+        let recorder = Recorder::new(
+            path,
+            "test_sim",
+            RecordingStrategy::EveryN(10),
+            CodecStrategy::default(),
+        )
+        .expect("Failed to create recorder");
 
         assert_eq!(recorder.sim_id(), "test_sim");
         assert_eq!(recorder.generations_recorded(), 0);
@@ -574,8 +630,13 @@ mod tests {
         let path = "/tmp/test_metadata.sqlite";
         let _ = std::fs::remove_file(path);
 
-        let mut recorder = Recorder::new(path, "test_sim", RecordingStrategy::All)
-            .expect("Failed to create recorder");
+        let mut recorder = Recorder::new(
+            path,
+            "test_sim",
+            RecordingStrategy::All,
+            CodecStrategy::default(),
+        )
+        .expect("Failed to create recorder");
 
         let config = create_test_config();
         recorder
@@ -591,8 +652,13 @@ mod tests {
         let path = "/tmp/test_generation.sqlite";
         let _ = std::fs::remove_file(path);
 
-        let mut recorder = Recorder::new(path, "test_sim", RecordingStrategy::All)
-            .expect("Failed to create recorder");
+        let mut recorder = Recorder::new(
+            path,
+            "test_sim",
+            RecordingStrategy::All,
+            CodecStrategy::default(),
+        )
+        .expect("Failed to create recorder");
 
         let config = create_test_config();
         recorder
@@ -600,8 +666,9 @@ mod tests {
             .expect("Failed to record metadata");
 
         let pop = create_test_population(5, 100);
+        let dummy_rng = vec![0u8; 32];
         recorder
-            .record_generation(&pop, 0)
+            .record_generation(&pop, 0, &dummy_rng)
             .expect("Failed to record generation");
 
         assert_eq!(recorder.generations_recorded(), 1);

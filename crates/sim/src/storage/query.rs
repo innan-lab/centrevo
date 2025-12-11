@@ -76,8 +76,8 @@ impl QueryBuilder {
             .db
             .connection()
             .prepare(
-                "SELECT individual_id, haplotype1_chr_id, haplotype1_seq,
-                       haplotype2_chr_id, haplotype2_seq, fitness
+                "SELECT individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
+                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, fitness
                 FROM population_state
                 WHERE sim_id = ?1 AND generation = ?2
                 ORDER BY individual_id",
@@ -90,9 +90,11 @@ impl QueryBuilder {
                     individual_id: row.get(0)?,
                     haplotype1_chr_id: row.get(1)?,
                     haplotype1_seq: row.get(2)?,
-                    haplotype2_chr_id: row.get(3)?,
-                    haplotype2_seq: row.get(4)?,
-                    fitness: row.get(5)?,
+                    haplotype1_map: row.get(3)?,
+                    haplotype2_chr_id: row.get(4)?,
+                    haplotype2_seq: row.get(5)?,
+                    haplotype2_map: row.get(6)?,
+                    fitness: row.get(7)?,
                 })
             })
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -177,8 +179,8 @@ impl QueryBuilder {
             .db
             .connection()
             .prepare(
-                "SELECT generation, individual_id, haplotype1_chr_id, haplotype1_seq,
-                       haplotype2_chr_id, haplotype2_seq, fitness
+                "SELECT generation, individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
+                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, fitness
                 FROM population_state
                 WHERE sim_id = ?1 AND individual_id = ?2
                 ORDER BY generation",
@@ -193,9 +195,11 @@ impl QueryBuilder {
                         individual_id: row.get(1)?,
                         haplotype1_chr_id: row.get(2)?,
                         haplotype1_seq: row.get(3)?,
-                        haplotype2_chr_id: row.get(4)?,
-                        haplotype2_seq: row.get(5)?,
-                        fitness: row.get(6)?,
+                        haplotype1_map: row.get(4)?,
+                        haplotype2_chr_id: row.get(5)?,
+                        haplotype2_seq: row.get(6)?,
+                        haplotype2_map: row.get(7)?,
+                        fitness: row.get(8)?,
                     },
                 ))
             })
@@ -250,8 +254,8 @@ impl QueryBuilder {
             .db
             .connection()
             .prepare(
-                "SELECT individual_id, haplotype1_chr_id, haplotype1_seq,
-                       haplotype2_chr_id, haplotype2_seq, fitness
+                "SELECT individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
+                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, fitness
                 FROM population_state
                 WHERE sim_id = ?1 AND generation = ?2 AND fitness >= ?3
                 ORDER BY fitness DESC",
@@ -264,9 +268,11 @@ impl QueryBuilder {
                     individual_id: row.get(0)?,
                     haplotype1_chr_id: row.get(1)?,
                     haplotype1_seq: row.get(2)?,
-                    haplotype2_chr_id: row.get(3)?,
-                    haplotype2_seq: row.get(4)?,
-                    fitness: row.get(5)?,
+                    haplotype1_map: row.get(3)?,
+                    haplotype2_chr_id: row.get(4)?,
+                    haplotype2_seq: row.get(5)?,
+                    haplotype2_map: row.get(6)?,
+                    fitness: row.get(7)?,
                 })
             })
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -389,7 +395,7 @@ pub struct CheckpointInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::{Nucleotide, FitnessValue};
+    use crate::base::{FitnessValue, Nucleotide};
     use crate::genome::{Chromosome, Haplotype, Individual};
     use crate::simulation::{Population, SimulationConfig};
     use crate::storage::Recorder;
@@ -410,7 +416,7 @@ mod tests {
         let mut individuals = Vec::new();
         for i in 0..size {
             let mut ind = create_test_individual(&format!("ind_{i}"), chr_length);
-                ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
+            ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
             individuals.push(ind);
         }
         Population::new("test_pop", individuals)
@@ -422,8 +428,13 @@ mod tests {
 
     fn setup_test_db(path: &str) -> (Recorder, SimulationConfig) {
         let _ = std::fs::remove_file(path);
-        let mut recorder = Recorder::new(path, "test_sim", crate::storage::RecordingStrategy::All)
-            .expect("Failed to create recorder");
+        let mut recorder = Recorder::new(
+            path,
+            "test_sim",
+            crate::storage::RecordingStrategy::All,
+            crate::simulation::CodecStrategy::default(),
+        )
+        .expect("Failed to create recorder");
 
         let config = create_test_config();
         recorder
@@ -433,8 +444,9 @@ mod tests {
         // Record a few generations
         for generation in 0..3 {
             let pop = create_test_population(5, 100);
+            let dummy_rng = vec![0u8; 32];
             recorder
-                .record_generation(&pop, generation)
+                .record_generation(&pop, generation, &dummy_rng)
                 .expect("Failed to record generation");
         }
 

@@ -10,6 +10,7 @@ use crate::evolution::{
     GCContentFitness, IndelModel, LengthFitness, LengthSimilarityFitness, RecombinationModel,
     SequenceSimilarityFitness, SubstitutionModel,
 };
+use centrevo_codec::CodecStrategy;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
@@ -452,6 +453,15 @@ pub struct SimulationConfig {
     pub total_generations: usize,
     /// Optional RNG seed for reproducibility
     pub seed: Option<u64>,
+    /// Encoding strategy for database storage
+    #[serde(default = "default_codec_compat")]
+    pub codec: CodecStrategy,
+}
+
+/// Default codec for backward compatibility (loading old configs).
+/// Old configurations used BitPackedRS implicitly.
+fn default_codec_compat() -> CodecStrategy {
+    CodecStrategy::BitPackedRS
 }
 
 impl SimulationConfig {
@@ -461,13 +471,30 @@ impl SimulationConfig {
             population_size,
             total_generations,
             seed,
+            codec: CodecStrategy::default(),
         }
+    }
+
+    /// Set the codec strategy.
+    pub fn with_codec(mut self, codec: CodecStrategy) -> Self {
+        self.codec = codec;
+        self
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_simulation_config_codec() {
+        let config = SimulationConfig::new(100, 100, None);
+        // Default should be ParallelBitPackedRS
+        assert!(matches!(config.codec, CodecStrategy::ParallelBitPackedRS));
+
+        let config = config.with_codec(CodecStrategy::UnpackedRS);
+        assert!(matches!(config.codec, CodecStrategy::UnpackedRS));
+    }
 
     #[test]
     fn test_repeat_structure_new() {

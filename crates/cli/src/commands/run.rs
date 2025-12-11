@@ -59,8 +59,13 @@ pub fn run_simulation(
             config: sim.config().clone(),
         };
 
-        let mut recorder = Recorder::new(database, name, RecordingStrategy::EveryN(record_every))
-            .context("Failed to create recorder")?;
+        let mut recorder = Recorder::new(
+            database,
+            name,
+            RecordingStrategy::EveryN(record_every),
+            snapshot.config.codec.clone(),
+        )
+        .context("Failed to create recorder")?;
 
         // Record full config if not already recorded (idempotent-ish)
         recorder
@@ -98,11 +103,8 @@ pub fn run_simulation(
             if recorder.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation)
+                    .record_generation(sim.population(), generation, &rng_state)
                     .with_context(|| format!("Failed to record generation {generation}"))?;
-                recorder
-                    .record_checkpoint(generation, &rng_state)
-                    .with_context(|| format!("Failed to record checkpoint {generation}"))?;
             }
 
             // Show progress
@@ -177,8 +179,13 @@ pub fn run_simulation(
         .map_err(|e| anyhow::anyhow!("Failed to initialize simulation: {e}"))?;
 
         // Setup recorder
-        let mut recorder = Recorder::new(database, name, RecordingStrategy::EveryN(record_every))
-            .context("Failed to create recorder")?;
+        let mut recorder = Recorder::new(
+            database,
+            name,
+            RecordingStrategy::EveryN(record_every),
+            config.codec.clone(),
+        )
+        .context("Failed to create recorder")?;
 
         // Print all parameters
         println!("Configuration:");
@@ -208,11 +215,8 @@ pub fn run_simulation(
             if recorder.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation)
+                    .record_generation(sim.population(), generation, &rng_state)
                     .with_context(|| format!("Failed to record generation {generation}"))?;
-                recorder
-                    .record_checkpoint(generation, &rng_state)
-                    .with_context(|| format!("Failed to record checkpoint {generation}"))?;
             }
 
             // Show progress

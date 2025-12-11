@@ -137,4 +137,8 @@ pub struct InitArgs {
     /// Random seed
     #[arg(long)]
     pub seed: Option<u64>,
+
+    /// Codec strategy for sequence storage (unpacked-rs, packed-rs, parallel-packed-rs)
+    #[arg(long, default_value = "parallel-packed-rs")]
+    pub codec: String,
 }

@@ -1,8 +1,8 @@
 //! Low-level database operations and schema management.
 
+pub use crate::errors::DatabaseError;
 use rusqlite::{Connection, Transaction};
 use std::path::Path;
-pub use crate::errors::DatabaseError;
 
 /// Database connection wrapper with schema management.
 #[derive(Debug)]
@@ -15,15 +15,15 @@ impl Database {
     /// Open (or create) a database at the specified path.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let path_str = path.as_ref().to_string_lossy().to_string();
-        let conn = Connection::open(&path_str)
-            .map_err(|e| DatabaseError::Connection(e.to_string()))?;
+        let conn =
+            Connection::open(&path_str).map_err(|e| DatabaseError::Connection(e.to_string()))?;
 
         // Performance pragmas for faster bulk inserts
         conn.execute_batch(
             "PRAGMA synchronous = NORMAL;
              PRAGMA journal_mode = WAL;
              PRAGMA temp_store = MEMORY;
-             PRAGMA cache_size = -64000;"
+             PRAGMA cache_size = -64000;",
         )
         .map_err(|e| DatabaseError::Initialization(e.to_string()))?;
 
@@ -47,9 +47,12 @@ impl Database {
                     generation INTEGER NOT NULL,
                     individual_id TEXT NOT NULL,
                     haplotype1_chr_id TEXT NOT NULL,
+                    haplotype1_map BLOB,
                     haplotype1_seq BLOB NOT NULL,
                     haplotype2_chr_id TEXT NOT NULL,
+                    haplotype2_map BLOB,
                     haplotype2_seq BLOB NOT NULL,
+
                     fitness REAL,
                     timestamp INTEGER DEFAULT (strftime('%s', 'now'))
                 );
@@ -130,7 +133,7 @@ impl Database {
         // Checkpoint and truncate WAL
         if let Err(e) = self.conn.execute_batch(
             "PRAGMA wal_checkpoint(TRUNCATE);
-             PRAGMA journal_mode = DELETE;"
+             PRAGMA journal_mode = DELETE;",
         ) {
             eprintln!("Warning: failed to checkpoint/truncate WAL: {e}");
         }
@@ -171,7 +174,9 @@ impl Database {
 
         let mut tables = Vec::new();
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         for row in rows {

@@ -7,8 +7,8 @@ use crate::base::Nucleotide;
 pub use crate::errors::BuilderError;
 use crate::genome::RepeatMap;
 use crate::simulation::{
-    FitnessConfig, GenerationMode, MutationConfig, RecombinationConfig, SequenceConfig,
-    SequenceSource, Simulation, SimulationConfig, UniformRepeatStructure,
+    CodecStrategy, FitnessConfig, GenerationMode, MutationConfig, RecombinationConfig,
+    SequenceConfig, SequenceSource, Simulation, SimulationConfig, UniformRepeatStructure,
 };
 
 /// Builder for constructing Simulation instances with a fluent API.
@@ -80,6 +80,7 @@ pub struct SimulationBuilder {
     recombination_rates: Option<(f64, f64, f64)>, // Default: None (no recombination)
     fitness: FitnessConfig,                       // Default: neutral
     seed: Option<u64>,                            // Default: None (random)
+    codec: Option<CodecStrategy>,                 // Default: None (uses SimConfig default)
 }
 
 impl Default for SimulationBuilder {
@@ -108,6 +109,7 @@ impl SimulationBuilder {
             recombination_rates: None,
             fitness: FitnessConfig::neutral(),
             seed: None,
+            codec: None,
         }
     }
 
@@ -287,6 +289,12 @@ impl SimulationBuilder {
         self
     }
 
+    /// Set the codec strategy (default: ParallelBitPackedRS).
+    pub fn codec(mut self, codec: CodecStrategy) -> Self {
+        self.codec = Some(codec);
+        self
+    }
+
     /// Build and validate the simulation.
     pub fn build(self) -> Result<Simulation, BuilderError> {
         // Validate required parameters
@@ -298,7 +306,10 @@ impl SimulationBuilder {
             .ok_or(BuilderError::MissingRequired("generations"))?;
 
         // Create simulation config
-        let config = SimulationConfig::new(population_size, generations, self.seed);
+        let mut config = SimulationConfig::new(population_size, generations, self.seed);
+        if let Some(codec) = self.codec {
+            config = config.with_codec(codec);
+        }
 
         // Create mutation config
         let mutation = MutationConfig::uniform(self.mutation_rate)

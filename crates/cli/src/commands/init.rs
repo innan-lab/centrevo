@@ -3,8 +3,8 @@ use centrevo_sim::base::Nucleotide;
 use centrevo_sim::evolution::{IndelModel, SubstitutionModel};
 use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 use centrevo_sim::simulation::{
-    FitnessConfig, MutationConfig, Population, RecombinationConfig, SimulationConfig,
-    UniformRepeatStructure,
+    CodecStrategy, FitnessConfig, MutationConfig, Population, RecombinationConfig,
+    SimulationConfig, UniformRepeatStructure,
 };
 use centrevo_sim::storage::{Recorder, RecordingStrategy, SimulationSnapshot};
 
@@ -19,11 +19,19 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
     let generations = args.generations;
     let record_every = args.record_every;
 
+    let codec_strategy = args
+        .codec
+        .parse::<CodecStrategy>()
+        .map_err(|e| anyhow::anyhow!(e))
+        .context("Invalid codec strategy")?;
+
     println!("🧬 Centrevo - Centromeric Evolution Simulator");
     println!("============================================\n");
     println!("Initializing simulation: {name}");
+    println!("Codec Strategy: {codec_strategy}");
 
-    let (structure, config, mutation, recombination, fitness) = build_configs(args)?;
+    let (structure, config, mutation, recombination, fitness) =
+        build_configs(args, codec_strategy.clone())?;
 
     // Logic moved to build_configs
 
@@ -52,6 +60,7 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
         output,
         name.as_str(),
         RecordingStrategy::EveryN(record_every),
+        codec_strategy,
     )
     .context("Failed to create recorder")?;
 
@@ -69,8 +78,9 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
         .context("Failed to record configuration")?;
 
     // Record initial generation
+    let dummy_rng = vec![0u8; 32];
     recorder
-        .record_generation(&population, 0)
+        .record_generation(&population, 0, &dummy_rng)
         .context("Failed to record initial generation")?;
 
     println!("✓ Database created: {}", output.display());
@@ -114,6 +124,7 @@ fn create_initial_population(size: usize, structure: &UniformRepeatStructure) ->
 
 pub fn build_configs(
     args: &InitArgs,
+    codec_strategy: CodecStrategy,
 ) -> Result<(
     UniformRepeatStructure,
     SimulationConfig,
@@ -129,7 +140,8 @@ pub fn build_configs(
         args.chrs_per_hap,
     );
 
-    let config = SimulationConfig::new(args.population_size, args.generations, args.seed);
+    let config = SimulationConfig::new(args.population_size, args.generations, args.seed)
+        .with_codec(codec_strategy);
 
     // Create mutation configuration
     // Check for advanced mutation rates
@@ -289,9 +301,11 @@ mod tests {
             fit_len_sim: None,
             record_every: 100,
             seed: None,
+            codec: "parallel-packed-rs".to_string(),
         };
 
-        let (structure, config, mutation, _recombination, fitness) = build_configs(&args).unwrap();
+        let (structure, config, mutation, _recombination, fitness) =
+            build_configs(&args, CodecStrategy::default()).unwrap();
 
         assert_eq!(config.population_size, 100);
         assert_eq!(structure.ru_length, 171);
@@ -336,9 +350,10 @@ mod tests {
             fit_len_sim: None,
             record_every: 100,
             seed: None,
+            codec: "parallel-packed-rs".to_string(),
         };
 
-        let (_, _, _, _, fitness) = build_configs(&args).unwrap();
+        let (_, _, _, _, fitness) = build_configs(&args, CodecStrategy::default()).unwrap();
         assert!(fitness.gc_content.is_some());
         assert!(fitness.length.is_none());
     }
@@ -377,9 +392,10 @@ mod tests {
             fit_len_sim: None,
             record_every: 100,
             seed: None,
+            codec: "parallel-packed-rs".to_string(),
         };
 
-        let (_, _, _mutation, _, _) = build_configs(&args).unwrap();
+        let (_, _, _mutation, _, _) = build_configs(&args, CodecStrategy::default()).unwrap();
         // Should be General substitution model
         // We can't easily introspect Enum variant without public access or matching.
         // But if it didn't error, it worked.
@@ -419,9 +435,10 @@ mod tests {
             fit_len_sim: None,
             record_every: 100,
             seed: None,
+            codec: "parallel-packed-rs".to_string(),
         };
 
-        let (_, _, mutation, _, _) = build_configs(&args).unwrap();
+        let (_, _, mutation, _, _) = build_configs(&args, CodecStrategy::default()).unwrap();
         assert!(mutation.indel.is_some());
     }
 
@@ -459,10 +476,11 @@ mod tests {
             fit_len_sim: None,
             record_every: 100,
             seed: None,
+            codec: "parallel-packed-rs".to_string(),
         };
 
         // Should return error because strict mode for explicit rates requires all 6
-        let result = build_configs(&args);
+        let result = build_configs(&args, CodecStrategy::default());
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),

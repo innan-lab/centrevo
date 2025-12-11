@@ -340,6 +340,7 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
         fit_len_sim,
         record_every,
         seed,
+        codec: "parallel-packed-rs".to_string(),
     };
 
     init_simulation(&args)?;

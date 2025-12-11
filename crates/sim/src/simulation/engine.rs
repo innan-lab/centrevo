@@ -239,7 +239,7 @@ impl Simulation {
         // Reconstruct individuals from snapshots
         let individuals: Result<Vec<_>, String> = snapshots
             .iter()
-            .map(|snap| snap.to_individual(&snapshot.structure))
+            .map(|snap| snap.to_individual(&snapshot.config.codec))
             .collect();
         let individuals = individuals?;
 

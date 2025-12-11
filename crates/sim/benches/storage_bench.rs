@@ -37,13 +37,20 @@ fn bench_recorder_write(c: &mut Criterion) {
                 let file = NamedTempFile::new().unwrap();
                 let path = file.path().to_owned();
                 // Keep file alive
-                let recorder = Recorder::new(&path, "bench_sim", RecordingStrategy::All).unwrap();
+                let recorder = Recorder::new(
+                    &path,
+                    "bench_sim",
+                    RecordingStrategy::All,
+                    centrevo_sim::simulation::CodecStrategy::default(),
+                )
+                .unwrap();
                 let pop = create_test_population(pop_size, chr_length);
                 (file, recorder, pop)
             },
             |(_file, mut recorder, pop)| {
+                let dummy_rng = vec![0u8; 32];
                 recorder
-                    .record_generation(black_box(&pop), black_box(0))
+                    .record_generation(black_box(&pop), black_box(0), black_box(&dummy_rng))
                     .unwrap();
             },
             criterion::BatchSize::SmallInput,

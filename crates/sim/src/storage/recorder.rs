@@ -63,6 +63,8 @@ pub struct IndividualSnapshot {
     pub haplotype2_chr_id: String,
     pub haplotype2_seq: Vec<u8>,         // Encoded
     pub haplotype2_map: Option<Vec<u8>>, // Encoded serialized map
+    pub haplotype1_fitness: Option<f64>,
+    pub haplotype2_fitness: Option<f64>,
     pub fitness: Option<f64>,
 }
 
@@ -110,6 +112,8 @@ impl IndividualSnapshot {
             haplotype2_chr_id: h2_chr_id,
             haplotype2_seq: h2_seq,
             haplotype2_map: h2_map,
+            haplotype1_fitness: h1.cached_fitness().map(|f| *f),
+            haplotype2_fitness: h2.cached_fitness().map(|f| *f),
             fitness: ind.cached_fitness().map(|f| *f),
         }
     }
@@ -164,9 +168,15 @@ impl IndividualSnapshot {
         // Create haplotypes
         let mut hap1 = Haplotype::new();
         hap1.push(chr1);
+        if let Some(f) = self.haplotype1_fitness {
+            hap1.set_cached_fitness(FitnessValue::new(f));
+        }
 
         let mut hap2 = Haplotype::new();
         hap2.push(chr2);
+        if let Some(f) = self.haplotype2_fitness {
+            hap2.set_cached_fitness(FitnessValue::new(f));
+        }
 
         // Create individual
         let mut individual = Individual::new(self.individual_id.as_str(), hap1, hap2);
@@ -408,9 +418,9 @@ impl Recorder {
             let mut stmt = tx
                 .prepare_cached(
                     "INSERT INTO population_state
-                    (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_map, haplotype1_seq,
-                     haplotype2_chr_id, haplotype2_map, haplotype2_seq, fitness)
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_map, haplotype1_seq, haplotype1_fitness,
+                     haplotype2_chr_id, haplotype2_map, haplotype2_seq, haplotype2_fitness, fitness)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
 
                 )
                 .map_err(|e| DatabaseError::Insert(e.to_string()))?;
@@ -432,9 +442,11 @@ impl Recorder {
                     snapshot.haplotype1_chr_id,
                     snapshot.haplotype1_map,
                     snapshot.haplotype1_seq,
+                    snapshot.haplotype1_fitness,
                     snapshot.haplotype2_chr_id,
                     snapshot.haplotype2_map,
                     snapshot.haplotype2_seq,
+                    snapshot.haplotype2_fitness,
                     snapshot.fitness,
                 ])
                 .map_err(|e| DatabaseError::Insert(e.to_string()))?;
@@ -589,9 +601,38 @@ mod tests {
         assert_eq!(snapshot.individual_id, "test_ind");
         assert_eq!(snapshot.individual_id, "test_ind");
         // Length check is harder now as it is compressed.
-        assert!(snapshot.haplotype1_seq.len() > 0);
-        assert!(snapshot.haplotype2_seq.len() > 0);
+        assert!(!snapshot.haplotype1_seq.is_empty());
+        assert!(!snapshot.haplotype2_seq.is_empty());
         assert!(snapshot.haplotype1_map.is_some());
+    }
+
+    #[test]
+    fn test_individual_snapshot_fitness() {
+        let mut ind = create_test_individual("test_ind_fit", 100);
+        ind.set_cached_fitness(FitnessValue::new(0.8));
+        ind.haplotype1_mut()
+            .set_cached_fitness(FitnessValue::new(0.5));
+        ind.haplotype2_mut()
+            .set_cached_fitness(FitnessValue::new(0.6));
+
+        let codec = CodecStrategy::BitPackedRS;
+        let snapshot = IndividualSnapshot::from_individual(&ind, &codec);
+
+        assert_eq!(snapshot.fitness, Some(0.8));
+        assert_eq!(snapshot.haplotype1_fitness, Some(0.5));
+        assert_eq!(snapshot.haplotype2_fitness, Some(0.6));
+
+        // Restore
+        let restored_ind = snapshot.to_individual(&codec).expect("Failed to restore");
+        assert_eq!(restored_ind.cached_fitness(), Some(FitnessValue::new(0.8)));
+        assert_eq!(
+            restored_ind.haplotype1().cached_fitness(),
+            Some(FitnessValue::new(0.5))
+        );
+        assert_eq!(
+            restored_ind.haplotype2().cached_fitness(),
+            Some(FitnessValue::new(0.6))
+        );
     }
 
     #[test]
@@ -665,7 +706,15 @@ mod tests {
             .record_metadata(&config)
             .expect("Failed to record metadata");
 
-        let pop = create_test_population(5, 100);
+        let mut pop = create_test_population(5, 100);
+        // Set some haplotype fitnesses for testing
+        for ind in pop.individuals_mut() {
+            ind.haplotype1_mut()
+                .set_cached_fitness(FitnessValue::new(0.1));
+            ind.haplotype2_mut()
+                .set_cached_fitness(FitnessValue::new(0.2));
+        }
+
         let dummy_rng = vec![0u8; 32];
         recorder
             .record_generation(&pop, 0, &dummy_rng)
@@ -675,6 +724,15 @@ mod tests {
 
         let stats = recorder.stats().expect("Failed to get stats");
         assert_eq!(stats.population_records, 5);
+
+        // Verify data in DB
+        let conn = recorder.db.connection();
+        let count: i64 = conn.query_row(
+            "SELECT count(*) FROM population_state WHERE haplotype1_fitness = 0.1 AND haplotype2_fitness = 0.2",
+            [],
+            |row| row.get(0)
+        ).expect("Query failed");
+        assert_eq!(count, 5);
 
         recorder.close().expect("Failed to close recorder");
         std::fs::remove_file(path).ok();

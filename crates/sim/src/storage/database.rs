@@ -53,6 +53,8 @@ impl Database {
                     haplotype2_map BLOB,
                     haplotype2_seq BLOB NOT NULL,
 
+                    haplotype1_fitness REAL,
+                    haplotype2_fitness REAL,
                     fitness REAL,
                     timestamp INTEGER DEFAULT (strftime('%s', 'now'))
                 );

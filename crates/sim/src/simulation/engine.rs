@@ -511,6 +511,9 @@ impl Simulation {
         self.population.set_individuals(offspring);
         self.population.increment_generation();
 
+        // 5. Update fitness for new population (including haplotype fitness)
+        self.population.update_fitness(&self.fitness);
+
         Ok(())
     }
 

@@ -127,7 +127,10 @@ impl Population {
         let all_equal = if fitness_values.is_empty() {
             true
         } else {
-            fitness_values.iter().copied().all(|f| f == fitness_values[0])
+            fitness_values
+                .iter()
+                .copied()
+                .all(|f| f == fitness_values[0])
         };
         if (total_fitness == FitnessValue::LETHAL_FITNESS) || all_equal {
             // Fitness values are all zeros/all ones - use uniform selection
@@ -178,10 +181,56 @@ impl Population {
 
     /// Update fitness values for all individuals in the population.
     pub fn update_fitness(&mut self, config: &FitnessConfig) {
-        let fitness_values = self.compute_fitness(config);
-        for (ind, fitness) in self.individuals.iter_mut().zip(fitness_values.iter()) {
-            ind.set_cached_fitness(*fitness);
-        }
+        self.individuals.par_iter_mut().for_each(|ind| {
+            let mut ind_fitness = FitnessValue::default();
+            let mut hap1_fitness = FitnessValue::default();
+            let mut hap2_fitness = FitnessValue::default();
+
+            // Apply GC content fitness
+            if let Some(gc) = &config.gc_content {
+                use crate::evolution::HaplotypeFitness;
+                use crate::evolution::IndividualFitness;
+
+                ind_fitness *= gc.individual_fitness(ind);
+                // Currently only supporting first chromosome for fitness
+                if let Some(chr) = ind.haplotype1().get(0) {
+                    hap1_fitness *= gc.haplotype_fitness(chr);
+                }
+                if let Some(chr) = ind.haplotype2().get(0) {
+                    hap2_fitness *= gc.haplotype_fitness(chr);
+                }
+            }
+
+            // Apply Length fitness
+            if let Some(len_fit) = &config.length {
+                use crate::evolution::HaplotypeFitness;
+                use crate::evolution::IndividualFitness;
+
+                ind_fitness *= len_fit.individual_fitness(ind);
+                if let Some(chr) = ind.haplotype1().get(0) {
+                    hap1_fitness *= len_fit.haplotype_fitness(chr);
+                }
+                if let Some(chr) = ind.haplotype2().get(0) {
+                    hap2_fitness *= len_fit.haplotype_fitness(chr);
+                }
+            }
+
+            // Apply Sequence Similarity fitness (Individual only)
+            if let Some(sim) = &config.seq_similarity {
+                use crate::evolution::IndividualFitness;
+                ind_fitness *= sim.individual_fitness(ind);
+            }
+
+            // Apply Length Similarity fitness (Individual only)
+            if let Some(len_sim) = &config.length_similarity {
+                use crate::evolution::IndividualFitness;
+                ind_fitness *= len_sim.individual_fitness(ind);
+            }
+
+            ind.set_cached_fitness(ind_fitness);
+            ind.haplotype1_mut().set_cached_fitness(hap1_fitness);
+            ind.haplotype2_mut().set_cached_fitness(hap2_fitness);
+        });
     }
 }
 
@@ -305,8 +354,14 @@ mod tests {
         pop.update_fitness(&config);
 
         // After update, should be Some(1.0) (neutral)
-        assert_eq!(pop.get(0).unwrap().cached_fitness(), Some(FitnessValue::new(1.0)));
-        assert_eq!(pop.get(1).unwrap().cached_fitness(), Some(FitnessValue::new(1.0)));
+        assert_eq!(
+            pop.get(0).unwrap().cached_fitness(),
+            Some(FitnessValue::new(1.0))
+        );
+        assert_eq!(
+            pop.get(1).unwrap().cached_fitness(),
+            Some(FitnessValue::new(1.0))
+        );
     }
 
     #[test]
@@ -379,5 +434,48 @@ mod tests {
         ];
         pop.set_individuals(individuals2);
         assert_eq!(pop.size(), 2);
+    }
+
+    #[test]
+    fn test_population_update_haplotype_fitness() {
+        use crate::evolution::GCContentFitness;
+
+        let individuals = vec![
+            create_test_individual("ind1", Nucleotide::A), // Low GC
+            create_test_individual("ind2", Nucleotide::C), // High GC
+        ];
+
+        let mut pop = Population::new("pop1", individuals);
+
+        // Create fitness config with GC content fitness
+        // Optimum 1.0 (all G/C), concentration 2.0
+        let gc = GCContentFitness::new(1.0, 2.0).unwrap();
+        let config = FitnessConfig::new(Some(gc), None, None, None);
+
+        // Initially None
+        assert_eq!(pop.get(0).unwrap().haplotype1().cached_fitness(), None);
+        assert_eq!(pop.get(0).unwrap().haplotype2().cached_fitness(), None);
+
+        pop.update_fitness(&config);
+
+        // Check ind1 (All A - low fitness)
+        let ind1 = pop.get(0).unwrap();
+        let h1_fit1 = ind1.haplotype1().cached_fitness();
+        let h2_fit1 = ind1.haplotype2().cached_fitness();
+
+        assert!(h1_fit1.is_some());
+        assert!(h2_fit1.is_some());
+        // Value should be small but positive (Beta distribution PDF > 0)
+        assert!(*h1_fit1.unwrap() > 0.0);
+
+        // Check ind2 (All C - high fitness)
+        let ind2 = pop.get(1).unwrap();
+        let h1_fit2 = ind2.haplotype1().cached_fitness();
+        let h2_fit2 = ind2.haplotype2().cached_fitness();
+
+        assert!(h1_fit2.is_some());
+        assert!(h2_fit2.is_some());
+        // Should be higher than ind1 (optimum is 1.0, ind2 is closer)
+        assert!(*h1_fit2.unwrap() > *h1_fit1.unwrap());
     }
 }

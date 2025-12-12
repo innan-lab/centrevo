@@ -77,7 +77,7 @@ impl QueryBuilder {
             .connection()
             .prepare(
                 "SELECT individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
-                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, fitness
+                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, haplotype1_fitness, haplotype2_fitness, fitness
                 FROM population_state
                 WHERE sim_id = ?1 AND generation = ?2
                 ORDER BY individual_id",
@@ -94,7 +94,9 @@ impl QueryBuilder {
                     haplotype2_chr_id: row.get(4)?,
                     haplotype2_seq: row.get(5)?,
                     haplotype2_map: row.get(6)?,
-                    fitness: row.get(7)?,
+                    haplotype1_fitness: row.get(7)?,
+                    haplotype2_fitness: row.get(8)?,
+                    fitness: row.get(9)?,
                 })
             })
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -180,7 +182,7 @@ impl QueryBuilder {
             .connection()
             .prepare(
                 "SELECT generation, individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
-                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, fitness
+                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, haplotype1_fitness, haplotype2_fitness, fitness
                 FROM population_state
                 WHERE sim_id = ?1 AND individual_id = ?2
                 ORDER BY generation",
@@ -199,7 +201,9 @@ impl QueryBuilder {
                         haplotype2_chr_id: row.get(5)?,
                         haplotype2_seq: row.get(6)?,
                         haplotype2_map: row.get(7)?,
-                        fitness: row.get(8)?,
+                        haplotype1_fitness: row.get(8)?,
+                        haplotype2_fitness: row.get(9)?,
+                        fitness: row.get(10)?,
                     },
                 ))
             })
@@ -255,7 +259,7 @@ impl QueryBuilder {
             .connection()
             .prepare(
                 "SELECT individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
-                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, fitness
+                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, haplotype1_fitness, haplotype2_fitness, fitness
                 FROM population_state
                 WHERE sim_id = ?1 AND generation = ?2 AND fitness >= ?3
                 ORDER BY fitness DESC",
@@ -272,7 +276,9 @@ impl QueryBuilder {
                     haplotype2_chr_id: row.get(4)?,
                     haplotype2_seq: row.get(5)?,
                     haplotype2_map: row.get(6)?,
-                    fitness: row.get(7)?,
+                    haplotype1_fitness: row.get(7)?,
+                    haplotype2_fitness: row.get(8)?,
+                    fitness: row.get(9)?,
                 })
             })
             .map_err(|e| DatabaseError::Query(e.to_string()))?;

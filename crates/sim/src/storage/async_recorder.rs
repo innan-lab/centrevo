@@ -271,6 +271,8 @@ async fn background_recorder_task(
             haplotype2_chr_id TEXT NOT NULL,
             haplotype2_map BLOB,
             haplotype2_seq BLOB NOT NULL,
+            haplotype1_fitness REAL,
+            haplotype2_fitness REAL,
             fitness REAL,
             timestamp INTEGER DEFAULT (strftime('%s', 'now'))
         );
@@ -381,6 +383,8 @@ struct CompressedSnapshot {
     haplotype2_chr_id: String,
     haplotype2_compressed: Vec<u8>,
     haplotype2_map_compressed: Option<Vec<u8>>,
+    haplotype1_fitness: Option<f64>,
+    haplotype2_fitness: Option<f64>,
     fitness: Option<f64>,
 }
 
@@ -418,6 +422,8 @@ fn compress_snapshots(
                 haplotype2_chr_id: snapshot.haplotype2_chr_id.clone(),
                 haplotype2_compressed: h2_compressed,
                 haplotype2_map_compressed: h2_map,
+                haplotype1_fitness: snapshot.haplotype1_fitness,
+                haplotype2_fitness: snapshot.haplotype2_fitness,
                 fitness: snapshot.fitness,
             })
         })
@@ -442,9 +448,9 @@ fn write_compressed_snapshots(
         let mut stmt = tx
             .prepare_cached(
                 "INSERT INTO population_state
-            (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_map, haplotype1_seq,
-             haplotype2_chr_id, haplotype2_map, haplotype2_seq, fitness)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            (sim_id, generation, individual_id, haplotype1_chr_id, haplotype1_map, haplotype1_seq, haplotype1_fitness,
+             haplotype2_chr_id, haplotype2_map, haplotype2_seq, haplotype2_fitness, fitness)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             )
             .map_err(|e| DatabaseError::Insert(e.to_string()))?;
 
@@ -456,9 +462,11 @@ fn write_compressed_snapshots(
                 snapshot.haplotype1_chr_id,
                 snapshot.haplotype1_map_compressed,
                 &snapshot.haplotype1_compressed,
+                snapshot.haplotype1_fitness,
                 snapshot.haplotype2_chr_id,
                 snapshot.haplotype2_map_compressed,
                 &snapshot.haplotype2_compressed,
+                snapshot.haplotype2_fitness,
                 snapshot.fitness
             ])
             .map_err(|e| DatabaseError::Insert(e.to_string()))?;

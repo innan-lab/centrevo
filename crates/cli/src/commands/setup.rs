@@ -112,7 +112,7 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
         let ins = prompt_f64("  Insertion rate", Some(1e-5))?;
         let del = prompt_f64("  Deletion rate", Some(1e-5))?;
         let p = prompt_f64(
-            "  Indel length parameter p (0.0-1.0)",
+            "  Indel length parameter p (higher = shorter indels)",
             Some(defaults::INDEL_LENGTH_P),
         )?;
         (ins, del, p)
@@ -128,7 +128,7 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
         defaults::RECOMB_RATE
     } else {
         prompt_f64(
-            "Recombination break probability",
+            "Recombination break probability (per base)",
             Some(defaults::RECOMB_RATE),
         )?
     };
@@ -137,7 +137,7 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
         defaults::CROSSOVER_PROB
     } else {
         prompt_f64(
-            "Crossover probability (given break)",
+            "Crossover probability (vs. gene conversion)",
             Some(defaults::CROSSOVER_PROB),
         )?
     };
@@ -150,11 +150,17 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
         )
     } else if prompt_confirm("Configure advanced recombination parameters?", false)? {
         let gc = prompt_f64(
-            "  Gene conversion extension prob",
+            "  Gene conversion extension prob (higher = longer tracts)",
             Some(defaults::GC_EXTENSION_PROB),
         )?;
-        let hom = prompt_f64("  Homology strength", Some(defaults::HOMOLOGY_STRENGTH))?;
-        let win = prompt_usize("  Search window (RUs)", Some(defaults::SEARCH_WINDOW))?;
+        let hom = prompt_f64(
+            "  Homology strength (higher = stricter matching)",
+            Some(defaults::HOMOLOGY_STRENGTH),
+        )?;
+        let win = prompt_usize(
+            "  Search window (in Repeat Units)",
+            Some(defaults::SEARCH_WINDOW),
+        )?;
         (gc, hom, win)
     } else {
         (

@@ -38,7 +38,9 @@ pub struct InitArgs {
 
     /// Mutation rate (Uniform/Jukes-Cantor)
     ///
-    /// Defaults to 1e-5. Mutually exclusive with specific rates.
+    /// The probability that any single DNA letter changes to another random letter
+    /// in one generation.
+    /// *   **Default:** `1e-5` (1 in 100,000)
     #[arg(
         long,
         conflicts_with_all = ["rate_ac", "rate_ag", "rate_at", "rate_cg", "rate_ct", "rate_gt"]
@@ -65,44 +67,59 @@ pub struct InitArgs {
     pub rate_gt: Option<f64>,
 
     /// Insertion rate (per base per generation)
+    ///
+    /// How often new DNA blocks are inserted.
     #[arg(long, default_value_t = defaults::INDEL_INS_RATE)]
     pub indel_ins_rate: f64,
 
     /// Deletion rate (per base per generation)
+    ///
+    /// How often DNA blocks are removed.
     #[arg(long, default_value_t = defaults::INDEL_DEL_RATE)]
     pub indel_del_rate: f64,
 
     /// Geometric parameter p for indel length (higher p = shorter indels)
+    ///
+    /// Controls how long the inserted/deleted blocks are.
+    /// *   **Small p (e.g. 0.1):** Long blocks.
+    /// *   **Large p (e.g. 0.9):** Short blocks.
     #[arg(long, default_value_t = defaults::INDEL_LENGTH_P)]
     pub indel_length_p: f64,
 
     /// Recombination break probability
     ///
-    /// Defaults to 1e-6 or approx. 1 DSB per Mb per generation.
+    /// How often chromosomes break and swap/copy parts.
+    /// *   **Default:** `1e-6` (Approx. 1 break per 1 million bases).
     #[arg(long, default_value_t = defaults::RECOMB_RATE)]
     pub recomb_rate: f64,
 
     /// Crossover probability (given break)
     ///
-    /// Defaults to 0.01. Crossovers are heavily suppressed in centromeres; most events are gene conversions.
+    /// When a break happens, how often does it result in a "clean swap" (crossover)
+    /// versus a "copy-paste" (gene conversion)?
+    /// *   **Centromeres:** Rarely crossover (mostly gene conversion).
     #[arg(long, default_value_t = defaults::CROSSOVER_PROB)]
     pub crossover_prob: f64,
 
     /// Gene conversion extension probability
     ///
-    /// Defaults to 0.95. Results in average tract length ~20bp (1/(1-0.95)).
+    /// Controls how long the "copy-paste" tract is during gene conversion.
+    /// *   **Avg Length:** `1 / (1 - p)`
+    /// *   **Default:** `0.95` (Avg length ~20 bases).
     #[arg(long, default_value_t = defaults::GC_EXTENSION_PROB)]
     pub gc_extension_prob: f64,
 
     /// Homology strength (0.0 = random, >0.0 = preference for similarity)
     ///
-    /// Defaults to 5.0. (Strong preference for homologous sequences to drive homogenization)
+    /// How "choosy" the recombination is.
+    /// *   **0.0:** Random (blind) recombination.
+    /// *   **High:** Only recombines with very similar sequences (drives uniformity).
     #[arg(long, default_value_t = defaults::HOMOLOGY_STRENGTH)]
     pub homology_strength: f64,
 
     /// Search window for homology (in RUs)
     ///
-    /// Defaults to 100. (Allows interaction with neighboring ~10-20kb of sequence)
+    /// How far away (in Repeat Units) can the chromosome look for a matching sequence?
     #[arg(long, default_value_t = defaults::SEARCH_WINDOW)]
     pub search_window: usize,
 
@@ -111,6 +128,8 @@ pub struct InitArgs {
     pub fit_gc_opt: Option<f64>,
 
     /// Concentration parameter for GC fitness
+    ///
+    /// How strictly the selection enforces the optimal GC content.
     #[arg(long, requires = "fit_gc_opt")]
     pub fit_gc_conc: Option<f64>,
 
@@ -119,6 +138,8 @@ pub struct InitArgs {
     pub fit_len_opt: Option<usize>,
 
     /// Standard deviation for length fitness (bases)
+    ///
+    /// How much variation in length is allowed.
     #[arg(long, requires = "fit_len_opt")]
     pub fit_len_std: Option<f64>,
 
@@ -135,10 +156,17 @@ pub struct InitArgs {
     pub record_every: usize,
 
     /// Random seed
+    ///
+    /// Set this to reproduce the exact same simulation run.
     #[arg(long)]
     pub seed: Option<u64>,
 
-    /// Codec strategy for sequence storage (unpacked-rs, packed-rs, parallel-packed-rs)
+    /// Codec strategy for sequence storage
+    ///
+    /// How to store the DNA data on disk:
+    /// *   `parallel-packed-rs`: 4x smaller, fastest for large files. (Default)
+    /// *   `packed-rs`: 4x smaller, good for medium files.
+    /// *   `unpacked-rs`: Raw size, easiest to debug.
     #[arg(long, default_value = "parallel-packed-rs")]
     pub codec: String,
 }

@@ -31,7 +31,7 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
     println!("Codec Strategy: {codec_strategy}");
 
     let (structure, config, mutation, recombination, fitness) =
-        build_configs(args, codec_strategy.clone())?;
+        build_configs(args, codec_strategy)?;
 
     // Logic moved to build_configs
 

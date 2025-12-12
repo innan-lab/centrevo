@@ -63,7 +63,7 @@ pub fn run_simulation(
             database,
             name,
             RecordingStrategy::EveryN(record_every),
-            snapshot.config.codec.clone(),
+            snapshot.config.codec,
         )
         .context("Failed to create recorder")?;
 
@@ -183,7 +183,7 @@ pub fn run_simulation(
             database,
             name,
             RecordingStrategy::EveryN(record_every),
-            config.codec.clone(),
+            config.codec,
         )
         .context("Failed to create recorder")?;
 

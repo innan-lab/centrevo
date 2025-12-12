@@ -11,10 +11,13 @@ use std::path::PathBuf;
 use args::InitArgs;
 use commands::{analyze, export, init, list, run, setup, validate};
 
-/// Centrevo - Centromeric evolution simulator
+/// Centrevo: A Centromere Evolution Simulator
+///
+/// This tool simulates how centromeres (complex DNA regions) change over time
+/// due to mutation, recombination, and natural selection.
 #[derive(Parser, Debug)]
 #[command(name = "centrevo")]
-#[command(author, version, about = "Centromeric evolution simulator", long_about = None)]
+#[command(author, version, about = "Simulates the evolution of centromeres over time", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -22,20 +25,27 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Initialize a new simulation
+    /// Initialize a new simulation configuration.
+    ///
+    /// Sets up the parameters for a new experiment (population size, mutation rates, etc.)
+    /// but does not run it yet.
     Init(Box<InitArgs>),
 
-    /// Run a simulation
+    /// Run an existing or new simulation.
+    ///
+    /// Executes the simulation generation by generation.
     Run {
-        /// Database path
+        /// Database path (where to save data)
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
 
-        /// Simulation name
+        /// Simulation name (identifier for this run)
         #[arg(short = 'N', long)]
         name: String,
 
-        /// Resume from checkpoint (ignores other parameters)
+        /// Resume from the last saved checkpoint
+        ///
+        /// Use this if a previous run was interrupted or if you want to extend it.
         #[arg(long)]
         resume: bool,
 
@@ -52,14 +62,14 @@ enum Commands {
         progress: bool,
     },
 
-    /// List simulations in database
+    /// List all simulations stored in a database.
     List {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
     },
 
-    /// Show simulation info
+    /// Info: Show detailed configuration of a simulation.
     Info {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
@@ -70,7 +80,7 @@ enum Commands {
         name: String,
     },
 
-    /// List recorded generations
+    /// Generations: List all recorded timepoints for a simulation.
     Generations {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
@@ -81,7 +91,9 @@ enum Commands {
         name: String,
     },
 
-    /// Export simulation data
+    /// Export data to other formats (CSV, FASTA, JSON).
+    ///
+    /// Use this to get data out for analysis in Python, R, or other tools.
     Export {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
@@ -108,7 +120,9 @@ enum Commands {
         data_type: String,
     },
 
-    /// Analyze simulation data
+    /// Analyze simulation data (statistics).
+    ///
+    /// Calculates stats like sequence length, GC content, and entropy.
     Analyze {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
@@ -122,7 +136,7 @@ enum Commands {
         #[arg(short, long)]
         generation: usize,
 
-        /// Chromosome index
+        /// Chromosome index (which chromosome to analyze)
         #[arg(long, default_value = "0")]
         chromosome: usize,
 
@@ -135,7 +149,9 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
-    /// Validate database integrity
+    /// Validate database integrity.
+    ///
+    /// Checks if the database file is healthy and fixes simple issues.
     Validate {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
@@ -145,12 +161,14 @@ enum Commands {
         #[arg(short = 'N', long)]
         name: Option<String>,
 
-        /// Fix issues if possible
+        /// Attempt to fix found issues
         #[arg(long)]
         fix: bool,
     },
 
-    /// Interactive wizard to setup and run a simulation
+    /// Setup Wizard: Interactive guide to create a simulation.
+    ///
+    /// The easiest way to get started. Just follow the prompts!
     Setup {
         /// Skip interactive prompts and use defaults
         #[arg(long)]

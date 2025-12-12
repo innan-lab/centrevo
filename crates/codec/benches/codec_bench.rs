@@ -46,7 +46,7 @@ fn bench_codecs(c: &mut Criterion) {
         let input: Vec<u8> = (0..size).map(|_| rng.gen_range(0..4)).collect();
 
         // Benchmark Encode (Write)
-        let mut group_encode = c.benchmark_group(format!("Encode_{}", size_name));
+        let mut group_encode = c.benchmark_group(format!("Encode_{size_name}"));
         group_encode.throughput(Throughput::Bytes(size as u64));
 
         for (strategy_name, strategy) in &strategies {
@@ -60,7 +60,7 @@ fn bench_codecs(c: &mut Criterion) {
 
         // Benchmark Decode (Read)
         // Pre-encode data for each strategy to benchmark decode
-        let mut group_decode = c.benchmark_group(format!("Decode_{}", size_name));
+        let mut group_decode = c.benchmark_group(format!("Decode_{size_name}"));
         group_decode.throughput(Throughput::Bytes(size as u64));
 
         for (strategy_name, strategy) in &strategies {

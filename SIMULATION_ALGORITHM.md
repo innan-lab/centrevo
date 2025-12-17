@@ -1,6 +1,6 @@
 # Simulation Algorithm and Assumptions
 
-This document describes the inner workings of the Centrevo simulation engine. It is intended for both developers who need to understand the code structure and biologists who need to understand the modeling assumptions.
+This describes the inner workings of the Centrevo simulation engine. It is intended for both developers who need to understand the code structure and biologists who need to understand the modeling assumptions.
 
 ## Overview
 
@@ -21,7 +21,21 @@ The simulation tracks a `Population` of `N` diploid individuals.
 
 **Biologically**: This represents a sexually reproducing, diploid population.
 
-## 2. The Evolutionary Cycle (Algorithm)
+## 2. Fitness Specification
+
+Fitness determines the probability of an individual contributing to the next generation. It is **intrinsic** to the individual, calculated immediately at birth.
+
+**Multiplicative Model**:
+The total fitness $w$ is the product of enabled fitness components:
+$$w = w_{GC} \cdot w_{Length} \cdot w_{Similarity} \dots$$
+
+**Components (Configurable)**:
+*   **GC Content ($w_{GC}$)**: Gaussian function centered on a target GC% (e.g., 42%).
+*   **Sequence Length ($w_{Length}$)**: Gaussian function centered on a target length (e.g., 10kb).
+*   **Sequence Similarity ($w_{Similarity}$)**: Based on alignment or k-mer distance to a reference sequence (purifying selection).
+*   **Length Similarity**: Based on similarity to the array length structure (maintaining array size).
+
+## 3. The Evolutionary Cycle (Algorithm)
 
 For each generation `t` to `t+1`:
 
@@ -68,7 +82,7 @@ For each parent, a single gamete (haplotype) is produced:
 ### Step 3: Population Replacement
 The new offspring completely replace the old population (discrete generations).
 
-## 3. Key Assumptions & Constraints
+## 4. Key Assumptions & Constraints
 
 1.  **Discrete Generations**: The model uses non-overlapping generations. Parents die after reproduction.
 2.  **Fixed Population Size**: The population size `N` remains constant throughout the simulation (soft selection).
@@ -77,7 +91,7 @@ The new offspring completely replace the old population (discrete generations).
 5.  **No Linkage Disequilibrium (Initial)**: Unless specified, the simulation often starts with uniform or identical populations, but LD builds up due to physical linkage.
 6.  **Recombination Validity**: Crossovers and gene conversions can be computationally complex if chromosome lengths differ significantly. The engine handles this by mapping relative positions, but extreme length differences can lead to simulation artifacts or "clamping" of events.
 
-## 4. Code Map
+## 5. Code Map
 
 *   `crates/sim/src/simulation/engine.rs`: The main loop (`step()`, `apply_mutation()`, `apply_recombination()`, `generate_offspring()`).
 *   `crates/sim/src/evolution/mutation.rs`: Logic for substitutions and indels.

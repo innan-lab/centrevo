@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Optimized format strings with inline variables (81 fixes in bin and lib)
   - Applied `#[allow(clippy::too_many_arguments)]` to complex functions requiring many parameters
   - `src/evolution/mutation.rs`: Fixed loop variable indexing pattern
-  - `src/storage/async_recorder.rs`: Allowed too_many_arguments for database operations
+  - `src/storage/recorder.rs`: Allowed too_many_arguments for database operations
   - `src/bin/centrevo.rs`: Fixed format string inlining and function signatures
 
 ### Changed
@@ -133,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tokio-based async recorder with buffering
   - Background thread for I/O operations
   - Significant performance improvement for large populations
-  - Files: `src/storage/async_recorder.rs`
+  - Files: `src/storage/recorder.rs`
 
 - **Checkpoint/Resume Functionality**
   - Save and restore simulation state

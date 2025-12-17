@@ -100,7 +100,7 @@ fn test_checkpoint_and_resume_basic() {
                 // I need to confirm.
                 // Assuming it has.
                 // Wait, in previous task I implemented `record_metadata` and `record_full_config`.
-                // `async_recorder.rs` has `record_checkpoint`?
+                // `recorder.rs` has `record_checkpoint`?
                 // I should reuse logic or double check.
                 // If I don't have it, I can't test it.
                 // `AsyncRecorder` usually sends `Snapshot` message.
@@ -122,7 +122,7 @@ fn test_checkpoint_and_resume_basic() {
                 // `AsyncRecorder`: `record_generation` takes `rng_state`.
                 // So it probably does both.
                 // I will NOT call `record_checkpoint` separately if it doesn't exist.
-                // I'll check `async_recorder.rs` quickly if I can...
+                // I'll check `recorder.rs` quickly if I can...
                 // But I'll assume `record_generation` covers it for now and verify.
                 // So I remove explicit `record_checkpoint`.
             }

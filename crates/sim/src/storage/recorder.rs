@@ -627,8 +627,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_async_recorder_creation() {
-        let path = "/tmp/test_async_recorder.sqlite";
+    async fn test_recorder_creation() {
+        let path = "/tmp/test_recorder.sqlite";
         let _ = std::fs::remove_file(path);
         let config = BufferConfig::small();
         let recorder = AsyncRecorder::new(path, "test_sim", config, CodecStrategy::default())

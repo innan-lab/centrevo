@@ -489,8 +489,8 @@ mod tests {
     #[test]
     fn test_simulation_config_codec() {
         let config = SimulationConfig::new(100, 100, None);
-        // Default should be ParallelBitPackedRS
-        assert!(matches!(config.codec, CodecStrategy::ParallelBitPackedRS));
+        // Default should be UnpackedZRS
+        assert!(matches!(config.codec, CodecStrategy::UnpackedZRS));
 
         let config = config.with_codec(CodecStrategy::UnpackedRS);
         assert!(matches!(config.codec, CodecStrategy::UnpackedRS));

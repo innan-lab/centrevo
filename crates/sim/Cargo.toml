@@ -44,3 +44,8 @@ harness = false
 [[bench]]
 name = "storage_bench"
 harness = false
+
+[[bench]]
+name = "compression_comparison"
+harness = false
+

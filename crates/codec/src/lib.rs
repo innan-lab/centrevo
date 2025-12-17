@@ -30,7 +30,7 @@ mod utils;
 
 pub use error::CodecError as Error;
 pub use error::CodecError;
-pub use strategies::{BitPackedRS, ParallelBitPackedRS, UnpackedRS};
+pub use strategies::{BitPackedRS, ParallelBitPackedRS, UnpackedRS, UnpackedZ, UnpackedZRS};
 pub use traits::Codec;
 
 use serde::{Deserialize, Serialize};
@@ -62,6 +62,20 @@ pub enum CodecStrategy {
     /// *   **Cons:** Slight overhead for small sequences.
     /// *   **Best for:** Very large datasets.
     ParallelBitPackedRS,
+
+    /// **Unpacked + Zstd + Protection.**
+    ///
+    /// Compresses raw bytes with Zstd, then protects with RS.
+    /// *   **Pros:** Best storage for repetitive data. Good speed. Checks integrity.
+    /// *   **Best for:** Centromeres / Repetitive DNA.
+    UnpackedZRS,
+
+    /// **Unpacked + Zstd (No RS).**
+    ///
+    /// Compresses raw bytes with Zstd. No error correction.
+    /// *   **Pros:** Fastest, smallest.
+    /// *   **Cons:** No corruption protection.
+    UnpackedZ,
 }
 
 impl CodecStrategy {
@@ -71,6 +85,8 @@ impl CodecStrategy {
             CodecStrategy::UnpackedRS => UnpackedRS.encode(seq),
             CodecStrategy::BitPackedRS => BitPackedRS.encode(seq),
             CodecStrategy::ParallelBitPackedRS => ParallelBitPackedRS.encode(seq),
+            CodecStrategy::UnpackedZRS => UnpackedZRS.encode(seq),
+            CodecStrategy::UnpackedZ => UnpackedZ.encode(seq),
         }
     }
 
@@ -80,13 +96,15 @@ impl CodecStrategy {
             CodecStrategy::UnpackedRS => UnpackedRS.decode(data),
             CodecStrategy::BitPackedRS => BitPackedRS.decode(data),
             CodecStrategy::ParallelBitPackedRS => ParallelBitPackedRS.decode(data),
+            CodecStrategy::UnpackedZRS => UnpackedZRS.decode(data),
+            CodecStrategy::UnpackedZ => UnpackedZ.decode(data),
         }
     }
 }
 
 impl Default for CodecStrategy {
     fn default() -> Self {
-        Self::ParallelBitPackedRS
+        Self::UnpackedZRS
     }
 }
 
@@ -96,6 +114,8 @@ impl std::fmt::Display for CodecStrategy {
             Self::UnpackedRS => write!(f, "unpacked-rs"),
             Self::BitPackedRS => write!(f, "packed-rs"),
             Self::ParallelBitPackedRS => write!(f, "parallel-packed-rs"),
+            Self::UnpackedZRS => write!(f, "unpacked-rsz"),
+            Self::UnpackedZ => write!(f, "unpacked-z"),
         }
     }
 }
@@ -108,9 +128,11 @@ impl std::str::FromStr for CodecStrategy {
             "unpacked-rs" => Ok(Self::UnpackedRS),
             "packed-rs" => Ok(Self::BitPackedRS),
             "parallel-packed-rs" => Ok(Self::ParallelBitPackedRS),
-            "unpacked" => Ok(Self::UnpackedRS), // Alias for backward compat/simplicity? Or maybe UnpackedNoRS if we had it exposed. User asked for simulation.
+            "unpacked-rsz" => Ok(Self::UnpackedZRS),
+            "unpacked-z" => Ok(Self::UnpackedZ),
+            "unpacked" => Ok(Self::UnpackedRS), // Alias
             _ => Err(format!(
-                "Unknown codec strategy: {s}. Available: unpacked-rs, packed-rs, parallel-packed-rs"
+                "Unknown codec strategy: {s}. Available: unpacked-rs, packed-rs, parallel-packed-rs, unpacked-rsz, unpacked-z"
             )),
         }
     }
@@ -143,6 +165,16 @@ mod tests {
         // Unpacked
         let encoded = CodecStrategy::UnpackedRS.encode(&seq).unwrap();
         let decoded = CodecStrategy::UnpackedRS.decode(&encoded).unwrap();
+        assert_eq!(seq, decoded);
+
+        // UnpackedZRS
+        let encoded = CodecStrategy::UnpackedZRS.encode(&seq).unwrap();
+        let decoded = CodecStrategy::UnpackedZRS.decode(&encoded).unwrap();
+        assert_eq!(seq, decoded);
+
+        // UnpackedZ
+        let encoded = CodecStrategy::UnpackedZ.encode(&seq).unwrap();
+        let decoded = CodecStrategy::UnpackedZ.decode(&encoded).unwrap();
         assert_eq!(seq, decoded);
     }
 

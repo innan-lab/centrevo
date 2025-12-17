@@ -214,6 +214,7 @@ dependencies = [
  "reed-solomon-simd",
  "serde",
  "thiserror",
+ "zstd",
 ]
 
 [[package]]

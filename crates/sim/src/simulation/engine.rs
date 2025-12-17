@@ -163,9 +163,34 @@ impl Simulation {
         };
 
         // Initialize individuals from config
-        let individuals =
+        let mut individuals =
             crate::simulation::initialize(&seq_config, config.population_size, &mut rng)
                 .map_err(|e| format!("Failed to initialize from sequences: {e}"))?;
+
+        // Compute fitness for initial population
+        // This ensures the invariant that all individuals have cached fitness
+        individuals.par_iter_mut().for_each(|ind| {
+            let mut val = crate::base::FitnessValue::default();
+
+            if let Some(gc) = &fitness.gc_content {
+                use crate::evolution::IndividualFitness;
+                val *= gc.individual_fitness(ind);
+            }
+            if let Some(len) = &fitness.length {
+                use crate::evolution::IndividualFitness;
+                val *= len.individual_fitness(ind);
+            }
+            if let Some(sim) = &fitness.seq_similarity {
+                use crate::evolution::IndividualFitness;
+                val *= sim.individual_fitness(ind);
+            }
+            if let Some(len_sim) = &fitness.length_similarity {
+                use crate::evolution::IndividualFitness;
+                val *= len_sim.individual_fitness(ind);
+            }
+
+            ind.set_cached_fitness(val);
+        });
 
         let population = Population::new("pop0", individuals);
 
@@ -258,6 +283,35 @@ impl Simulation {
             individuals,
         );
 
+        // Recompute fitness for restored population
+        // This is critical because:
+        // 1. Older checkpoints might not have cached fitness
+        // 2. We want to ensure fitness matches the current code/config
+        // 3. Our invariant requires all individuals to have cached fitness
+        let fitness_config = &snapshot.fitness;
+        population.individuals_mut().par_iter_mut().for_each(|ind| {
+            let mut val = crate::base::FitnessValue::default();
+
+            if let Some(gc) = &fitness_config.gc_content {
+                use crate::evolution::IndividualFitness;
+                val *= gc.individual_fitness(ind);
+            }
+            if let Some(len) = &fitness_config.length {
+                use crate::evolution::IndividualFitness;
+                val *= len.individual_fitness(ind);
+            }
+            if let Some(sim) = &fitness_config.seq_similarity {
+                use crate::evolution::IndividualFitness;
+                val *= sim.individual_fitness(ind);
+            }
+            if let Some(len_sim) = &fitness_config.length_similarity {
+                use crate::evolution::IndividualFitness;
+                val *= len_sim.individual_fitness(ind);
+            }
+
+            ind.set_cached_fitness(val);
+        });
+
         // Set generation counter to checkpoint generation
         for _ in 0..checkpoint.generation {
             population.increment_generation();
@@ -337,120 +391,77 @@ impl Simulation {
         Ok(())
     }
 
-    /// Apply mutation to all individuals in the population.
-    fn apply_mutation(&mut self) -> Result<(), String> {
-        let pop_size = self.population.size();
-
-        // Generate seeds for each individual (using faster RNG)
-        let seeds: Vec<u64> = (0..pop_size).map(|_| self.rng.random()).collect();
-
-        // Parallel mutation with independent RNGs per individual
-        self.population
-            .individuals_mut()
-            .par_iter_mut()
-            .zip(seeds.par_iter())
-            .for_each(|(individual, &seed)| {
-                // Use Xoshiro256++ for thread-local RNG (faster than StdRng)
-                let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
-
-                // Mutate first haplotype using Poisson pre-sampling
-                for chr in individual.haplotype1_mut().chromosomes_mut() {
-                    let seq = chr.sequence_mut();
-                    // Apply substitutions
-                    self.mutation
-                        .substitution
-                        .mutate_sequence_sparse(seq, &mut local_rng);
-
-                    // Apply indels if configured
-                    if let Some(indel_model) = &self.mutation.indel {
-                        indel_model.apply_indels(seq, &mut local_rng);
-                    }
-                }
-
-                // Mutate second haplotype using Poisson pre-sampling
-                for chr in individual.haplotype2_mut().chromosomes_mut() {
-                    let seq = chr.sequence_mut();
-                    // Apply substitutions
-                    self.mutation
-                        .substitution
-                        .mutate_sequence_sparse(seq, &mut local_rng);
-
-                    // Apply indels if configured
-                    if let Some(indel_model) = &self.mutation.indel {
-                        indel_model.apply_indels(seq, &mut local_rng);
-                    }
-                }
-            });
-
-        Ok(())
-    }
-
-    /// Apply recombination to all individuals in the population.
+    /// Produce a single gamete from a parent.
     ///
-    /// Note: Some recombination events may become invalid while being applied
-    /// (for example, if previous events change chromosome lengths). For gene
-    /// conversion events where the specified range becomes invalid, the engine
-    /// attempts to clamp the tract length to the available space and retry the
-    /// operation. If clamping cannot resolve the issue, the event is skipped.
-    fn apply_recombination(&mut self) -> Result<(), String> {
-        let pop_size = self.population.size();
+    /// This process simulates:
+    /// 1. Meiosis (Recombination between parent's haplotypes)
+    /// 2. Assortment (Random selection of one recombinant haplotype)
+    /// 3. Mutation (Applied to the gamete)
+    fn produce_gamete(
+        &self,
+        parent: &Individual,
+        rng: &mut Xoshiro256PlusPlus,
+    ) -> Result<crate::genome::Haplotype, String> {
+        // 1. & 2. Meiosis and Assortment
+        // We start by cloning the parent's haplotypes to avoid mutating the population state.
+        // We need mutable copies to perform recombination.
+        let mut hap1 = parent.haplotype1().clone();
+        let mut hap2 = parent.haplotype2().clone();
 
-        // Generate seeds for each individual
-        let seeds: Vec<u64> = (0..pop_size).map(|_| self.rng.random()).collect();
+        // Apply recombination between the two haplotypes
+        // Iterate over shared chromosomes
+        let num_chromosomes = hap1.len().min(hap2.len());
+        for chr_idx in 0..num_chromosomes {
+            if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx)) {
+                // Sample recombination events
+                let mut events = self.recombination.params.sample_events(chr1, chr2, rng);
 
-        // Clone params to avoid immutable borrow of `self` in the parallel closure
-        let params = self.recombination.params.clone();
+                // Process events from right to left (descending position)
+                events.reverse();
 
-        // Parallel recombination with independent RNGs per individual
-        self.population
-            .individuals_mut()
-            .par_iter_mut()
-            .zip(seeds.par_iter())
-            .try_for_each(|(individual, &seed)| -> Result<(), String> {
-                let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
-                let (hap1, hap2) = individual.haplotypes_mut();
-
-                // Recombine corresponding chromosomes
-                for chr_idx in 0..hap1.len().min(hap2.len()) {
-                    if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx))
-                    {
-                        // Sample recombination events
-                        let mut events =
-                            self.recombination
-                                .params
-                                .sample_events(chr1, chr2, &mut local_rng);
-
-                        // Process events from right to left (descending position)
-                        // This ensures that changes to the tail (right side) do not invalidate
-                        // indices for subsequent events on the left side.
-                        events.reverse();
-
-                        // Apply the recombination events sequentially
-                        for event in events {
-                            Simulation::apply_event_to_pair(&params, chr1, chr2, event)?;
-                        }
-                    }
+                // Apply events
+                for event in events {
+                    Simulation::apply_event_to_pair(&self.recombination.params, chr1, chr2, event)?;
                 }
+            }
+        }
 
-                Ok(())
-            })?;
+        // Randomly select one of the recombinant haplotypes to be the gamete
+        // Use gen::<f64>() which is faster than random_bool
+        let mut gamete = if rng.random::<f64>() < 0.5 {
+            hap1
+        } else {
+            hap2
+        };
 
-        Ok(())
+        // 3. Mutation
+        // Apply mutation to the chosen gamete
+        for chr in gamete.chromosomes_mut() {
+            let seq = chr.sequence_mut();
+
+            // Apply substitutions settings thread-local RNG
+            self.mutation.substitution.mutate_sequence_sparse(seq, rng);
+
+            // Apply indels if configured
+            if let Some(indel_model) = &self.mutation.indel {
+                indel_model.apply_indels(seq, rng);
+            }
+        }
+
+        // Clear cached fitness since the sequence has changed
+        gamete.set_cached_fitness(crate::base::FitnessValue::default());
+
+        Ok(gamete)
     }
 
     /// Select parents and generate offspring for the next generation.
     fn generate_offspring(&mut self) -> Result<Vec<Individual>, String> {
-        // Compute fitness for current population
-        let fitness_values = self.population.compute_fitness(&self.fitness);
+        // Select parent pairs (using cached fitness from current population)
+        let pairs = self
+            .population
+            .select_parents(&mut self.rng, self.config.population_size);
 
-        // Select parent pairs
-        let pairs = self.population.select_parents(
-            &mut self.rng,
-            &fitness_values,
-            self.config.population_size,
-        );
-
-        // Pre-allocate generation string to avoid repeated allocations
+        // Pre-allocate generation string
         let gen_str = format!("ind_gen{}_", self.generation() + 1);
 
         // Generate seeds for each offspring
@@ -460,9 +471,10 @@ impl Simulation {
 
         // Get immutable reference to population for parallel access
         let population = &self.population;
+        let fitness_config = &self.fitness;
 
         // Generate offspring from parent pairs in parallel
-        let offspring: Vec<Individual> = pairs
+        let offspring: Result<Vec<Individual>, String> = pairs
             .par_iter()
             .zip(seeds.par_iter())
             .enumerate()
@@ -472,47 +484,59 @@ impl Simulation {
                 let parent1 = population.get(*parent1_idx).unwrap();
                 let parent2 = population.get(*parent2_idx).unwrap();
 
-                // Each parent contributes one gamete (haplotype)
-                // Randomly pick one haplotype from each parent
-                // Use gen::<f64>() which is faster than random_bool
-                let hap1 = if local_rng.random::<f64>() < 0.5 {
-                    parent1.haplotype1().clone()
-                } else {
-                    parent1.haplotype2().clone()
-                };
+                // Generate two gametes, one from each parent
+                let gamete1 = self.produce_gamete(parent1, &mut local_rng)?;
+                let gamete2 = self.produce_gamete(parent2, &mut local_rng)?;
 
-                let hap2 = if local_rng.random::<f64>() < 0.5 {
-                    parent2.haplotype1().clone()
-                } else {
-                    parent2.haplotype2().clone()
-                };
-
-                // More efficient ID construction
+                // Combine to form new individual
                 let id = format!("{gen_str}{i}");
-                Individual::new(id, hap1, hap2)
+                let mut new_ind = Individual::new(id, gamete1, gamete2);
+
+                // Compute intrinsic fitness immediately (born with it)
+                let mut fitness = crate::base::FitnessValue::default();
+
+                // 1. GC Content
+                if let Some(gc) = &fitness_config.gc_content {
+                    use crate::evolution::IndividualFitness;
+                    fitness *= gc.individual_fitness(&new_ind);
+                }
+                // 2. Length
+                if let Some(len_fit) = &fitness_config.length {
+                    use crate::evolution::IndividualFitness;
+                    fitness *= len_fit.individual_fitness(&new_ind);
+                }
+                // 3. Sequence Similarity
+                if let Some(sim) = &fitness_config.seq_similarity {
+                    use crate::evolution::IndividualFitness;
+                    fitness *= sim.individual_fitness(&new_ind);
+                }
+                // 4. Length Similarity
+                if let Some(len_sim) = &fitness_config.length_similarity {
+                    use crate::evolution::IndividualFitness;
+                    fitness *= len_sim.individual_fitness(&new_ind);
+                }
+
+                new_ind.set_cached_fitness(fitness);
+
+                Ok(new_ind)
             })
             .collect();
 
-        Ok(offspring)
+        offspring
     }
 
     /// Advance simulation by one generation.
     pub fn step(&mut self) -> Result<(), String> {
-        // 1. Apply mutation to current population
-        self.apply_mutation()?;
-
-        // 2. Apply recombination to current population
-        self.apply_recombination()?;
-
-        // 3. Generate offspring for next generation
+        // 1. Generate offspring (Selection -> Meiosis/Mutation -> Reproduction)
+        // This includes fitness calculation inside generate_offspring
         let offspring = self.generate_offspring()?;
 
-        // 4. Replace population with offspring
+        // 2. Replace population with offspring
         self.population.set_individuals(offspring);
         self.population.increment_generation();
 
-        // 5. Update fitness for new population (including haplotype fitness)
-        self.population.update_fitness(&self.fitness);
+        // 3. (Removed) Update fitness for new population
+        // Fitness is now intrinsic and computed at birth (in generate_offspring)
 
         Ok(())
     }

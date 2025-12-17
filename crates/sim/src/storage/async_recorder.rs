@@ -1,8 +1,8 @@
 //! Asynchronous recorder with compression and buffering.
 
 use crate::errors::DatabaseError;
-use crate::simulation::Population;
-use crate::storage::IndividualSnapshot;
+use crate::simulation::{Population, SimulationConfig};
+use crate::storage::types::{IndividualSnapshot, SimulationSnapshot};
 use centrevo_codec::CodecStrategy;
 use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
@@ -13,6 +13,10 @@ use tokio::task::JoinHandle;
 /// Message sent from simulation to async recorder.
 #[derive(Debug)]
 enum RecorderMessage {
+    /// Record simulation metadata.
+    Metadata { config: SimulationConfig },
+    /// Record full simulation configuration.
+    FullConfig { snapshot: SimulationSnapshot },
     /// Record a generation snapshot.
     Snapshot {
         generation: usize,
@@ -227,6 +231,39 @@ impl AsyncRecorder {
         Ok(())
     }
 
+    pub async fn record_metadata(&self, config: &SimulationConfig) -> Result<(), DatabaseError> {
+        self.tx
+            .send(RecorderMessage::Metadata {
+                config: config.clone(),
+            })
+            .await
+            .map_err(|_| DatabaseError::Insert("Recorder task died".to_string()))
+    }
+
+    pub async fn record_full_config(
+        &self,
+        snapshot: &SimulationSnapshot,
+    ) -> Result<(), DatabaseError> {
+        self.tx
+            .send(RecorderMessage::FullConfig {
+                snapshot: snapshot.clone(),
+            })
+            .await
+            .map_err(|_| DatabaseError::Insert("Recorder task died".to_string()))
+    }
+
+    pub async fn finalize_metadata(&self) -> Result<(), DatabaseError> {
+        // Just explicit close for now as we don't have a separate Finalize message
+        // End time is updated on close if we add logic there, but standard Recorder
+        // did it explicitly.
+        // For Async, we can assume close triggers it or add a Finalize message.
+        // Let's rely on close for now or add a quick update here if needed.
+        // Given current flow, the standard recorder updates end_time separate from close.
+        // Let's add a trivial update in close or just ignore for strict parity if not critical.
+        // Actually, user wants parity. Let's assume Shutdown handles finalization.
+        Ok(())
+    }
+
     pub async fn close(mut self) -> Result<RecorderStats, DatabaseError> {
         if let Err(e) = self.tx.send(RecorderMessage::Shutdown).await {
             eprintln!("Warning: Failed to send shutdown message: {e}");
@@ -316,6 +353,54 @@ async fn background_recorder_task(
 
     while let Some(msg) = rx.recv().await {
         match msg {
+            RecorderMessage::Metadata { config } => {
+                let params_json =
+                    serde_json::to_string(&config).unwrap_or_else(|_| "{}".to_string());
+                let start_time = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+
+                conn.execute(
+                    "INSERT OR REPLACE INTO simulations
+                    (sim_id, start_time, pop_size, num_generations, mutation_rate, recombination_rate, parameters_json)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        sim_id.as_ref(),
+                        start_time,
+                        config.population_size,
+                        config.total_generations,
+                        0.0,
+                        0.0,
+                        params_json,
+                    ],
+                ).map_err(|e| DatabaseError::Insert(e.to_string()))?;
+            }
+            RecorderMessage::FullConfig { snapshot } => {
+                let config_json = serde_json::to_string(&snapshot).map_err(|e| {
+                    DatabaseError::Insert(format!("Failed to serialize config: {e}"))
+                })?;
+                let start_time = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+
+                conn.execute(
+                    "INSERT OR REPLACE INTO simulations
+                    (sim_id, start_time, pop_size, num_generations, mutation_rate, recombination_rate, parameters_json, config_json)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        sim_id.as_ref(),
+                        start_time,
+                        snapshot.config.population_size,
+                        snapshot.config.total_generations,
+                        0.0,
+                        0.0,
+                        serde_json::to_string(&snapshot.config).unwrap_or_else(|_| "{}".to_string()),
+                        config_json,
+                    ],
+                ).map_err(|e| DatabaseError::Insert(e.to_string()))?;
+            }
             RecorderMessage::Snapshot {
                 generation,
                 snapshots,
@@ -358,7 +443,17 @@ async fn background_recorder_task(
                 stats.bytes_compressed += original_size;
                 stats.bytes_written += compressed_size;
             }
-            RecorderMessage::Shutdown => break,
+            RecorderMessage::Shutdown => {
+                let end_time = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+                let _ = conn.execute(
+                    "UPDATE simulations SET end_time = ?1 WHERE sim_id = ?2",
+                    params![end_time, sim_id.as_ref()],
+                );
+                break;
+            }
         }
     }
 
@@ -396,23 +491,33 @@ fn compress_snapshots(
     snapshots
         .par_iter()
         .map(|snapshot| {
-            let h1_compressed = zstd::bulk::compress(&snapshot.haplotype1_seq, level)
-                .map_err(|e| DatabaseError::Insert(format!("Compression failed: {e}")))?;
-            let h2_compressed = zstd::bulk::compress(&snapshot.haplotype2_seq, level)
-                .map_err(|e| DatabaseError::Insert(format!("Compression failed: {e}")))?;
+            let (h1_compressed, h2_compressed, h1_map, h2_map) = if level == 0 {
+                (
+                    snapshot.haplotype1_seq.clone(),
+                    snapshot.haplotype2_seq.clone(),
+                    snapshot.haplotype1_map.clone(),
+                    snapshot.haplotype2_map.clone(),
+                )
+            } else {
+                let h1 = zstd::bulk::compress(&snapshot.haplotype1_seq, level)
+                    .map_err(|e| DatabaseError::Insert(format!("Compression failed: {e}")))?;
+                let h2 = zstd::bulk::compress(&snapshot.haplotype2_seq, level)
+                    .map_err(|e| DatabaseError::Insert(format!("Compression failed: {e}")))?;
 
-            let h1_map = snapshot
-                .haplotype1_map
-                .as_ref()
-                .map(|m| zstd::bulk::compress(m, level))
-                .transpose()
-                .map_err(|e| DatabaseError::Insert(format!("Map fail: {e}")))?;
-            let h2_map = snapshot
-                .haplotype2_map
-                .as_ref()
-                .map(|m| zstd::bulk::compress(m, level))
-                .transpose()
-                .map_err(|e| DatabaseError::Insert(format!("Map fail: {e}")))?;
+                let m1 = snapshot
+                    .haplotype1_map
+                    .as_ref()
+                    .map(|m| zstd::bulk::compress(m, level))
+                    .transpose()
+                    .map_err(|e| DatabaseError::Insert(format!("Map fail: {e}")))?;
+                let m2 = snapshot
+                    .haplotype2_map
+                    .as_ref()
+                    .map(|m| zstd::bulk::compress(m, level))
+                    .transpose()
+                    .map_err(|e| DatabaseError::Insert(format!("Map fail: {e}")))?;
+                (h1, h2, m1, m2)
+            };
 
             Ok(CompressedSnapshot {
                 individual_id: snapshot.individual_id.clone(),

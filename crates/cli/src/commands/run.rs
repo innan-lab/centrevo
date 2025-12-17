@@ -18,6 +18,8 @@ pub fn run_simulation(
     println!("🧬 Centrevo - Running Simulation");
     println!("============================================\n");
 
+    let rt = tokio::runtime::Runtime::new().context("Failed to create Tokio runtime")?;
+
     // If resuming, load from checkpoint
     if resume {
         println!("📂 Resuming simulation from checkpoint...");
@@ -47,80 +49,100 @@ pub fn run_simulation(
             return Ok(());
         }
 
-        // Setup recorder with full config
-        let snapshot = SimulationSnapshot {
-            structure: sim
-                .structure()
-                .cloned()
-                .expect("Cannot resume without uniform structure"),
-            mutation: sim.mutation().clone(),
-            recombination: sim.recombination().clone(),
-            fitness: sim.fitness().clone(),
-            config: sim.config().clone(),
-        };
+        rt.block_on(async {
+            // Setup recorder with full config
+            let snapshot = SimulationSnapshot {
+                structure: sim
+                    .structure()
+                    .cloned()
+                    .expect("Cannot resume without uniform structure"),
+                mutation: sim.mutation().clone(),
+                recombination: sim.recombination().clone(),
+                fitness: sim.fitness().clone(),
+                config: sim.config().clone(),
+            };
 
-        let mut recorder = Recorder::new(
-            database,
-            name,
-            RecordingStrategy::EveryN(record_every),
-            snapshot.config.codec,
-        )
-        .context("Failed to create recorder")?;
+            let buffer_config = centrevo_sim::storage::BufferConfig {
+                compression_level: 0,
+                ..Default::default()
+            };
 
-        // Record full config if not already recorded (idempotent-ish)
-        recorder
-            .record_full_config(&snapshot)
-            .context("Failed to record configuration")?;
+            let recorder = Recorder::new(
+                database,
+                name,
+                buffer_config,
+                snapshot.config.codec,
+            )
+            .context("Failed to create recorder")?;
 
-        // Print parameters
-        println!("Resuming Configuration:");
-        print_simulation_parameters(&sim);
+            // Record full config if not already recorded (idempotent-ish)
+            recorder
+                .record_full_config(&snapshot)
+                .await
+                .context("Failed to record configuration")?;
 
-        // Run simulation from checkpoint
-        let remaining_generations = total_generations - start_generation;
-        println!("Running {remaining_generations} remaining generations...");
+            // Print parameters
+            println!("Resuming Configuration:");
+            print_simulation_parameters(&sim);
 
-        let pb = if show_progress {
-            let pb = ProgressBar::new(total_generations as u64);
-            pb.set_position(start_generation as u64);
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {per_sec}")
-                    .unwrap()
-                    .progress_chars("#>-"),
-            );
-            Some(pb)
-        } else {
-            None
-        };
+            // Run simulation from checkpoint
+            let remaining_generations = total_generations - start_generation;
+            println!("Running {remaining_generations} remaining generations...");
 
-        for i in 1..=remaining_generations {
-            let generation = start_generation + i;
-            sim.step()
-                .map_err(|e| anyhow::anyhow!("Generation {generation}: {e}"))?;
+            let pb = if show_progress {
+                let pb = ProgressBar::new(total_generations as u64);
+                pb.set_position(start_generation as u64);
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template(
+                            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {per_sec}",
+                        )
+                        .unwrap()
+                        .progress_chars("#>-"),
+                );
+                Some(pb)
+            } else {
+                None
+            };
 
-            // Record if needed (with RNG state for checkpoint)
-            if recorder.should_record(generation) {
-                let rng_state = sim.rng_state_bytes();
-                recorder
-                    .record_generation(sim.population(), generation, &rng_state)
-                    .with_context(|| format!("Failed to record generation {generation}"))?;
+            for i in 1..=remaining_generations {
+                let generation = start_generation + i;
+                sim.step()
+                    .map_err(|e| anyhow::anyhow!("Generation {generation}: {e}"))?;
+
+                // Determine if we need to record
+                let should_record =
+                    RecordingStrategy::EveryN(record_every).should_record(generation);
+
+                // Record if needed (with RNG state for checkpoint)
+                if should_record {
+                    let rng_state = sim.rng_state_bytes();
+                    recorder
+                        .record_generation(sim.population(), generation, rng_state)
+                        .await
+                        .context(format!("Failed to record generation {generation}"))?;
+                }
+
+                // Show progress
+                if let Some(pb) = &pb {
+                    pb.inc(1);
+                }
             }
 
-            // Show progress
-            if let Some(pb) = &pb {
-                pb.inc(1);
+            if let Some(pb) = pb {
+                pb.finish_with_message("Done");
             }
-        }
 
-        if let Some(pb) = pb {
-            pb.finish_with_message("Done");
-        }
+            // Finalize
+            recorder
+                .finalize_metadata()
+                .await
+                .context("Failed to finalize metadata")?;
 
-        // Finalize
-        recorder
-            .finalize_metadata()
-            .context("Failed to finalize metadata")?;
+            recorder.close().await.context("Failed to close recorder")?;
+
+            Ok::<(), anyhow::Error>(())
+        })?;
 
         println!("\n✓ Simulation complete!");
         println!("  Final generation: {total_generations}");
@@ -178,61 +200,81 @@ pub fn run_simulation(
         )
         .map_err(|e| anyhow::anyhow!("Failed to initialize simulation: {e}"))?;
 
-        // Setup recorder
-        let mut recorder = Recorder::new(
-            database,
-            name,
-            RecordingStrategy::EveryN(record_every),
-            config.codec,
-        )
-        .context("Failed to create recorder")?;
+        rt.block_on(async {
+            // Setup recorder
+            let buffer_config = centrevo_sim::storage::BufferConfig {
+                compression_level: 0,
+                ..Default::default()
+            };
+            let recorder = Recorder::new(
+                database,
+                name,
+                buffer_config,
+                config.codec,
+            )
+            .context("Failed to create recorder")?;
 
-        // Print all parameters
-        println!("Configuration:");
-        print_simulation_parameters(&sim);
+            // Print all parameters
+            println!("Configuration:");
+            print_simulation_parameters(&sim);
 
-        // Run simulation
-        println!("Running {} generations...", config.total_generations);
+            // Run simulation
+            println!("Running {} generations...", config.total_generations);
 
-        let pb = if show_progress {
-            let pb = ProgressBar::new(config.total_generations as u64);
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {per_sec}")
-                    .unwrap()
-                    .progress_chars("#>-"),
-            );
-            Some(pb)
-        } else {
-            None
-        };
+            let pb = if show_progress {
+                let pb = ProgressBar::new(config.total_generations as u64);
+                pb.set_style(
+                    ProgressStyle::default_bar()
+                        .template(
+                            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {per_sec}",
+                        )
+                        .unwrap()
+                        .progress_chars("#>-"),
+                );
+                Some(pb)
+            } else {
+                None
+            };
 
-        for generation in 1..=config.total_generations {
-            sim.step()
-                .map_err(|e| anyhow::anyhow!("Generation {generation}: {e}"))?;
+            for generation in 1..=config.total_generations {
+                // Determine if we need to record BEFORE stepping, or just check generation index
+                // We check if we SHOULD record this generation
+                let should_record =
+                    RecordingStrategy::EveryN(record_every).should_record(generation);
 
-            // Record if needed (with RNG state for checkpoint)
-            if recorder.should_record(generation) {
-                let rng_state = sim.rng_state_bytes();
-                recorder
-                    .record_generation(sim.population(), generation, &rng_state)
-                    .with_context(|| format!("Failed to record generation {generation}"))?;
+                // Run step (CPU intensive, synchronous)
+                sim.step()
+                    .map_err(|e| anyhow::anyhow!("Generation {generation}: {e}"))?;
+
+                // Record if needed (with RNG state for checkpoint)
+                if should_record {
+                    let rng_state = sim.rng_state_bytes();
+                    recorder
+                        .record_generation(sim.population(), generation, rng_state)
+                        .await
+                        .context(format!("Failed to record generation {generation}"))?;
+                }
+
+                // Show progress
+                if let Some(pb) = &pb {
+                    pb.inc(1);
+                }
             }
 
-            // Show progress
-            if let Some(pb) = &pb {
-                pb.inc(1);
+            if let Some(pb) = pb {
+                pb.finish_with_message("Done");
             }
-        }
 
-        if let Some(pb) = pb {
-            pb.finish_with_message("Done");
-        }
+            // Finalize
+            recorder
+                .finalize_metadata()
+                .await
+                .context("Failed to finalize metadata")?;
+            
+            recorder.close().await.context("Failed to close recorder")?;
 
-        // Finalize
-        recorder
-            .finalize_metadata()
-            .context("Failed to finalize metadata")?;
+            Ok::<(), anyhow::Error>(())
+        })?;
 
         println!("\n✓ Simulation complete!");
         println!("  Final generation: {}", config.total_generations);

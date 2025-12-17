@@ -432,12 +432,16 @@ mod tests {
         SimulationConfig::new(10, 100, Some(42))
     }
 
-    fn setup_test_db(path: &str) -> (Recorder, SimulationConfig) {
+    async fn setup_test_db(path: &str) -> (Recorder, SimulationConfig) {
         let _ = std::fs::remove_file(path);
-        let mut recorder = Recorder::new(
+        let buffer_config = crate::storage::BufferConfig {
+            compression_level: 0,
+            ..Default::default()
+        };
+        let recorder = Recorder::new(
             path,
             "test_sim",
-            crate::storage::RecordingStrategy::All,
+            buffer_config,
             crate::simulation::CodecStrategy::default(),
         )
         .expect("Failed to create recorder");
@@ -445,6 +449,7 @@ mod tests {
         let config = create_test_config();
         recorder
             .record_metadata(&config)
+            .await
             .expect("Failed to record metadata");
 
         // Record a few generations
@@ -452,18 +457,19 @@ mod tests {
             let pop = create_test_population(5, 100);
             let dummy_rng = vec![0u8; 32];
             recorder
-                .record_generation(&pop, generation, &dummy_rng)
+                .record_generation(&pop, generation, dummy_rng)
+                .await
                 .expect("Failed to record generation");
         }
 
         (recorder, config)
     }
 
-    #[test]
-    fn test_list_simulations() {
+    #[tokio::test]
+    async fn test_list_simulations() {
         let path = "/tmp/test_query_list.sqlite";
-        let (recorder, _config) = setup_test_db(path);
-        recorder.close().ok();
+        let (recorder, _config) = setup_test_db(path).await;
+        recorder.close().await.ok();
 
         let query = QueryBuilder::new(path).expect("Failed to create query builder");
         let sims = query
@@ -477,11 +483,11 @@ mod tests {
         std::fs::remove_file(path).ok();
     }
 
-    #[test]
-    fn test_get_simulation_info() {
+    #[tokio::test]
+    async fn test_get_simulation_info() {
         let path = "/tmp/test_query_info.sqlite";
-        let (recorder, _config) = setup_test_db(path);
-        recorder.close().ok();
+        let (recorder, _config) = setup_test_db(path).await;
+        recorder.close().await.ok();
 
         let query = QueryBuilder::new(path).expect("Failed to create query builder");
         let info = query
@@ -496,11 +502,11 @@ mod tests {
         std::fs::remove_file(path).ok();
     }
 
-    #[test]
-    fn test_get_generation() {
+    #[tokio::test]
+    async fn test_get_generation() {
         let path = "/tmp/test_query_gen.sqlite";
-        let (recorder, _config) = setup_test_db(path);
-        recorder.close().ok();
+        let (recorder, _config) = setup_test_db(path).await;
+        recorder.close().await.ok();
 
         let query = QueryBuilder::new(path).expect("Failed to create query builder");
         let individuals = query
@@ -513,11 +519,11 @@ mod tests {
         std::fs::remove_file(path).ok();
     }
 
-    #[test]
-    fn test_get_fitness_history() {
+    #[tokio::test]
+    async fn test_get_fitness_history() {
         let path = "/tmp/test_query_fitness.sqlite";
-        let (recorder, _config) = setup_test_db(path);
-        recorder.close().ok();
+        let (recorder, _config) = setup_test_db(path).await;
+        recorder.close().await.ok();
 
         let query = QueryBuilder::new(path).expect("Failed to create query builder");
         let history = query
@@ -530,11 +536,11 @@ mod tests {
         std::fs::remove_file(path).ok();
     }
 
-    #[test]
-    fn test_get_recorded_generations() {
+    #[tokio::test]
+    async fn test_get_recorded_generations() {
         let path = "/tmp/test_query_gens.sqlite";
-        let (recorder, _config) = setup_test_db(path);
-        recorder.close().ok();
+        let (recorder, _config) = setup_test_db(path).await;
+        recorder.close().await.ok();
 
         let query = QueryBuilder::new(path).expect("Failed to create query builder");
         let gens = query

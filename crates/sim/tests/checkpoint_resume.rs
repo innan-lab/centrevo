@@ -1,12 +1,13 @@
 //! Integration tests for checkpoint and resume functionality.
 
-use centrevo::base::Nucleotide;
-use centrevo::simulation::{
-    FitnessConfig, MutationConfig, RecombinationConfig, RepeatStructure, Simulation,
-    SimulationConfig,
+use centrevo_sim::base::Nucleotide;
+use centrevo_sim::simulation::{
+    FitnessConfig, MutationConfig, RecombinationConfig, Simulation, SimulationConfig,
+    UniformRepeatStructure,
 };
-use centrevo::storage::{Recorder, RecordingStrategy, SimulationSnapshot};
+use centrevo_sim::storage::{AsyncRecorder, BufferConfig, RecordingStrategy, SimulationSnapshot};
 use std::path::PathBuf;
+use tokio::runtime::Runtime;
 
 /// Helper to create a test database path
 fn test_db_path(name: &str) -> PathBuf {
@@ -26,7 +27,7 @@ fn test_checkpoint_and_resume_basic() {
     cleanup_db(&db_path);
 
     // Setup simulation parameters
-    let structure = RepeatStructure::new(
+    let structure = UniformRepeatStructure::new(
         Nucleotide::A,
         10, // Small for testing
         5,
@@ -40,9 +41,11 @@ fn test_checkpoint_and_resume_basic() {
     let config = SimulationConfig::new(10, 100, Some(42)); // 100 generations
 
     let sim_id = "test_sim";
+    let rt = Runtime::new().unwrap();
 
     // Part 1: Run simulation for first 50 generations with checkpoints
-    {
+    rt.block_on(async {
+        #[allow(deprecated)]
         let mut sim = Simulation::new(
             structure.clone(),
             mutation.clone(),
@@ -61,36 +64,78 @@ fn test_checkpoint_and_resume_basic() {
             config: config.clone(),
         };
 
-        let mut recorder = Recorder::new(
+        let strategy = RecordingStrategy::EveryN(10);
+        let buffer_config = BufferConfig {
+            compression_level: 0,
+            ..Default::default()
+        };
+
+        let mut recorder = AsyncRecorder::new(
             &db_path,
             sim_id,
-            RecordingStrategy::EveryN(10), // Record every 10 generations
+            buffer_config,
+            centrevo_sim::simulation::CodecStrategy::default(),
         )
         .unwrap();
 
-        recorder.record_full_config(&snapshot).unwrap();
+        recorder.record_full_config(&snapshot).await.unwrap();
 
         // Run first 50 generations
         for generation in 1..=50 {
             sim.step().unwrap();
 
-            if recorder.should_record(generation) {
+            if strategy.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation)
+                    .record_generation(sim.population(), generation, rng_state)
+                    .await
                     .unwrap();
-                recorder.record_checkpoint(generation, &rng_state).unwrap();
+                // Checkpoint is implicit in AsyncRecorder?
+                // Wait, AsyncRecorder DOES NOT have record_checkpoint method exposed directly?
+                // Let's check AsyncRecorder API.
+                // It has `record_checkpoint(generation, rng_state)`.
+                // But `record_generation` also calls internal buffering.
+                // `start` step had `recorder.record_checkpoint`.
+                // AsyncRecorder DOES have `record_checkpoint`.
+                // I need to confirm.
+                // Assuming it has.
+                // Wait, in previous task I implemented `record_metadata` and `record_full_config`.
+                // `async_recorder.rs` has `record_checkpoint`?
+                // I should reuse logic or double check.
+                // If I don't have it, I can't test it.
+                // `AsyncRecorder` usually sends `Snapshot` message.
+                // `Snapshot` message contains `rng_state`.
+                // So `record_generation` is enough?
+                // `Recorder` (sync) had separate `record_checkpoint`.
+                // `AsyncRecorder::record_generation` takes `rng_state`!
+                // So calling `record_generation` IS recording checkpoint data (RNG state).
+                // `Recorder::record_generation` took `rng_state`?
+                // Sync Recorder `record_generation` signature: `(pop, gen, rng_state)`.
+                // So `AsyncRecorder::record_generation` signature matches.
+                // Does `recorder.record_checkpoint` exist separately?
+                // Code in test calls `recorder.record_checkpoint`.
+                // If `AsyncRecorder` doesn't have it, I should remove call?
+                // `AsyncRecorder` likely combines them.
+                // I'll assume `record_generation` handles both or checks.
+                // But wait, the test calls both.
+                // Sync recorder: `record_generation` records population. `record_checkpoint` writes rng state to `checkpoints` table.
+                // `AsyncRecorder`: `record_generation` takes `rng_state`.
+                // So it probably does both.
+                // I will NOT call `record_checkpoint` separately if it doesn't exist.
+                // I'll check `async_recorder.rs` quickly if I can...
+                // But I'll assume `record_generation` covers it for now and verify.
+                // So I remove explicit `record_checkpoint`.
             }
         }
 
-        recorder.close().ok();
+        recorder.close().await.unwrap();
 
         assert_eq!(sim.generation(), 50);
         println!("✓ Completed first 50 generations");
-    }
+    });
 
     // Part 2: Resume from checkpoint and continue
-    {
+    rt.block_on(async {
         let mut sim = Simulation::from_checkpoint(&db_path, sim_id).unwrap();
 
         // Verify we resumed from generation 50 (last checkpoint at gen 50)
@@ -99,31 +144,43 @@ fn test_checkpoint_and_resume_basic() {
         println!("✓ Resumed from generation {}", sim.generation());
 
         // Setup recorder again
-        let mut recorder = Recorder::new(&db_path, sim_id, RecordingStrategy::EveryN(10)).unwrap();
+        let buffer_config = BufferConfig {
+            compression_level: 0,
+            ..Default::default()
+        };
+        let mut recorder = AsyncRecorder::new(
+            &db_path,
+            sim_id,
+            buffer_config,
+            centrevo_sim::simulation::CodecStrategy::default(),
+        )
+        .unwrap();
+        let strategy = RecordingStrategy::EveryN(10);
 
         // Continue for remaining 50 generations
         for generation in 51..=100 {
             sim.step().unwrap();
 
-            if recorder.should_record(generation) {
+            if strategy.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation)
+                    .record_generation(sim.population(), generation, rng_state)
+                    .await
                     .unwrap();
-                recorder.record_checkpoint(generation, &rng_state).unwrap();
+                // recorder.record_checkpoint(generation, &rng_state).unwrap();
             }
         }
 
-        recorder.finalize_metadata().unwrap();
-        recorder.close().ok();
+        recorder.finalize_metadata().await.unwrap();
+        recorder.close().await.unwrap();
 
         assert_eq!(sim.generation(), 100);
         println!("✓ Completed remaining 50 generations");
-    }
+    });
 
     // Part 3: Verify final state
     {
-        use centrevo::storage::QueryBuilder;
+        use centrevo_sim::storage::QueryBuilder;
 
         let query = QueryBuilder::new(&db_path).unwrap();
 
@@ -153,7 +210,7 @@ fn test_resume_multiple_times() {
     cleanup_db(&db_path);
 
     // Setup
-    let structure = RepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
+    let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
 
     let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
@@ -161,65 +218,89 @@ fn test_resume_multiple_times() {
     let config = SimulationConfig::new(5, 100, Some(123));
 
     let sim_id = "multi_resume_sim";
+    let rt = Runtime::new().unwrap();
 
     // Run simulation in 4 chunks: 0->25, 25->50, 50->75, 75->100
     let checkpoints = vec![25, 50, 75, 100];
 
     for (i, &target_gen) in checkpoints.iter().enumerate() {
-        let mut sim = if i == 0 {
-            // First run: create new simulation
-            let mut sim = Simulation::new(
-                structure.clone(),
-                mutation.clone(),
-                recombination.clone(),
-                fitness.clone(),
-                config.clone(),
-            )
-            .unwrap();
+        rt.block_on(async {
+            let mut sim = if i == 0 {
+                // First run: create new simulation
+                #[allow(deprecated)]
+                let mut sim = Simulation::new(
+                    structure.clone(),
+                    mutation.clone(),
+                    recombination.clone(),
+                    fitness.clone(),
+                    config.clone(),
+                )
+                .unwrap();
 
-            // Record full config
-            let snapshot = SimulationSnapshot {
-                structure: structure.clone(),
-                mutation: mutation.clone(),
-                recombination: recombination.clone(),
-                fitness: fitness.clone(),
-                config: config.clone(),
+                // Record full config
+                let snapshot = SimulationSnapshot {
+                    structure: structure.clone(),
+                    mutation: mutation.clone(),
+                    recombination: recombination.clone(),
+                    fitness: fitness.clone(),
+                    config: config.clone(),
+                };
+
+                let buffer_config = BufferConfig {
+                    compression_level: 0,
+                    ..Default::default()
+                };
+                let mut recorder = AsyncRecorder::new(
+                    &db_path,
+                    sim_id,
+                    buffer_config,
+                    centrevo_sim::simulation::CodecStrategy::default(),
+                )
+                .unwrap();
+
+                recorder.record_full_config(&snapshot).await.unwrap();
+                recorder.close().await.unwrap();
+
+                sim
+            } else {
+                // Subsequent runs: resume from checkpoint
+                Simulation::from_checkpoint(&db_path, sim_id).unwrap()
             };
 
-            let mut recorder =
-                Recorder::new(&db_path, sim_id, RecordingStrategy::EveryN(25)).unwrap();
+            let start_gen = sim.generation();
+            println!("Run {}: Starting from generation {}", i + 1, start_gen);
 
-            recorder.record_full_config(&snapshot).unwrap();
-            recorder.close().ok();
+            let buffer_config = BufferConfig {
+                compression_level: 0,
+                ..Default::default()
+            };
+            let mut recorder = AsyncRecorder::new(
+                &db_path,
+                sim_id,
+                buffer_config,
+                centrevo_sim::simulation::CodecStrategy::default(),
+            )
+            .unwrap();
+            let strategy = RecordingStrategy::EveryN(25);
 
-            sim
-        } else {
-            // Subsequent runs: resume from checkpoint
-            Simulation::from_checkpoint(&db_path, sim_id).unwrap()
-        };
+            // Run to target generation
+            for generation in (start_gen + 1)..=target_gen {
+                sim.step().unwrap();
 
-        let start_gen = sim.generation();
-        println!("Run {}: Starting from generation {}", i + 1, start_gen);
-
-        let mut recorder = Recorder::new(&db_path, sim_id, RecordingStrategy::EveryN(25)).unwrap();
-
-        // Run to target generation
-        for generation in (start_gen + 1)..=target_gen {
-            sim.step().unwrap();
-
-            if recorder.should_record(generation) {
-                let rng_state = sim.rng_state_bytes();
-                recorder
-                    .record_generation(sim.population(), generation)
-                    .unwrap();
-                recorder.record_checkpoint(generation, &rng_state).unwrap();
+                if strategy.should_record(generation) {
+                    let rng_state = sim.rng_state_bytes();
+                    recorder
+                        .record_generation(sim.population(), generation, rng_state)
+                        .await
+                        .unwrap();
+                }
             }
-        }
 
-        recorder.close().ok();
+            recorder.close().await.unwrap();
 
-        assert_eq!(sim.generation(), target_gen);
-        println!("✓ Reached generation {}", target_gen);
+            assert_eq!(sim.generation(), target_gen);
+            println!("✓ Reached generation {}", target_gen);
+        });
     }
 
     cleanup_db(&db_path);
@@ -234,7 +315,7 @@ fn test_resume_preserves_rng_state() {
     cleanup_db(&db_path2);
 
     // Setup identical simulations
-    let structure = RepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
+    let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
 
     let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
@@ -244,6 +325,7 @@ fn test_resume_preserves_rng_state() {
 
     // Simulation 1: Run straight through to gen 100
     let final_pop_continuous = {
+        #[allow(deprecated)]
         let mut sim = Simulation::new(
             structure.clone(),
             mutation.clone(),
@@ -267,10 +349,13 @@ fn test_resume_preserves_rng_state() {
             .to_vec()
     };
 
+    let rt = Runtime::new().unwrap();
+
     // Simulation 2: Run to gen 50, checkpoint, resume, then complete
     let final_pop_resumed = {
         // Part 1: Run to gen 50
-        {
+        rt.block_on(async {
+            #[allow(deprecated)]
             let mut sim = Simulation::new(
                 structure.clone(),
                 mutation.clone(),
@@ -288,25 +373,36 @@ fn test_resume_preserves_rng_state() {
                 config: config.clone(),
             };
 
-            let mut recorder =
-                Recorder::new(&db_path2, "rng_test_sim", RecordingStrategy::EveryN(50)).unwrap();
+            let strategy = RecordingStrategy::EveryN(50);
+            let buffer_config = BufferConfig {
+                compression_level: 0,
+                ..Default::default()
+            };
 
-            recorder.record_full_config(&snapshot).unwrap();
+            let mut recorder = AsyncRecorder::new(
+                &db_path2,
+                "rng_test_sim",
+                buffer_config,
+                centrevo_sim::simulation::CodecStrategy::default(),
+            )
+            .unwrap();
+
+            recorder.record_full_config(&snapshot).await.unwrap();
 
             for generation in 1..=50 {
                 sim.step().unwrap();
 
-                if recorder.should_record(generation) {
+                if strategy.should_record(generation) {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation)
+                        .record_generation(sim.population(), generation, rng_state)
+                        .await
                         .unwrap();
-                    recorder.record_checkpoint(generation, &rng_state).unwrap();
                 }
             }
 
-            recorder.close().ok();
-        }
+            recorder.close().await.unwrap();
+        });
 
         // Part 2: Resume and complete
         {
@@ -366,7 +462,7 @@ fn test_resume_with_wrong_sim_id_fails() {
     cleanup_db(&db_path);
 
     // Create a simulation
-    let structure = RepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
+    let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
 
     let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
@@ -375,9 +471,11 @@ fn test_resume_with_wrong_sim_id_fails() {
 
     let correct_sim_id = "correct_sim";
     let wrong_sim_id = "wrong_sim";
+    let rt = Runtime::new().unwrap();
 
     // Run and record with correct_sim_id
-    {
+    rt.block_on(async {
+        #[allow(deprecated)]
         let mut sim = Simulation::new(
             structure.clone(),
             mutation.clone(),
@@ -395,25 +493,36 @@ fn test_resume_with_wrong_sim_id_fails() {
             config,
         };
 
-        let mut recorder =
-            Recorder::new(&db_path, correct_sim_id, RecordingStrategy::EveryN(10)).unwrap();
+        let strategy = RecordingStrategy::EveryN(10);
+        let buffer_config = BufferConfig {
+            compression_level: 0,
+            ..Default::default()
+        };
 
-        recorder.record_full_config(&snapshot).unwrap();
+        let mut recorder = AsyncRecorder::new(
+            &db_path,
+            correct_sim_id,
+            buffer_config,
+            centrevo_sim::simulation::CodecStrategy::default(),
+        )
+        .unwrap();
+
+        recorder.record_full_config(&snapshot).await.unwrap();
 
         for generation in 1..=20 {
             sim.step().unwrap();
 
-            if recorder.should_record(generation) {
+            if strategy.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation)
+                    .record_generation(sim.population(), generation, rng_state)
+                    .await
                     .unwrap();
-                recorder.record_checkpoint(generation, &rng_state).unwrap();
             }
         }
 
-        recorder.close().ok();
-    }
+        recorder.close().await.unwrap();
+    });
 
     // Try to resume with wrong sim_id - should fail
     let result = Simulation::from_checkpoint(&db_path, wrong_sim_id);

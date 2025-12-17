@@ -3,12 +3,12 @@
 //! This module provides SQLite-based recording of simulation state,
 //! allowing for reproducibility and post-simulation analysis.
 
-mod database;
-mod recorder;
-mod query;
 mod async_recorder;
+mod database;
+mod query;
+pub mod types;
 
+pub use async_recorder::{AsyncRecorder, AsyncRecorder as Recorder, BufferConfig, RecorderStats};
 pub use database::Database;
-pub use recorder::{Recorder, RecordingStrategy, IndividualSnapshot, FitnessStats, SimulationSnapshot};
-pub use query::{QueryBuilder, CheckpointInfo};
-pub use async_recorder::{AsyncRecorder, BufferConfig, RecorderStats};
+pub use query::{CheckpointInfo, QueryBuilder};
+pub use types::{FitnessStats, IndividualSnapshot, RecordingStrategy, SimulationSnapshot};

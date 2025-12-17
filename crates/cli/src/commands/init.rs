@@ -6,7 +6,7 @@ use centrevo_sim::simulation::{
     CodecStrategy, FitnessConfig, MutationConfig, Population, RecombinationConfig,
     SimulationConfig, UniformRepeatStructure,
 };
-use centrevo_sim::storage::{Recorder, RecordingStrategy, SimulationSnapshot};
+use centrevo_sim::storage::SimulationSnapshot;
 
 use crate::args::InitArgs;
 use crate::printing::print_parameters;
@@ -17,7 +17,7 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
     let output = &args.output;
     let population_size = args.population_size;
     let generations = args.generations;
-    let record_every = args.record_every;
+    let _record_every = args.record_every;
 
     let codec_strategy = args
         .codec
@@ -56,32 +56,47 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
 
     // Setup database recorder
     println!("\nSetting up database...");
-    let mut recorder = Recorder::new(
-        output,
-        name.as_str(),
-        RecordingStrategy::EveryN(record_every),
-        codec_strategy,
-    )
-    .context("Failed to create recorder")?;
 
-    // Record full configuration
-    let snapshot = SimulationSnapshot {
-        structure: structure.clone(),
-        mutation: mutation.clone(),
-        recombination: recombination.clone(),
-        fitness: fitness.clone(),
-        config: config.clone(),
-    };
+    let rt = tokio::runtime::Runtime::new().context("Failed to create Tokio runtime")?;
 
-    recorder
-        .record_full_config(&snapshot)
-        .context("Failed to record configuration")?;
+    rt.block_on(async {
+        let buffer_config = centrevo_sim::storage::BufferConfig {
+            compression_level: 0,
+            ..Default::default()
+        };
+        let recorder = centrevo_sim::storage::AsyncRecorder::new(
+            output,
+            name.as_str(),
+            buffer_config,
+            codec_strategy,
+        )
+        .context("Failed to create recorder")?;
 
-    // Record initial generation
-    let dummy_rng = vec![0u8; 32];
-    recorder
-        .record_generation(&population, 0, &dummy_rng)
-        .context("Failed to record initial generation")?;
+        // Record full configuration
+        let snapshot = SimulationSnapshot {
+            structure: structure.clone(),
+            mutation: mutation.clone(),
+            recombination: recombination.clone(),
+            fitness: fitness.clone(),
+            config: config.clone(),
+        };
+
+        recorder
+            .record_full_config(&snapshot)
+            .await
+            .context("Failed to record configuration")?;
+
+        // Record initial generation
+        let dummy_rng = vec![0u8; 32];
+        recorder
+            .record_generation(&population, 0, dummy_rng)
+            .await
+            .context("Failed to record initial generation")?;
+
+        recorder.close().await.context("Failed to close recorder")?;
+
+        Ok::<(), anyhow::Error>(())
+    })?;
 
     println!("✓ Database created: {}", output.display());
     println!("\nSimulation initialized successfully!");

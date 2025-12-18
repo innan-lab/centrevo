@@ -1,27 +1,20 @@
-use centrevo_sim::simulation::FitnessConfig;
-use centrevo_sim::simulation::MutationConfig;
-use centrevo_sim::simulation::RecombinationConfig;
+use centrevo_sim::simulation::Configuration;
+use centrevo_sim::simulation::InitializationConfig;
 use centrevo_sim::simulation::Simulation;
-use centrevo_sim::simulation::SimulationConfig;
-use centrevo_sim::simulation::UniformRepeatStructure;
 
 pub fn print_simulation_parameters(sim: &Simulation) {
-    print_parameters(
-        sim.config(),
-        sim.structure(),
-        sim.mutation(),
-        sim.recombination(),
-        sim.fitness(),
-    );
+    print_parameters(sim.configuration());
 }
 
-pub fn print_parameters(
-    sim_config: &SimulationConfig,
-    structure: Option<&UniformRepeatStructure>,
-    mutation: &MutationConfig,
-    recombination: &RecombinationConfig,
-    fitness: &FitnessConfig,
-) {
+pub fn print_parameters(config: &Configuration) {
+    let sim_config = &config.execution;
+    let mutation = &config.evolution.mutation;
+    let recombination = &config.evolution.recombination;
+    let fitness = &config.evolution.fitness;
+    let structure = match &config.initialization {
+        InitializationConfig::Generate { structure, .. } => Some(structure),
+        InitializationConfig::Load { .. } => None,
+    };
     println!("\n📋 Simulation Configuration");
     println!(
         "  • Population Size: {} [-n, --population-size]",

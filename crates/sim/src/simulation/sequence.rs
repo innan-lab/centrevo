@@ -8,7 +8,10 @@ use crate::base::{Nucleotide, Sequence};
 use crate::errors::InitializationError;
 use crate::genome::repeat_map::RepeatMap;
 use crate::genome::{Chromosome, Haplotype, Individual};
-use crate::simulation::{GenerationMode, SequenceConfig, SequenceSource, UniformRepeatStructure};
+use crate::simulation::{
+    GenerationMode, InitializationConfig, SequenceSource, UniformRepeatStructure,
+};
+use centrevo_codec::CodecStrategy;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -330,6 +333,7 @@ pub fn load_from_database(
     db_path: impl AsRef<Path>,
     sim_id: &str,
     generation: Option<usize>,
+    codec: &CodecStrategy,
 ) -> Result<Vec<SequenceEntryWithIndices>, InitializationError> {
     use crate::storage::QueryBuilder;
 
@@ -369,11 +373,11 @@ pub fn load_from_database(
     // For multi-chromosome, database would need to be extended
     for (ind_idx, snapshot) in snapshots.iter().enumerate() {
         // Convert Vec<u8> indices to String
-        // Decode sequences (they are stored as BitPackedRS)
-        let decoded_hap0 = centrevo_codec::CodecStrategy::BitPackedRS
+        // Decode sequences
+        let decoded_hap0 = codec
             .decode(&snapshot.haplotype1_seq)
             .map_err(|e| InitializationError::Database(format!("Failed to decode seq: {e}")))?;
-        let decoded_hap1 = centrevo_codec::CodecStrategy::BitPackedRS
+        let decoded_hap1 = codec
             .decode(&snapshot.haplotype2_seq)
             .map_err(|e| InitializationError::Database(format!("Failed to decode seq: {e}")))?;
 
@@ -403,6 +407,50 @@ pub fn load_from_database(
     }
 
     Ok(entries)
+}
+
+/// Load individuals directly from database, preserving RepeatMaps.
+pub fn load_individuals_from_database(
+    db_path: impl AsRef<Path>,
+    sim_id: &str,
+    generation: Option<usize>,
+    codec: &CodecStrategy,
+) -> Result<Vec<Individual>, InitializationError> {
+    use crate::storage::QueryBuilder;
+
+    let query = QueryBuilder::new(db_path.as_ref())
+        .map_err(|e| InitializationError::Database(format!("Failed to open database: {e}")))?;
+
+    // Determine target generation
+    let target_gen = match generation {
+        Some(g) => g,
+        None => {
+            let recorded_gens = query.get_recorded_generations(sim_id).map_err(|e| {
+                InitializationError::Database(format!("Failed to get generations: {e}"))
+            })?;
+            *recorded_gens
+                .last()
+                .ok_or_else(|| InitializationError::Database("No generations found".to_string()))?
+        }
+    };
+
+    // Load snapshots
+    let snapshots = query
+        .get_generation(sim_id, target_gen)
+        .map_err(|e| InitializationError::Database(format!("Failed to load generation: {e}")))?;
+
+    query.close().ok();
+
+    // Convert snapshots to Individuals
+    let mut individuals = Vec::with_capacity(snapshots.len());
+    for snapshot in snapshots {
+        let ind = snapshot.to_individual(codec).map_err(|e| {
+            InitializationError::Database(format!("Failed to reconstruct individual: {e}"))
+        })?;
+        individuals.push(ind);
+    }
+
+    Ok(individuals)
 }
 
 /// Validate that sequences match the expected parameters.
@@ -590,32 +638,22 @@ pub fn create_individuals_from_sequences(
 /// High-level function to initialize from any sequence source.
 /// High-level function to initialize from configuration.
 pub fn initialize(
-    config: &SequenceConfig,
+    config: &InitializationConfig,
     population_size: usize,
     rng: &mut impl Rng,
+    codec: &CodecStrategy,
 ) -> Result<Vec<Individual>, InitializationError> {
     match config {
-        SequenceConfig::Generate { structure, mode } => match mode {
+        InitializationConfig::Generate { structure, mode } => match mode {
             GenerationMode::Random => create_random_population(structure, population_size, rng)
                 .map_err(InitializationError::Validation),
             GenerationMode::Uniform => create_uniform_population(structure, population_size)
                 .map_err(InitializationError::Validation),
         },
-        SequenceConfig::Load { source, structure } => match source {
+        InitializationConfig::Load { source } => match source {
             SequenceSource::Fasta { path, bed_path } => {
                 let entries = parse_fasta(path)?;
-                if let Some(bed_path) = bed_path {
-                    // Parse BED to get maps for each chromosome
-                    initialize_from_fasta_bed(entries, bed_path.clone(), population_size)
-                } else if let Some(structure) = structure {
-                    // Uniform structure
-                    validate_sequences(&entries, structure, population_size)?;
-                    create_individuals_from_sequences(entries, structure, population_size)
-                } else {
-                    Err(InitializationError::Validation(
-                        "FASTA input requires either BED path or uniform structure".to_string(),
-                    ))
-                }
+                initialize_from_fasta_bed(entries, bed_path.clone(), population_size)
             }
             SequenceSource::FormattedString {
                 sequence,
@@ -627,31 +665,15 @@ pub fn initialize(
                 *ru_delim,
                 population_size,
             ),
-            SequenceSource::Json(input) => {
-                let entries = parse_json(input)?;
-                if let Some(structure) = structure {
-                    validate_sequences(&entries, structure, population_size)?;
-                    create_individuals_from_sequences(entries, structure, population_size)
-                } else {
-                    Err(InitializationError::Validation(
-                        "JSON input requires uniform structure to be provided".to_string(),
-                    ))
-                }
-            }
+
             SequenceSource::Database {
                 path,
                 sim_id,
                 generation,
             } => {
-                let entries = load_from_database(path, sim_id, *generation)?;
-                if let Some(structure) = structure {
-                    validate_sequences(&entries, structure, population_size)?;
-                    create_individuals_from_sequences(entries, structure, population_size)
-                } else {
-                    Err(InitializationError::Validation(
-                        "Database input requires uniform structure (for now)".to_string(),
-                    ))
-                }
+                // Use the new loader that preserves maps and skips structure validation
+                // This allows resuming evolved populations without strict structure checks
+                load_individuals_from_database(path, sim_id, *generation, codec)
             }
         },
     }

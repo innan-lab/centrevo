@@ -1,8 +1,8 @@
 //! Asynchronous recorder with compression and buffering.
 
 use crate::errors::DatabaseError;
-use crate::simulation::{Population, SimulationConfig};
-use crate::storage::types::{IndividualSnapshot, SimulationSnapshot};
+use crate::simulation::{Configuration, ExecutionConfig, Population};
+use crate::storage::types::IndividualSnapshot;
 use centrevo_codec::CodecStrategy;
 use rusqlite::{Connection, params};
 use std::path::{Path, PathBuf};
@@ -14,9 +14,9 @@ use tokio::task::JoinHandle;
 #[derive(Debug)]
 enum RecorderMessage {
     /// Record simulation metadata.
-    Metadata { config: SimulationConfig },
+    Metadata { config: ExecutionConfig },
     /// Record full simulation configuration.
-    FullConfig { snapshot: SimulationSnapshot },
+    FullConfig { config: Configuration },
     /// Record a generation snapshot.
     Snapshot {
         generation: usize,
@@ -231,7 +231,7 @@ impl AsyncRecorder {
         Ok(())
     }
 
-    pub async fn record_metadata(&self, config: &SimulationConfig) -> Result<(), DatabaseError> {
+    pub async fn record_metadata(&self, config: &ExecutionConfig) -> Result<(), DatabaseError> {
         self.tx
             .send(RecorderMessage::Metadata {
                 config: config.clone(),
@@ -240,13 +240,14 @@ impl AsyncRecorder {
             .map_err(|_| DatabaseError::Insert("Recorder task died".to_string()))
     }
 
+    /// Record the full simulation configuration.
     pub async fn record_full_config(
         &self,
-        snapshot: &SimulationSnapshot,
+        config: &crate::simulation::Configuration,
     ) -> Result<(), DatabaseError> {
         self.tx
             .send(RecorderMessage::FullConfig {
-                snapshot: snapshot.clone(),
+                config: config.clone(),
             })
             .await
             .map_err(|_| DatabaseError::Insert("Recorder task died".to_string()))
@@ -376,8 +377,8 @@ async fn background_recorder_task(
                     ],
                 ).map_err(|e| DatabaseError::Insert(e.to_string()))?;
             }
-            RecorderMessage::FullConfig { snapshot } => {
-                let config_json = serde_json::to_string(&snapshot).map_err(|e| {
+            RecorderMessage::FullConfig { config } => {
+                let config_json = serde_json::to_string(&config).map_err(|e| {
                     DatabaseError::Insert(format!("Failed to serialize config: {e}"))
                 })?;
                 let start_time = std::time::SystemTime::now()
@@ -392,11 +393,11 @@ async fn background_recorder_task(
                     params![
                         sim_id.as_ref(),
                         start_time,
-                        snapshot.config.population_size,
-                        snapshot.config.total_generations,
+                        config.execution.population_size,
+                        config.execution.total_generations,
                         0.0,
                         0.0,
-                        serde_json::to_string(&snapshot.config).unwrap_or_else(|_| "{}".to_string()),
+                        serde_json::to_string(&config.execution).unwrap_or_else(|_| "{}".to_string()),
                         config_json,
                     ],
                 ).map_err(|e| DatabaseError::Insert(e.to_string()))?;

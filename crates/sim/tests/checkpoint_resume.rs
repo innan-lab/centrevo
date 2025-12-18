@@ -2,10 +2,10 @@
 
 use centrevo_sim::base::Nucleotide;
 use centrevo_sim::simulation::{
-    FitnessConfig, MutationConfig, RecombinationConfig, Simulation, SimulationConfig,
-    UniformRepeatStructure,
+    Configuration, EvolutionConfig, ExecutionConfig, FitnessConfig, GenerationMode,
+    InitializationConfig, MutationConfig, RecombinationConfig, Simulation, UniformRepeatStructure,
 };
-use centrevo_sim::storage::{AsyncRecorder, BufferConfig, RecordingStrategy, SimulationSnapshot};
+use centrevo_sim::storage::{AsyncRecorder, BufferConfig, RecordingStrategy};
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
@@ -38,31 +38,30 @@ fn test_checkpoint_and_resume_basic() {
     let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
-    let config = SimulationConfig::new(10, 100, Some(42)); // 100 generations
+    let config = ExecutionConfig::new(10, 100, Some(42)); // 100 generations
 
     let sim_id = "test_sim";
     let rt = Runtime::new().unwrap();
 
     // Part 1: Run simulation for first 50 generations with checkpoints
     rt.block_on(async {
-        #[allow(deprecated)]
-        let mut sim = Simulation::new(
-            structure.clone(),
-            mutation.clone(),
-            recombination.clone(),
-            fitness.clone(),
-            config.clone(),
-        )
-        .unwrap();
+        let sim_config = Configuration {
+            execution: config.clone(),
+            evolution: EvolutionConfig {
+                mutation: mutation.clone(),
+                recombination: recombination.clone(),
+                fitness: fitness.clone(),
+            },
+            initialization: InitializationConfig::Generate {
+                structure: structure.clone(),
+                mode: GenerationMode::Uniform,
+            },
+        };
+        let mut sim = Simulation::new(sim_config.clone()).unwrap();
 
         // Setup recorder with full config
-        let snapshot = SimulationSnapshot {
-            structure: structure.clone(),
-            mutation: mutation.clone(),
-            recombination: recombination.clone(),
-            fitness: fitness.clone(),
-            config: config.clone(),
-        };
+        // Setup recorder with full config
+        // Use sim_config directly
 
         let strategy = RecordingStrategy::EveryN(10);
         let buffer_config = BufferConfig {
@@ -78,7 +77,7 @@ fn test_checkpoint_and_resume_basic() {
         )
         .unwrap();
 
-        recorder.record_full_config(&snapshot).await.unwrap();
+        recorder.record_full_config(&sim_config).await.unwrap();
 
         // Run first 50 generations
         for generation in 1..=50 {
@@ -215,7 +214,7 @@ fn test_resume_multiple_times() {
     let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
-    let config = SimulationConfig::new(5, 100, Some(123));
+    let config = ExecutionConfig::new(5, 100, Some(123));
 
     let sim_id = "multi_resume_sim";
     let rt = Runtime::new().unwrap();
@@ -227,30 +226,29 @@ fn test_resume_multiple_times() {
         rt.block_on(async {
             let mut sim = if i == 0 {
                 // First run: create new simulation
-                #[allow(deprecated)]
-                let mut sim = Simulation::new(
-                    structure.clone(),
-                    mutation.clone(),
-                    recombination.clone(),
-                    fitness.clone(),
-                    config.clone(),
-                )
-                .unwrap();
+                let sim_config = Configuration {
+                    execution: config.clone(),
+                    evolution: EvolutionConfig {
+                        mutation: mutation.clone(),
+                        recombination: recombination.clone(),
+                        fitness: fitness.clone(),
+                    },
+                    initialization: InitializationConfig::Generate {
+                        structure: structure.clone(),
+                        mode: GenerationMode::Uniform,
+                    },
+                };
+                let mut sim = Simulation::new(sim_config.clone()).unwrap();
 
                 // Record full config
-                let snapshot = SimulationSnapshot {
-                    structure: structure.clone(),
-                    mutation: mutation.clone(),
-                    recombination: recombination.clone(),
-                    fitness: fitness.clone(),
-                    config: config.clone(),
-                };
+                // Record full config
+                // Use sim_config directly
 
                 let buffer_config = BufferConfig {
                     compression_level: 0,
                     ..Default::default()
                 };
-                let mut recorder = AsyncRecorder::new(
+                let recorder = AsyncRecorder::new(
                     &db_path,
                     sim_id,
                     buffer_config,
@@ -258,7 +256,7 @@ fn test_resume_multiple_times() {
                 )
                 .unwrap();
 
-                recorder.record_full_config(&snapshot).await.unwrap();
+                recorder.record_full_config(&sim_config).await.unwrap();
                 recorder.close().await.unwrap();
 
                 sim
@@ -321,19 +319,23 @@ fn test_resume_preserves_rng_state() {
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
     let seed = 999u64;
-    let config = SimulationConfig::new(10, 100, Some(seed));
+    let config = ExecutionConfig::new(10, 100, Some(seed));
 
     // Simulation 1: Run straight through to gen 100
     let final_pop_continuous = {
-        #[allow(deprecated)]
-        let mut sim = Simulation::new(
-            structure.clone(),
-            mutation.clone(),
-            recombination.clone(),
-            fitness.clone(),
-            config.clone(),
-        )
-        .unwrap();
+        let sim_config = Configuration {
+            execution: config.clone(),
+            evolution: EvolutionConfig {
+                mutation: mutation.clone(),
+                recombination: recombination.clone(),
+                fitness: fitness.clone(),
+            },
+            initialization: InitializationConfig::Generate {
+                structure: structure.clone(),
+                mode: GenerationMode::Uniform,
+            },
+        };
+        let mut sim = Simulation::new(sim_config).unwrap();
 
         for _generation in 1..=100 {
             sim.step().unwrap();
@@ -355,23 +357,19 @@ fn test_resume_preserves_rng_state() {
     let final_pop_resumed = {
         // Part 1: Run to gen 50
         rt.block_on(async {
-            #[allow(deprecated)]
-            let mut sim = Simulation::new(
-                structure.clone(),
-                mutation.clone(),
-                recombination.clone(),
-                fitness.clone(),
-                config.clone(),
-            )
-            .unwrap();
-
-            let snapshot = SimulationSnapshot {
-                structure: structure.clone(),
-                mutation: mutation.clone(),
-                recombination: recombination.clone(),
-                fitness: fitness.clone(),
-                config: config.clone(),
+            let sim_config = Configuration {
+                execution: config.clone(),
+                evolution: EvolutionConfig {
+                    mutation: mutation.clone(),
+                    recombination: recombination.clone(),
+                    fitness: fitness.clone(),
+                },
+                initialization: InitializationConfig::Generate {
+                    structure: structure.clone(),
+                    mode: GenerationMode::Uniform,
+                },
             };
+            let mut sim = Simulation::new(sim_config.clone()).unwrap();
 
             let strategy = RecordingStrategy::EveryN(50);
             let buffer_config = BufferConfig {
@@ -387,7 +385,7 @@ fn test_resume_preserves_rng_state() {
             )
             .unwrap();
 
-            recorder.record_full_config(&snapshot).await.unwrap();
+            recorder.record_full_config(&sim_config).await.unwrap();
 
             for generation in 1..=50 {
                 sim.step().unwrap();
@@ -467,7 +465,7 @@ fn test_resume_with_wrong_sim_id_fails() {
     let mutation = MutationConfig::uniform(0.001).unwrap();
     let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
     let fitness = FitnessConfig::neutral();
-    let config = SimulationConfig::new(5, 50, Some(42));
+    let config = ExecutionConfig::new(5, 50, Some(42));
 
     let correct_sim_id = "correct_sim";
     let wrong_sim_id = "wrong_sim";
@@ -475,23 +473,19 @@ fn test_resume_with_wrong_sim_id_fails() {
 
     // Run and record with correct_sim_id
     rt.block_on(async {
-        #[allow(deprecated)]
-        let mut sim = Simulation::new(
-            structure.clone(),
-            mutation.clone(),
-            recombination.clone(),
-            fitness.clone(),
-            config.clone(),
-        )
-        .unwrap();
-
-        let snapshot = SimulationSnapshot {
-            structure,
-            mutation,
-            recombination,
-            fitness,
-            config,
+        let sim_config = Configuration {
+            execution: config.clone(),
+            evolution: EvolutionConfig {
+                mutation: mutation.clone(),
+                recombination: recombination.clone(),
+                fitness: fitness.clone(),
+            },
+            initialization: InitializationConfig::Generate {
+                structure: structure.clone(),
+                mode: GenerationMode::Uniform,
+            },
         };
+        let mut sim = Simulation::new(sim_config.clone()).unwrap();
 
         let strategy = RecordingStrategy::EveryN(10);
         let buffer_config = BufferConfig {
@@ -507,7 +501,7 @@ fn test_resume_with_wrong_sim_id_fails() {
         )
         .unwrap();
 
-        recorder.record_full_config(&snapshot).await.unwrap();
+        recorder.record_full_config(&sim_config).await.unwrap();
 
         for generation in 1..=20 {
             sim.step().unwrap();

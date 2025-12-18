@@ -1,23 +1,8 @@
-//! Shared types for storage.
-
 use crate::base::FitnessValue;
 use crate::genome::Individual;
-use crate::simulation::{
-    FitnessConfig, MutationConfig, Population, RecombinationConfig, SimulationConfig,
-    UniformRepeatStructure,
-};
+use crate::simulation::Population;
 use centrevo_codec::CodecStrategy;
 use serde::{Deserialize, Serialize};
-
-/// Complete simulation configuration for resumability.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SimulationSnapshot {
-    pub structure: UniformRepeatStructure,
-    pub mutation: MutationConfig,
-    pub recombination: RecombinationConfig,
-    pub fitness: FitnessConfig,
-    pub config: SimulationConfig,
-}
 
 /// Recording strategy for when to persist simulation state.
 #[derive(Debug, Clone, Serialize, Deserialize)]

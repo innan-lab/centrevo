@@ -353,7 +353,7 @@ impl QueryBuilder {
     pub fn get_full_config(
         &self,
         sim_id: &str,
-    ) -> Result<crate::storage::SimulationSnapshot, DatabaseError> {
+    ) -> Result<crate::simulation::Configuration, DatabaseError> {
         let mut stmt = self
             .db
             .connection()
@@ -364,10 +364,10 @@ impl QueryBuilder {
             .query_row(params![sim_id], |row| row.get(0))
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        let snapshot: crate::storage::SimulationSnapshot = serde_json::from_str(&config_json)
+        let config: crate::simulation::Configuration = serde_json::from_str(&config_json)
             .map_err(|e| DatabaseError::Query(format!("Failed to parse config: {e}")))?;
 
-        Ok(snapshot)
+        Ok(config)
     }
 
     /// Close the query builder.
@@ -403,7 +403,7 @@ mod tests {
     use super::*;
     use crate::base::{FitnessValue, Nucleotide};
     use crate::genome::{Chromosome, Haplotype, Individual};
-    use crate::simulation::{Population, SimulationConfig};
+    use crate::simulation::{ExecutionConfig, Population};
     use crate::storage::Recorder;
 
     fn create_test_individual(id: &str, length: usize) -> Individual {
@@ -428,11 +428,11 @@ mod tests {
         Population::new("test_pop", individuals)
     }
 
-    fn create_test_config() -> SimulationConfig {
-        SimulationConfig::new(10, 100, Some(42))
+    fn create_test_config() -> ExecutionConfig {
+        ExecutionConfig::new(10, 100, Some(42))
     }
 
-    async fn setup_test_db(path: &str) -> (Recorder, SimulationConfig) {
+    async fn setup_test_db(path: &str) -> (Recorder, ExecutionConfig) {
         let _ = std::fs::remove_file(path);
         let buffer_config = crate::storage::BufferConfig {
             compression_level: 0,

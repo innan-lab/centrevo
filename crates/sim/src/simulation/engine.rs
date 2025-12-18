@@ -8,8 +8,8 @@ use crate::evolution::RecombinationType;
 
 use crate::genome::{Chromosome, Individual};
 use crate::simulation::{
-    FitnessConfig, GenerationMode, MutationConfig, Population, RecombinationConfig, SequenceConfig,
-    SimulationConfig, UniformRepeatStructure,
+    Configuration, ExecutionConfig, FitnessConfig, InitializationConfig, MutationConfig,
+    Population, RecombinationConfig, SequenceSource, UniformRepeatStructure,
 };
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -20,50 +20,61 @@ use rayon::prelude::*;
 pub struct Simulation {
     /// Current population
     population: Population,
-    /// Repeat structure parameters
-    /// Repeat structure parameters (optional, for metadata/reproducibility)
-    #[allow(dead_code)]
-    structure: Option<UniformRepeatStructure>,
-    /// Mutation configuration
-    mutation: MutationConfig,
-    /// Recombination configuration
-    recombination: RecombinationConfig,
-    /// Fitness configuration
-    fitness: FitnessConfig,
-    /// Simulation configuration
-    config: SimulationConfig,
+    /// Master configuration
+    config: Configuration,
     /// Random number generator (using Xoshiro256++ for better performance)
     rng: Xoshiro256PlusPlus,
 }
 
 impl Simulation {
-    /// Create a new simulation with uniform initial sequences.
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use SimulationBuilder or Simulation::from_sequences instead"
-    )]
-    pub fn new(
-        structure: UniformRepeatStructure,
-        mutation: MutationConfig,
-        recombination: RecombinationConfig,
-        fitness: FitnessConfig,
-        config: SimulationConfig,
-    ) -> Result<Self, String> {
-        // Create initial population with uniform sequences
-        let seq_config = SequenceConfig::Generate {
-            structure: structure.clone(),
-            mode: GenerationMode::Uniform,
+    /// Create a new simulation from configuration.
+    ///
+    /// This allows initializing a simulation with sequences based on the provided configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Master simulation configuration
+    ///
+    /// # Returns
+    ///
+    /// A `Simulation` instance initialized with the provided configuration.
+    pub fn new(config: Configuration) -> Result<Self, String> {
+        // Create RNG from seed or thread_rng
+        let mut rng = if let Some(seed) = config.execution.seed {
+            Xoshiro256PlusPlus::seed_from_u64(seed)
+        } else {
+            Xoshiro256PlusPlus::from_seed(rand::rng().random())
         };
-        Self::from_config(
-            seq_config,
-            Some(structure),
-            mutation,
-            recombination,
-            fitness,
-            config,
+
+        // Initialize individuals from config
+        let mut individuals = crate::simulation::initialize(
+            &config.initialization,
+            config.execution.population_size,
+            &mut rng,
+            &config.execution.codec,
         )
+        .map_err(|e| format!("Failed to initialize from sequences: {e}"))?;
+
+        // Compute fitness for initial population
+        // This ensures the invariant that all individuals have cached fitness
+        Simulation::compute_population_fitness(&mut individuals, &config.evolution.fitness);
+
+        let population = Population::new("pop0", individuals);
+
+        Ok(Self {
+            population,
+            config,
+            rng,
+        })
     }
 
+    /// Helper to compute valid initial fitness for a set of individuals.
+    fn compute_population_fitness(individuals: &mut [Individual], fitness: &FitnessConfig) {
+        individuals.par_iter_mut().for_each(|ind| {
+            let val = fitness.compute_fitness(ind);
+            ind.set_cached_fitness(val);
+        });
+    }
     /// Apply a single recombination `event` to a pair of chromosomes.
     ///
     /// This helper is used by `apply_recombination` and is kept as a separate
@@ -130,81 +141,6 @@ impl Simulation {
         }
     }
 
-    /// Create a new simulation from configuration.
-    ///
-    /// This allows initializing a simulation with sequences from FASTA files,
-    /// JSON data, or a previous simulation database, or generating them.
-    ///
-    /// # Arguments
-    ///
-    /// * `seq_config` - Sequence initialization configuration
-    /// * `structure` - Repeat structure parameters (optional, for metadata)
-    /// * `mutation` - Mutation configuration
-    /// * `recombination` - Recombination configuration
-    /// * `fitness` - Fitness configuration
-    /// * `config` - Simulation configuration
-    ///
-    /// # Returns
-    ///
-    /// A `Simulation` instance initialized with the provided sequences.
-    pub fn from_config(
-        seq_config: SequenceConfig,
-        structure: Option<UniformRepeatStructure>,
-        mutation: MutationConfig,
-        recombination: RecombinationConfig,
-        fitness: FitnessConfig,
-        config: SimulationConfig,
-    ) -> Result<Self, String> {
-        // Create RNG from seed or thread_rng
-        let mut rng = if let Some(seed) = config.seed {
-            Xoshiro256PlusPlus::seed_from_u64(seed)
-        } else {
-            Xoshiro256PlusPlus::from_seed(rand::rng().random())
-        };
-
-        // Initialize individuals from config
-        let mut individuals =
-            crate::simulation::initialize(&seq_config, config.population_size, &mut rng)
-                .map_err(|e| format!("Failed to initialize from sequences: {e}"))?;
-
-        // Compute fitness for initial population
-        // This ensures the invariant that all individuals have cached fitness
-        individuals.par_iter_mut().for_each(|ind| {
-            let mut val = crate::base::FitnessValue::default();
-
-            if let Some(gc) = &fitness.gc_content {
-                use crate::evolution::IndividualFitness;
-                val *= gc.individual_fitness(ind);
-            }
-            if let Some(len) = &fitness.length {
-                use crate::evolution::IndividualFitness;
-                val *= len.individual_fitness(ind);
-            }
-            if let Some(sim) = &fitness.seq_similarity {
-                use crate::evolution::IndividualFitness;
-                val *= sim.individual_fitness(ind);
-            }
-            if let Some(len_sim) = &fitness.length_similarity {
-                use crate::evolution::IndividualFitness;
-                val *= len_sim.individual_fitness(ind);
-            }
-
-            ind.set_cached_fitness(val);
-        });
-
-        let population = Population::new("pop0", individuals);
-
-        Ok(Self {
-            population,
-            structure,
-            mutation,
-            recombination,
-            fitness,
-            config,
-            rng,
-        })
-    }
-
     /// Resume a simulation from a checkpoint in the database.
     ///
     /// This loads the complete simulation state from the last recorded checkpoint,
@@ -228,7 +164,7 @@ impl Simulation {
 
         // Open database for querying
         let query =
-            QueryBuilder::new(db_path).map_err(|e| format!("Failed to open database: {e}"))?;
+            QueryBuilder::new(&db_path).map_err(|e| format!("Failed to open database: {e}"))?;
 
         // Get the latest checkpoint
         let checkpoint = query
@@ -245,96 +181,50 @@ impl Simulation {
         }
 
         // Load complete configuration
-        let snapshot = query
+        // Load complete configuration
+        let mut config = query
             .get_full_config(sim_id)
             .map_err(|e| format!("Failed to load configuration: {e}"))?;
 
-        // Load population state at checkpoint generation
-        let snapshots = query
-            .get_generation(sim_id, checkpoint.generation)
-            .map_err(|e| format!("Failed to load population: {e}"))?;
+        // Adapt initialization config to load from database
+        let db_path_str = db_path.as_ref().to_string_lossy().to_string();
+        config.initialization = InitializationConfig::Load {
+            source: SequenceSource::Database {
+                path: db_path_str,
+                sim_id: sim_id.to_string(),
+                generation: Some(checkpoint.generation),
+            },
+        };
 
-        if snapshots.is_empty() {
-            return Err(format!(
-                "No population data found for generation {generation}",
-                generation = checkpoint.generation
-            ));
-        }
+        // Create simulation instance (loads population via initialize())
+        // Note: We use from_config logic here but we need to advance the population state
+        // correctly after initialization.
+        // Actually, initialize() for Database source will load the individuals.
+        let mut sim = Self::new(config)?;
 
-        // Reconstruct individuals from snapshots
-        let individuals: Result<Vec<_>, String> = snapshots
-            .iter()
-            .map(|snap| snap.to_individual(&snapshot.config.codec))
-            .collect();
-        let individuals = individuals?;
-
-        // Validate population size matches configuration
-        if individuals.len() != snapshot.config.population_size {
-            return Err(format!(
-                "Population size mismatch: config expects {expected}, checkpoint has {actual}",
-                expected = snapshot.config.population_size,
-                actual = individuals.len()
-            ));
-        }
-
-        // Create population with correct generation number
-        let mut population = Population::new(
+        // Override population name to match generation
+        sim.population = Population::new(
             format!("pop_{gen}", gen = checkpoint.generation),
-            individuals,
+            sim.population.individuals().to_vec(),
         );
 
-        // Recompute fitness for restored population
-        // This is critical because:
-        // 1. Older checkpoints might not have cached fitness
-        // 2. We want to ensure fitness matches the current code/config
-        // 3. Our invariant requires all individuals to have cached fitness
-        let fitness_config = &snapshot.fitness;
-        population.individuals_mut().par_iter_mut().for_each(|ind| {
-            let mut val = crate::base::FitnessValue::default();
-
-            if let Some(gc) = &fitness_config.gc_content {
-                use crate::evolution::IndividualFitness;
-                val *= gc.individual_fitness(ind);
-            }
-            if let Some(len) = &fitness_config.length {
-                use crate::evolution::IndividualFitness;
-                val *= len.individual_fitness(ind);
-            }
-            if let Some(sim) = &fitness_config.seq_similarity {
-                use crate::evolution::IndividualFitness;
-                val *= sim.individual_fitness(ind);
-            }
-            if let Some(len_sim) = &fitness_config.length_similarity {
-                use crate::evolution::IndividualFitness;
-                val *= len_sim.individual_fitness(ind);
-            }
-
-            ind.set_cached_fitness(val);
-        });
-
-        // Set generation counter to checkpoint generation
+        // Force set the correct generation
+        // The default new() starts at 0.
         for _ in 0..checkpoint.generation {
-            population.increment_generation();
+            sim.population.increment_generation();
         }
 
         // Restore RNG state
-        let rng = bincode::deserialize(&checkpoint.rng_state)
+        let rng: Xoshiro256PlusPlus = bincode::deserialize(&checkpoint.rng_state)
             .map_err(|e| format!("Failed to restore RNG state: {e}"))?;
+        sim.rng = rng;
 
         // Close query builder
         query
             .close()
             .map_err(|e| format!("Failed to close database: {e}"))?;
 
-        Ok(Self {
-            population,
-            structure: Some(snapshot.structure), // Assuming snapshot still has it, will fix storage later
-            mutation: snapshot.mutation,
-            recombination: snapshot.recombination,
-            fitness: snapshot.fitness,
-            config: snapshot.config,
-            rng,
-        })
+        Ok(sim)
     }
 
     /// Get the current population.
@@ -352,29 +242,43 @@ impl Simulation {
         self.population.generation()
     }
 
-    /// Get reference to simulation configuration.
-    pub fn config(&self) -> &SimulationConfig {
+    /// Get reference to the full master configuration.
+    pub fn configuration(&self) -> &Configuration {
         &self.config
     }
 
+    // Deprecated accessors - kept for compatibility but should be migrated
+    /// Get reference to simulation configuration.
+    pub fn simulation_config(&self) -> &ExecutionConfig {
+        &self.config.execution
+    }
+
     /// Get reference to repeat structure (if available).
-    pub fn structure(&self) -> Option<&UniformRepeatStructure> {
-        self.structure.as_ref()
+    pub fn structure_config(&self) -> Option<&UniformRepeatStructure> {
+        match &self.config.initialization {
+            InitializationConfig::Generate { structure, .. } => Some(structure),
+            InitializationConfig::Load { .. } => None,
+        }
     }
 
     /// Get reference to mutation configuration.
-    pub fn mutation(&self) -> &MutationConfig {
-        &self.mutation
+    pub fn mutation_config(&self) -> &MutationConfig {
+        &self.config.evolution.mutation
     }
 
     /// Get reference to recombination configuration.
-    pub fn recombination(&self) -> &RecombinationConfig {
-        &self.recombination
+    pub fn recombination_config(&self) -> &RecombinationConfig {
+        &self.config.evolution.recombination
     }
 
     /// Get reference to fitness configuration.
-    pub fn fitness(&self) -> &FitnessConfig {
-        &self.fitness
+    pub fn fitness_config(&self) -> &FitnessConfig {
+        &self.config.evolution.fitness
+    }
+
+    /// Get reference to the full master configuration.
+    pub fn config(&self) -> &Configuration {
+        &self.config
     }
 
     /// Get the current RNG state for checkpointing.
@@ -414,14 +318,24 @@ impl Simulation {
         for chr_idx in 0..num_chromosomes {
             if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx)) {
                 // Sample recombination events
-                let mut events = self.recombination.params.sample_events(chr1, chr2, rng);
+                let mut events = self
+                    .config
+                    .evolution
+                    .recombination
+                    .params
+                    .sample_events(chr1, chr2, rng);
 
                 // Process events from right to left (descending position)
                 events.reverse();
 
                 // Apply events
                 for event in events {
-                    Simulation::apply_event_to_pair(&self.recombination.params, chr1, chr2, event)?;
+                    Simulation::apply_event_to_pair(
+                        &self.config.evolution.recombination.params,
+                        chr1,
+                        chr2,
+                        event,
+                    )?;
                 }
             }
         }
@@ -440,10 +354,14 @@ impl Simulation {
             let seq = chr.sequence_mut();
 
             // Apply substitutions settings thread-local RNG
-            self.mutation.substitution.mutate_sequence_sparse(seq, rng);
+            self.config
+                .evolution
+                .mutation
+                .substitution
+                .mutate_sequence_sparse(seq, rng);
 
             // Apply indels if configured
-            if let Some(indel_model) = &self.mutation.indel {
+            if let Some(indel_model) = &self.config.evolution.mutation.indel {
                 indel_model.apply_indels(seq, rng);
             }
         }
@@ -454,96 +372,73 @@ impl Simulation {
         Ok(gamete)
     }
 
-    /// Select parents and generate offspring for the next generation.
-    fn generate_offspring(&mut self) -> Result<Vec<Individual>, String> {
-        // Select parent pairs (using cached fitness from current population)
-        let pairs = self
+    /// Advance simulation by one generation.
+    ///
+    /// The parallel iteration occurs over parent pairs, where each task:
+    /// 1. Generates two gametes (one from each parent via meiosis + mutation)
+    /// 2. Combines gametes to form a new diploid individual
+    /// 3. Computes the individual's fitness based on configured fitness functions
+    pub fn step(&mut self) -> Result<(), String> {
+        // 1. Select parent pairs using cached fitness from current population
+        let parent_pairs = self
             .population
-            .select_parents(&mut self.rng, self.config.population_size);
+            .select_parents(&mut self.rng, self.config.execution.population_size);
 
-        // Pre-allocate generation string
+        // Pre-allocate generation string for offspring IDs
         let gen_str = format!("ind_gen{}_", self.generation() + 1);
 
-        // Generate seeds for each offspring
-        let seeds: Vec<u64> = (0..self.config.population_size)
+        // Generate seeds for parallel offspring generation (ensures reproducibility)
+        let seeds: Vec<u64> = (0..self.config.execution.population_size)
             .map(|_| self.rng.random())
             .collect();
 
-        // Get immutable reference to population for parallel access
+        // Get immutable references for parallel access
         let population = &self.population;
-        let fitness_config = &self.fitness;
+        let fitness_config = &self.config.evolution.fitness;
 
-        // Generate offspring from parent pairs in parallel
-        let offspring: Result<Vec<Individual>, String> = pairs
+        // 2. Generate offspring in parallel: each task processes one parent pair
+        let offspring: Result<Vec<Individual>, String> = parent_pairs
             .par_iter()
             .zip(seeds.par_iter())
             .enumerate()
             .map(|(i, ((parent1_idx, parent2_idx), &seed))| {
+                // Each parallel task gets its own RNG for reproducibility
                 let mut local_rng = Xoshiro256PlusPlus::seed_from_u64(seed);
 
                 let parent1 = population.get(*parent1_idx).unwrap();
                 let parent2 = population.get(*parent2_idx).unwrap();
 
-                // Generate two gametes, one from each parent
+                // Generate two gametes (meiosis + mutation), one from each parent
                 let gamete1 = self.produce_gamete(parent1, &mut local_rng)?;
                 let gamete2 = self.produce_gamete(parent2, &mut local_rng)?;
 
-                // Combine to form new individual
+                // Combine gametes to form new diploid individual
                 let id = format!("{gen_str}{i}");
                 let mut new_ind = Individual::new(id, gamete1, gamete2);
 
                 // Compute intrinsic fitness immediately (born with it)
-                let mut fitness = crate::base::FitnessValue::default();
-
-                // 1. GC Content
-                if let Some(gc) = &fitness_config.gc_content {
-                    use crate::evolution::IndividualFitness;
-                    fitness *= gc.individual_fitness(&new_ind);
-                }
-                // 2. Length
-                if let Some(len_fit) = &fitness_config.length {
-                    use crate::evolution::IndividualFitness;
-                    fitness *= len_fit.individual_fitness(&new_ind);
-                }
-                // 3. Sequence Similarity
-                if let Some(sim) = &fitness_config.seq_similarity {
-                    use crate::evolution::IndividualFitness;
-                    fitness *= sim.individual_fitness(&new_ind);
-                }
-                // 4. Length Similarity
-                if let Some(len_sim) = &fitness_config.length_similarity {
-                    use crate::evolution::IndividualFitness;
-                    fitness *= len_sim.individual_fitness(&new_ind);
-                }
-
+                let fitness = fitness_config.compute_fitness(&new_ind);
                 new_ind.set_cached_fitness(fitness);
 
                 Ok(new_ind)
             })
             .collect();
 
-        offspring
-    }
+        // 3. Collect offspring (Result -> Vec)
+        let offspring = offspring?;
 
-    /// Advance simulation by one generation.
-    pub fn step(&mut self) -> Result<(), String> {
-        // 1. Generate offspring (Selection -> Meiosis/Mutation -> Reproduction)
-        // This includes fitness calculation inside generate_offspring
-        let offspring = self.generate_offspring()?;
-
-        // 2. Replace population with offspring
+        // 4. Replace population with new generation
         self.population.set_individuals(offspring);
-        self.population.increment_generation();
 
-        // 3. (Removed) Update fitness for new population
-        // Fitness is now intrinsic and computed at birth (in generate_offspring)
+        // 5. Increment generation counter
+        self.population.increment_generation();
 
         Ok(())
     }
 
     /// Run simulation for the configured number of generations.
     pub fn run(&mut self) -> Result<(), String> {
-        for _ in 0..self.config.total_generations {
+        for _ in 0..self.config.execution.total_generations {
             self.step()?;
         }
         Ok(())
@@ -563,7 +458,10 @@ mod tests {
     use super::*;
     use crate::base::Nucleotide;
     use crate::evolution::SubstitutionModel;
-    use crate::simulation::SimulationBuilder;
+    use crate::simulation::{
+        Configuration, EvolutionConfig, ExecutionConfig, FitnessConfig, GenerationMode,
+        SimulationBuilder,
+    };
 
     /// Helper function to create a test simulation with standard configuration.
     ///
@@ -586,98 +484,9 @@ mod tests {
             .unwrap()
     }
 
-    #[test]
-    fn test_simulation_new() {
-        let sim = create_test_simulation();
-
-        assert_eq!(sim.population().size(), 10);
-        assert_eq!(sim.generation(), 0);
-    }
-
-    #[test]
-    fn test_simulation_initial_population() {
-        let sim = create_test_simulation();
-
-        // Check that all individuals have the correct structure
-        for individual in sim.population().individuals() {
-            assert_eq!(individual.haplotype1().len(), 1);
-            assert_eq!(individual.haplotype2().len(), 1);
-
-            let chr1 = individual.haplotype1().get(0).unwrap();
-            let chr2 = individual.haplotype2().get(0).unwrap();
-
-            assert_eq!(chr1.len(), 500); // 10 * 5 * 10
-            assert_eq!(chr2.len(), 500);
-        }
-    }
-
-    #[test]
-    fn test_simulation_step() {
-        let mut sim = create_test_simulation();
-
-        assert_eq!(sim.generation(), 0);
-
-        sim.step().unwrap();
-
-        assert_eq!(sim.generation(), 1);
-        assert_eq!(sim.population().size(), 10);
-    }
-
-    #[test]
-    fn test_mutation_config_uniform() {
-        let config = MutationConfig::uniform(0.001).unwrap();
-        // Just check it was created successfully
-        assert!(matches!(config.substitution, SubstitutionModel::Uniform(_)));
-    }
-
-    #[test]
-    fn test_simulation_run_for() {
-        let mut sim = create_test_simulation();
-
-        assert_eq!(sim.generation(), 0);
-
-        sim.run_for(3).unwrap();
-
-        assert_eq!(sim.generation(), 3);
-        assert_eq!(sim.population().size(), 10);
-    }
-
-    #[test]
-    fn test_simulation_run() {
-        let mut sim = create_test_simulation();
-
-        sim.run().unwrap();
-
-        // Should run for configured number of generations (5)
-        assert_eq!(sim.generation(), 5);
-    }
-
-    #[test]
-    fn test_create_uniform_individual() {
-        let sim = SimulationBuilder::new()
-            .population_size(1)
-            .generations(1)
-            .repeat_structure(10, 5, 10)
-            .chromosomes_per_haplotype(2)
-            .init_uniform(Nucleotide::C)
-            .mutation_rate(0.0)
-            .recombination(0.0, 0.0, 0.0)
-            .build()
-            .unwrap();
-
-        let ind = sim.population().get(0).unwrap();
-
-        assert_eq!(ind.id(), "ind_0");
-        assert_eq!(ind.haplotype1().len(), 2);
-        assert_eq!(ind.haplotype2().len(), 2);
-
-        // Check that all bases are C
-        for chr in ind.haplotype1().chromosomes() {
-            for i in 0..chr.len() {
-                assert_eq!(chr.sequence().get(i), Some(Nucleotide::C));
-            }
-        }
-    }
+    // ============================================================================
+    // Tests for private helper methods
+    // ============================================================================
 
     #[test]
     fn test_apply_event_to_pair_gene_conversion_clamps() {
@@ -704,7 +513,7 @@ mod tests {
         };
 
         // Apply via helper — should clamp to 3 and succeed
-        let params = sim.recombination.params.clone();
+        let params = sim.config.evolution.recombination.params.clone();
         Simulation::apply_event_to_pair(&params, &mut donor, &mut recipient, event).unwrap();
 
         assert_eq!(recipient.to_string(), "TAAA");
@@ -732,10 +541,713 @@ mod tests {
             length: 2,
         };
 
-        let params = sim.recombination.params.clone();
+        let params = sim.config.evolution.recombination.params.clone();
         Simulation::apply_event_to_pair(&params, &mut donor, &mut recipient, event).unwrap();
 
         // No changes to recipient - still TTTT
         assert_eq!(recipient.to_string(), "TTTT");
+    }
+
+    // ============================================================================
+    // Tests for from_config
+    // ============================================================================
+
+    #[test]
+    fn test_from_config_creates_simulation() {
+        let sim = create_test_simulation();
+
+        assert_eq!(sim.population().size(), 10);
+        assert_eq!(sim.generation(), 0);
+    }
+
+    #[test]
+    fn test_from_config_creates_correct_initial_population_structure() {
+        let sim = create_test_simulation();
+
+        // Check that all individuals have the correct structure
+        for individual in sim.population().individuals() {
+            assert_eq!(individual.haplotype1().len(), 1);
+            assert_eq!(individual.haplotype2().len(), 1);
+
+            let chr1 = individual.haplotype1().get(0).unwrap();
+            let chr2 = individual.haplotype2().get(0).unwrap();
+
+            assert_eq!(chr1.len(), 500); // 10 * 5 * 10
+            assert_eq!(chr2.len(), 500);
+        }
+    }
+
+    #[test]
+    fn test_from_config_with_uniform_initialization() {
+        let sim = SimulationBuilder::new()
+            .population_size(1)
+            .generations(1)
+            .repeat_structure(10, 5, 10)
+            .chromosomes_per_haplotype(2)
+            .init_uniform(Nucleotide::C)
+            .mutation_rate(0.0)
+            .recombination(0.0, 0.0, 0.0)
+            .build()
+            .unwrap();
+
+        let ind = sim.population().get(0).unwrap();
+
+        assert_eq!(ind.id(), "ind_0");
+        assert_eq!(ind.haplotype1().len(), 2);
+        assert_eq!(ind.haplotype2().len(), 2);
+
+        // Check that all bases are C
+        for chr in ind.haplotype1().chromosomes() {
+            for i in 0..chr.len() {
+                assert_eq!(chr.sequence().get(i), Some(Nucleotide::C));
+            }
+        }
+    }
+
+    #[test]
+    fn test_from_config_golden_path() {
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 5, 10, 20, 1);
+        let seq_config = InitializationConfig::Generate {
+            structure: structure.clone(),
+            mode: GenerationMode::Uniform,
+        };
+        let mutation = MutationConfig::uniform(0.001).unwrap();
+        let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
+        let fitness = FitnessConfig::neutral();
+        let config = ExecutionConfig::new(100, 10, Some(123));
+
+        let evolution = crate::simulation::EvolutionConfig {
+            mutation,
+            recombination,
+            fitness,
+        };
+
+        let configuration = Configuration {
+            execution: config,
+            evolution,
+            initialization: seq_config,
+        };
+
+        let sim = Simulation::new(configuration).unwrap();
+
+        assert_eq!(sim.population().size(), 100);
+        assert_eq!(sim.generation(), 0);
+        assert_eq!(sim.simulation_config().population_size, 100);
+        assert_eq!(sim.simulation_config().total_generations, 10);
+    }
+
+    #[test]
+    fn test_from_config_with_seed_is_reproducible() {
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 5, 10, 20, 1);
+        let seq_config1 = InitializationConfig::Generate {
+            structure: structure.clone(),
+            mode: GenerationMode::Uniform,
+        };
+        let seq_config2 = InitializationConfig::Generate {
+            structure: structure.clone(),
+            mode: GenerationMode::Uniform,
+        };
+        let mutation1 = MutationConfig::uniform(0.001).unwrap();
+        let mutation2 = MutationConfig::uniform(0.001).unwrap();
+        let recombination1 = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
+        let recombination2 = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
+        let fitness1 = FitnessConfig::neutral();
+        let fitness2 = FitnessConfig::neutral();
+        let config1 = ExecutionConfig::new(10, 5, Some(999));
+        let config2 = ExecutionConfig::new(10, 5, Some(999));
+
+        let sim1 = Simulation::new(Configuration {
+            execution: config1,
+            evolution: crate::simulation::EvolutionConfig {
+                mutation: mutation1,
+                recombination: recombination1,
+                fitness: fitness1,
+            },
+            initialization: seq_config1,
+        })
+        .unwrap();
+
+        let sim2 = Simulation::new(Configuration {
+            execution: config2,
+            evolution: crate::simulation::EvolutionConfig {
+                mutation: mutation2,
+                recombination: recombination2,
+                fitness: fitness2,
+            },
+            initialization: seq_config2,
+        })
+        .unwrap();
+
+        // Check that initial populations are identical
+        for i in 0..10 {
+            let ind1 = sim1.population().get(i).unwrap();
+            let ind2 = sim2.population().get(i).unwrap();
+
+            assert_eq!(
+                ind1.haplotype1().get(0).unwrap().sequence().to_string(),
+                ind2.haplotype1().get(0).unwrap().sequence().to_string()
+            );
+        }
+    }
+
+    #[test]
+    fn test_from_config_different_seeds_produce_different_populations() {
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 5, 10, 20, 1);
+        let seq_config1 = InitializationConfig::Generate {
+            structure: structure.clone(),
+            mode: GenerationMode::Random,
+        };
+        let seq_config2 = InitializationConfig::Generate {
+            structure: structure.clone(),
+            mode: GenerationMode::Random,
+        };
+        let mutation1 = MutationConfig::uniform(0.001).unwrap();
+        let mutation2 = MutationConfig::uniform(0.001).unwrap();
+        let recombination1 = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
+        let recombination2 = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
+        let fitness1 = FitnessConfig::neutral();
+        let fitness2 = FitnessConfig::neutral();
+        let config1 = ExecutionConfig::new(10, 5, Some(111));
+        let config2 = ExecutionConfig::new(10, 5, Some(222));
+
+        let sim1 = Simulation::new(Configuration {
+            execution: config1,
+            evolution: crate::simulation::EvolutionConfig {
+                mutation: mutation1,
+                recombination: recombination1,
+                fitness: fitness1,
+            },
+            initialization: seq_config1,
+        })
+        .unwrap();
+
+        let sim2 = Simulation::new(Configuration {
+            execution: config2,
+            evolution: crate::simulation::EvolutionConfig {
+                mutation: mutation2,
+                recombination: recombination2,
+                fitness: fitness2,
+            },
+            initialization: seq_config2,
+        })
+        .unwrap();
+
+        // Check that at least one individual is different
+        let mut found_difference = false;
+        for i in 0..10 {
+            let ind1 = sim1.population().get(i).unwrap();
+            let ind2 = sim2.population().get(i).unwrap();
+
+            if ind1.haplotype1().get(0).unwrap().sequence().to_string()
+                != ind2.haplotype1().get(0).unwrap().sequence().to_string()
+            {
+                found_difference = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_difference,
+            "Different seeds should produce different populations"
+        );
+    }
+
+    #[test]
+    fn test_from_config_computes_initial_fitness() {
+        use crate::evolution::GCContentFitness;
+
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 5, 10, 20, 1);
+        let seq_config = InitializationConfig::Generate {
+            structure: structure.clone(),
+            mode: GenerationMode::Random,
+        };
+        let mutation = MutationConfig::uniform(0.0).unwrap();
+        let recombination = RecombinationConfig::standard(0.0, 0.0, 0.0).unwrap();
+
+        // Create fitness config with GC content selection
+        let gc_fitness = GCContentFitness::new(0.5, 1.0).unwrap();
+        let fitness = FitnessConfig::new(Some(gc_fitness), None, None, None);
+
+        let execution = ExecutionConfig::new(10, 5, Some(42));
+
+        let config = Configuration {
+            execution,
+            evolution: EvolutionConfig {
+                mutation,
+                recombination,
+                fitness,
+            },
+            initialization: seq_config,
+        };
+
+        let sim = Simulation::new(config).unwrap();
+
+        // All individuals should have fitness computed
+        for ind in sim.population().individuals() {
+            assert!(*ind.cached_fitness().unwrap_or_default() > 0.0);
+        }
+    }
+
+    // ============================================================================
+    // Tests for population accessors
+    // ============================================================================
+
+    #[test]
+    fn test_population_returns_current_population() {
+        let sim = create_test_simulation();
+        let pop = sim.population();
+
+        assert_eq!(pop.size(), 10);
+        assert_eq!(pop.generation(), 0);
+    }
+
+    #[test]
+    fn test_population_mut_allows_modification() {
+        let mut sim = create_test_simulation();
+
+        // Get mutable reference and verify we can access it
+        let pop_mut = sim.population_mut();
+        assert_eq!(pop_mut.size(), 10);
+
+        // Verify the changes are reflected
+        assert_eq!(sim.population().size(), 10);
+    }
+
+    #[test]
+    fn test_generation_tracks_correctly() {
+        let mut sim = create_test_simulation();
+
+        assert_eq!(sim.generation(), 0);
+
+        sim.step().unwrap();
+        assert_eq!(sim.generation(), 1);
+
+        sim.step().unwrap();
+        assert_eq!(sim.generation(), 2);
+
+        sim.run_for(3).unwrap();
+        assert_eq!(sim.generation(), 5);
+    }
+
+    // ============================================================================
+    // Tests for configuration getters
+    // ============================================================================
+
+    #[test]
+    fn test_simulation_config_getter() {
+        let sim = create_test_simulation();
+        let config = sim.simulation_config();
+
+        assert_eq!(config.population_size, 10);
+        assert_eq!(config.total_generations, 5);
+        assert_eq!(config.seed, Some(42));
+    }
+
+    #[test]
+    fn test_structure_config_getter() {
+        let sim = create_test_simulation();
+        let structure = sim.structure_config();
+
+        assert!(structure.is_some());
+        let s = structure.unwrap();
+        assert_eq!(s.ru_length, 10);
+        assert_eq!(s.rus_per_hor, 5);
+        assert_eq!(s.hors_per_chr, 10);
+    }
+
+    #[test]
+    fn test_mutation_config_getter() {
+        let sim = create_test_simulation();
+        let mutation = sim.mutation_config();
+
+        assert!(matches!(
+            mutation.substitution,
+            SubstitutionModel::Uniform(_)
+        ));
+    }
+
+    #[test]
+    fn test_recombination_config_getter() {
+        let sim = create_test_simulation();
+        let _recombination = sim.recombination_config();
+
+        // Just verify we can access the config
+        // RecombinationConfig has a params field which is a RecombinationModel
+    }
+
+    #[test]
+    fn test_fitness_config_getter() {
+        let sim = create_test_simulation();
+        let fitness = sim.fitness_config();
+
+        // Test simulation uses neutral fitness
+        assert!(fitness.is_neutral());
+    }
+
+    // ============================================================================
+    // Tests for RNG state serialization
+    // ============================================================================
+
+    #[test]
+    fn test_rng_state_bytes_can_be_serialized() {
+        let sim = create_test_simulation();
+        let state = sim.rng_state_bytes();
+
+        // Should return non-empty bytes
+        assert!(!state.is_empty());
+    }
+
+    #[test]
+    fn test_set_rng_from_bytes_golden_path() {
+        let mut sim1 = create_test_simulation();
+        let mut sim2 = create_test_simulation();
+
+        // Capture sim1's initial RNG state
+        let state = sim1.rng_state_bytes();
+
+        // Set sim2's RNG to match sim1
+        sim2.set_rng_from_bytes(&state).unwrap();
+
+        // Now both should produce same random sequences when stepped
+        sim1.step().unwrap();
+        sim2.step().unwrap();
+
+        // Check that populations evolved similarly (same size and generation)
+        assert_eq!(sim1.population().size(), sim2.population().size());
+        assert_eq!(sim1.generation(), sim2.generation());
+    }
+
+    #[test]
+    fn test_set_rng_from_bytes_invalid_data_fails() {
+        let mut sim = create_test_simulation();
+
+        // Try to set RNG state with invalid bytes
+        let invalid_bytes = vec![1, 2, 3, 4, 5];
+        let result = sim.set_rng_from_bytes(&invalid_bytes);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to deserialize"));
+    }
+
+    #[test]
+    fn test_set_rng_from_bytes_empty_data_fails() {
+        let mut sim = create_test_simulation();
+
+        let empty_bytes = vec![];
+        let result = sim.set_rng_from_bytes(&empty_bytes);
+
+        assert!(result.is_err());
+    }
+
+    // ============================================================================
+    // Tests for step
+    // ============================================================================
+
+    #[test]
+    fn test_step_advances_one_generation() {
+        let mut sim = create_test_simulation();
+
+        assert_eq!(sim.generation(), 0);
+
+        sim.step().unwrap();
+
+        assert_eq!(sim.generation(), 1);
+        assert_eq!(sim.population().size(), 10);
+    }
+
+    #[test]
+    fn test_step_maintains_population_size() {
+        let mut sim = create_test_simulation();
+        let initial_size = sim.population().size();
+
+        for _ in 0..10 {
+            sim.step().unwrap();
+            assert_eq!(sim.population().size(), initial_size);
+        }
+    }
+
+    #[test]
+    fn test_step_increments_generation() {
+        let mut sim = create_test_simulation();
+
+        for i in 0..5 {
+            assert_eq!(sim.generation(), i);
+            sim.step().unwrap();
+            assert_eq!(sim.generation(), i + 1);
+        }
+    }
+
+    #[test]
+    fn test_step_produces_new_individuals() {
+        let mut sim = create_test_simulation();
+
+        let gen0_id = sim.population().get(0).unwrap().id().to_string();
+
+        sim.step().unwrap();
+
+        let gen1_id = sim.population().get(0).unwrap().id().to_string();
+
+        // IDs should be different (gen0 vs gen1)
+        assert_ne!(gen0_id, gen1_id);
+        assert!(gen1_id.contains("gen1"));
+    }
+
+    #[test]
+    fn test_step_with_mutation_changes_sequences() {
+        let mut sim = SimulationBuilder::new()
+            .population_size(10)
+            .generations(5)
+            .repeat_structure(10, 10, 10)
+            .init_uniform(Nucleotide::A)
+            .mutation_rate(0.1) // High mutation rate
+            .recombination(0.0, 0.0, 0.0)
+            .seed(42)
+            .build()
+            .unwrap();
+
+        let gen0_seq = sim
+            .population()
+            .get(0)
+            .unwrap()
+            .haplotype1()
+            .get(0)
+            .unwrap()
+            .sequence()
+            .to_string();
+
+        sim.step().unwrap();
+
+        let gen1_seq = sim
+            .population()
+            .get(0)
+            .unwrap()
+            .haplotype1()
+            .get(0)
+            .unwrap()
+            .sequence()
+            .to_string();
+
+        // With high mutation rate, sequences should differ
+        assert_ne!(gen0_seq, gen1_seq);
+    }
+
+    #[test]
+    fn test_step_without_mutation_with_recombination() {
+        let mut sim = SimulationBuilder::new()
+            .population_size(10)
+            .generations(5)
+            .repeat_structure(10, 10, 10)
+            .mutation_rate(0.0)
+            .recombination(0.5, 0.7, 0.3) // High recombination
+            .seed(42)
+            .build()
+            .unwrap();
+
+        // Should complete without errors even with high recombination
+        sim.step().unwrap();
+
+        assert_eq!(sim.generation(), 1);
+        assert_eq!(sim.population().size(), 10);
+    }
+
+    #[test]
+    fn test_step_computes_offspring_fitness() {
+        use crate::evolution::GCContentFitness;
+
+        let structure = UniformRepeatStructure::new(Nucleotide::A, 5, 10, 20, 1);
+        let seq_config = InitializationConfig::Generate {
+            structure: structure.clone(),
+            mode: GenerationMode::Random,
+        };
+        let mutation = MutationConfig::uniform(0.01).unwrap();
+        let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
+
+        let gc_fitness = GCContentFitness::new(0.5, 1.0).unwrap();
+        let fitness = FitnessConfig::new(Some(gc_fitness), None, None, None);
+
+        let execution = ExecutionConfig::new(10, 5, Some(42));
+
+        let sim_config = Configuration {
+            execution,
+            evolution: EvolutionConfig {
+                mutation,
+                recombination,
+                fitness,
+            },
+            initialization: seq_config,
+        };
+        let mut sim = Simulation::new(sim_config.clone()).unwrap();
+
+        sim.step().unwrap();
+
+        // All offspring should have fitness computed
+        for ind in sim.population().individuals() {
+            assert!(*ind.cached_fitness().unwrap_or_default() > 0.0);
+        }
+    }
+
+    // ============================================================================
+    // Tests for run and run_for
+    // ============================================================================
+
+    #[test]
+    fn test_run_for_advances_specified_generations() {
+        let mut sim = create_test_simulation();
+
+        assert_eq!(sim.generation(), 0);
+
+        sim.run_for(3).unwrap();
+
+        assert_eq!(sim.generation(), 3);
+        assert_eq!(sim.population().size(), 10);
+    }
+
+    #[test]
+    fn test_run_advances_configured_generations() {
+        let mut sim = create_test_simulation();
+
+        sim.run().unwrap();
+
+        // Should run for configured number of generations (5)
+        assert_eq!(sim.generation(), 5);
+    }
+
+    #[test]
+    fn test_run_for_zero_generations() {
+        let mut sim = create_test_simulation();
+
+        sim.run_for(0).unwrap();
+
+        assert_eq!(sim.generation(), 0);
+        assert_eq!(sim.population().size(), 10);
+    }
+
+    #[test]
+    fn test_run_for_multiple_generations() {
+        let mut sim = create_test_simulation();
+
+        sim.run_for(10).unwrap();
+
+        assert_eq!(sim.generation(), 10);
+        assert_eq!(sim.population().size(), 10);
+    }
+
+    #[test]
+    fn test_run_for_is_reproducible_with_same_seed() {
+        let mut sim1 = SimulationBuilder::new()
+            .population_size(5)
+            .generations(10)
+            .repeat_structure(5, 5, 5)
+            .mutation_rate(0.01)
+            .recombination(0.01, 0.7, 0.1)
+            .seed(777)
+            .build()
+            .unwrap();
+
+        let mut sim2 = SimulationBuilder::new()
+            .population_size(5)
+            .generations(10)
+            .repeat_structure(5, 5, 5)
+            .mutation_rate(0.01)
+            .recombination(0.01, 0.7, 0.1)
+            .seed(777)
+            .build()
+            .unwrap();
+
+        sim1.run_for(5).unwrap();
+        sim2.run_for(5).unwrap();
+
+        // Both should be at generation 5
+        assert_eq!(sim1.generation(), sim2.generation());
+
+        // Check that at least some sequences match
+        let seq1 = sim1
+            .population()
+            .get(0)
+            .unwrap()
+            .haplotype1()
+            .get(0)
+            .unwrap()
+            .sequence()
+            .to_string();
+
+        let seq2 = sim2
+            .population()
+            .get(0)
+            .unwrap()
+            .haplotype1()
+            .get(0)
+            .unwrap()
+            .sequence()
+            .to_string();
+
+        assert_eq!(seq1, seq2, "Same seed should produce same evolution");
+    }
+
+    #[test]
+    fn test_run_uses_configured_generations() {
+        let mut sim = SimulationBuilder::new()
+            .population_size(10)
+            .generations(7) // Config specifies 7 generations
+            .repeat_structure(5, 5, 5)
+            .mutation_rate(0.001)
+            .recombination(0.01, 0.7, 0.1)
+            .seed(42)
+            .build()
+            .unwrap();
+
+        sim.run().unwrap();
+
+        assert_eq!(sim.generation(), 7);
+    }
+
+    #[test]
+    fn test_run_with_zero_configured_generations() {
+        let mut sim = SimulationBuilder::new()
+            .population_size(10)
+            .generations(0) // No generations
+            .repeat_structure(5, 5, 5)
+            .mutation_rate(0.001)
+            .recombination(0.01, 0.7, 0.1)
+            .seed(42)
+            .build()
+            .unwrap();
+
+        sim.run().unwrap();
+
+        assert_eq!(sim.generation(), 0);
+    }
+
+    #[test]
+    fn test_run_then_run_for_continues_correctly() {
+        let mut sim = SimulationBuilder::new()
+            .population_size(10)
+            .generations(3)
+            .repeat_structure(5, 5, 5)
+            .mutation_rate(0.001)
+            .recombination(0.01, 0.7, 0.1)
+            .seed(42)
+            .build()
+            .unwrap();
+
+        sim.run().unwrap();
+        assert_eq!(sim.generation(), 3);
+
+        sim.run_for(2).unwrap();
+        assert_eq!(sim.generation(), 5);
+    }
+
+    // ============================================================================
+    // Tests for from_checkpoint
+    // ============================================================================
+    // Note: Comprehensive checkpoint tests are in tests/checkpoint_resume.rs
+    // These are integration tests that use AsyncRecorder for storage.
+
+    #[test]
+    fn test_from_checkpoint_nonexistent_file() {
+        let result = Simulation::from_checkpoint("nonexistent.db", "test_sim");
+
+        assert!(result.is_err());
+        // The actual error message varies, just check it's an error
     }
 }

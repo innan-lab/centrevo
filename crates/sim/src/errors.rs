@@ -136,6 +136,7 @@ pub enum DatabaseError {
     Insert(String),
     Close(String),
     Vacuum(String),
+    Serialization(String),
 }
 
 impl fmt::Display for DatabaseError {
@@ -148,6 +149,7 @@ impl fmt::Display for DatabaseError {
             Self::Insert(e) => write!(f, "Insert error: {e}"),
             Self::Close(e) => write!(f, "Close error: {e}"),
             Self::Vacuum(e) => write!(f, "Vacuum error: {e}"),
+            Self::Serialization(e) => write!(f, "Serialization error: {e}"),
         }
     }
 }

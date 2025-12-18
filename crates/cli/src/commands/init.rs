@@ -3,10 +3,9 @@ use centrevo_sim::base::Nucleotide;
 use centrevo_sim::evolution::{IndelModel, SubstitutionModel};
 use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 use centrevo_sim::simulation::{
-    CodecStrategy, FitnessConfig, MutationConfig, Population, RecombinationConfig,
-    SimulationConfig, UniformRepeatStructure,
+    CodecStrategy, Configuration, EvolutionConfig, ExecutionConfig, FitnessConfig, GenerationMode,
+    InitializationConfig, MutationConfig, Population, RecombinationConfig, UniformRepeatStructure,
 };
-use centrevo_sim::storage::SimulationSnapshot;
 
 use crate::args::InitArgs;
 use crate::printing::print_parameters;
@@ -30,21 +29,18 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
     println!("Initializing simulation: {name}");
     println!("Codec Strategy: {codec_strategy}");
 
-    let (structure, config, mutation, recombination, fitness) =
-        build_configs(args, codec_strategy)?;
+    let config = build_configs(args, codec_strategy)?;
+    let structure = match &config.initialization {
+        InitializationConfig::Generate { structure, .. } => structure,
+        _ => unreachable!("init command always uses Generate mode"),
+    };
 
     // Logic moved to build_configs
 
     println!("\nConfiguration:");
 
     println!("\nConfiguration:");
-    print_parameters(
-        &config,
-        Some(&structure),
-        &mutation,
-        &recombination,
-        &fitness,
-    );
+    print_parameters(&config);
 
     // Create initial population (Generation 0)
     // We use the initial seed (if provided) or a random one to generate Gen 0.
@@ -73,16 +69,8 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
         .context("Failed to create recorder")?;
 
         // Record full configuration
-        let snapshot = SimulationSnapshot {
-            structure: structure.clone(),
-            mutation: mutation.clone(),
-            recombination: recombination.clone(),
-            fitness: fitness.clone(),
-            config: config.clone(),
-        };
-
         recorder
-            .record_full_config(&snapshot)
+            .record_full_config(&config)
             .await
             .context("Failed to record configuration")?;
 
@@ -137,16 +125,7 @@ fn create_initial_population(size: usize, structure: &UniformRepeatStructure) ->
     Population::new("initial_pop", individuals)
 }
 
-pub fn build_configs(
-    args: &InitArgs,
-    codec_strategy: CodecStrategy,
-) -> Result<(
-    UniformRepeatStructure,
-    SimulationConfig,
-    MutationConfig,
-    RecombinationConfig,
-    FitnessConfig,
-)> {
+pub fn build_configs(args: &InitArgs, codec_strategy: CodecStrategy) -> Result<Configuration> {
     let structure = UniformRepeatStructure::new(
         Nucleotide::A,
         args.ru_length,
@@ -155,7 +134,7 @@ pub fn build_configs(
         args.chrs_per_hap,
     );
 
-    let config = SimulationConfig::new(args.population_size, args.generations, args.seed)
+    let execution = ExecutionConfig::new(args.population_size, args.generations, args.seed)
         .with_codec(codec_strategy);
 
     // Create mutation configuration
@@ -260,7 +239,22 @@ pub fn build_configs(
 
     let fitness = FitnessConfig::new(gc_fitness, len_fitness, seq_sim_fitness, len_sim_fitness);
 
-    Ok((structure, config, mutation, recombination, fitness))
+    let evolution = EvolutionConfig {
+        mutation,
+        recombination,
+        fitness,
+    };
+
+    let initialization = InitializationConfig::Generate {
+        structure,
+        mode: GenerationMode::Uniform,
+    };
+
+    Ok(Configuration {
+        execution,
+        evolution,
+        initialization,
+    })
 }
 
 #[cfg(test)]
@@ -319,16 +313,17 @@ mod tests {
             codec: "parallel-packed-rs".to_string(),
         };
 
-        let (structure, config, mutation, _recombination, fitness) =
-            build_configs(&args, CodecStrategy::default()).unwrap();
+        let config = build_configs(&args, CodecStrategy::default()).unwrap();
 
-        assert_eq!(config.population_size, 100);
-        assert_eq!(structure.ru_length, 171);
+        assert_eq!(config.execution.population_size, 100);
+        if let InitializationConfig::Generate { structure, .. } = &config.initialization {
+            assert_eq!(structure.ru_length, 171);
+        } else {
+            panic!("Wrong initialization mode");
+        }
         // Default mutation is uniform
-        // Note: checking internal state of mutation model is hard without public accessors,
-        // but we can check enabled flags if any.
-        assert!(mutation.indel.is_none());
-        assert!(fitness.gc_content.is_none());
+        assert!(config.evolution.mutation.indel.is_none());
+        assert!(config.evolution.fitness.gc_content.is_none());
     }
 
     #[test]
@@ -368,9 +363,9 @@ mod tests {
             codec: "parallel-packed-rs".to_string(),
         };
 
-        let (_, _, _, _, fitness) = build_configs(&args, CodecStrategy::default()).unwrap();
-        assert!(fitness.gc_content.is_some());
-        assert!(fitness.length.is_none());
+        let config = build_configs(&args, CodecStrategy::default()).unwrap();
+        assert!(config.evolution.fitness.gc_content.is_some());
+        assert!(config.evolution.fitness.length.is_none());
     }
 
     #[test]
@@ -410,7 +405,7 @@ mod tests {
             codec: "parallel-packed-rs".to_string(),
         };
 
-        let (_, _, _mutation, _, _) = build_configs(&args, CodecStrategy::default()).unwrap();
+        let _config = build_configs(&args, CodecStrategy::default()).unwrap();
         // Should be General substitution model
         // We can't easily introspect Enum variant without public access or matching.
         // But if it didn't error, it worked.
@@ -453,8 +448,8 @@ mod tests {
             codec: "parallel-packed-rs".to_string(),
         };
 
-        let (_, _, mutation, _, _) = build_configs(&args, CodecStrategy::default()).unwrap();
-        assert!(mutation.indel.is_some());
+        let config = build_configs(&args, CodecStrategy::default()).unwrap();
+        assert!(config.evolution.mutation.indel.is_some());
     }
 
     #[test]

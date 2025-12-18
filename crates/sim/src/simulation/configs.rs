@@ -14,9 +14,40 @@ use centrevo_codec::CodecStrategy;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
+/// The master configuration struct.
+/// Can be deserialized from a file to fully reproduce a simulation setup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Configuration {
+    pub execution: ExecutionConfig,
+    pub evolution: EvolutionConfig,
+    pub initialization: InitializationConfig,
+}
+
+/// High-level simulation parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionConfig {
+    /// Number of diploid individuals in population
+    pub population_size: usize,
+    /// Total number of generations to simulate
+    pub total_generations: usize,
+    /// Optional RNG seed for reproducibility
+    pub seed: Option<u64>,
+    /// Encoding strategy for database storage
+    #[serde(default = "default_codec_compat")]
+    pub codec: CodecStrategy,
+}
+
+/// Grouped evolutionary parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvolutionConfig {
+    pub mutation: MutationConfig,
+    pub recombination: RecombinationConfig,
+    pub fitness: FitnessConfig,
+}
+
 /// Configuration for sequence initialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SequenceConfig {
+pub enum InitializationConfig {
     /// Generate sequences based on a repeat structure.
     Generate {
         /// Repeat structure parameters
@@ -28,49 +59,6 @@ pub enum SequenceConfig {
     Load {
         /// Source of sequences
         source: SequenceSource,
-        /// Optional structure for validation or metadata
-        structure: Option<UniformRepeatStructure>,
-    },
-}
-
-/// Mode for sequence generation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GenerationMode {
-    /// Uniform sequences (all repeats identical)
-    Uniform,
-    /// Random sequences (random bases)
-    Random,
-}
-
-/// Source for loading sequences.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SequenceSource {
-    /// FASTA file path
-    Fasta {
-        /// Path to FASTA file
-        path: String,
-        /// Optional path to BED file for structure
-        bed_path: Option<String>,
-    },
-    /// JSON file path or string
-    Json(String),
-    /// Simulation database
-    Database {
-        /// Path to database
-        path: String,
-        /// Simulation ID
-        sim_id: String,
-        /// Generation to load (None for last)
-        generation: Option<usize>,
-    },
-    /// Formatted string
-    FormattedString {
-        /// Sequence string
-        sequence: String,
-        /// HOR delimiter
-        hor_delim: char,
-        /// RU delimiter
-        ru_delim: char,
     },
 }
 
@@ -114,6 +102,45 @@ impl UniformRepeatStructure {
     pub fn chr_length(&self) -> usize {
         self.ru_length * self.rus_per_hor * self.hors_per_chr
     }
+}
+
+/// Mode for sequence generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GenerationMode {
+    /// Uniform sequences (all repeats identical)
+    Uniform,
+    /// Random sequences (random bases)
+    Random,
+}
+
+/// Source for loading sequences.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SequenceSource {
+    /// FASTA file path
+    Fasta {
+        /// Path to FASTA file
+        path: String,
+        /// Path to BED file for structure
+        bed_path: String,
+    },
+    /// Simulation database
+    Database {
+        /// Path to database
+        path: String,
+        /// Simulation ID
+        sim_id: String,
+        /// Generation to load (None for last)
+        generation: Option<usize>,
+    },
+    /// Formatted string
+    FormattedString {
+        /// Sequence string
+        sequence: String,
+        /// HOR delimiter
+        hor_delim: char,
+        /// RU delimiter
+        ru_delim: char,
+    },
 }
 
 /// Parameters for mutation processes.
@@ -232,6 +259,34 @@ impl FitnessConfig {
             && self.length.is_none()
             && self.seq_similarity.is_none()
             && self.length_similarity.is_none()
+    }
+
+    /// Compute the total fitness of an individual by multiplying all configured fitness components.
+    ///
+    /// This method applies all enabled fitness functions (GC content, length, sequence similarity,
+    /// length similarity) and returns their product.
+    pub fn compute_fitness(
+        &self,
+        individual: &crate::genome::Individual,
+    ) -> crate::base::FitnessValue {
+        use crate::evolution::IndividualFitness;
+
+        let mut fitness = crate::base::FitnessValue::default();
+
+        if let Some(gc) = &self.gc_content {
+            fitness *= gc.individual_fitness(individual);
+        }
+        if let Some(len_fit) = &self.length {
+            fitness *= len_fit.individual_fitness(individual);
+        }
+        if let Some(sim) = &self.seq_similarity {
+            fitness *= sim.individual_fitness(individual);
+        }
+        if let Some(len_sim) = &self.length_similarity {
+            fitness *= len_sim.individual_fitness(individual);
+        }
+
+        fitness
     }
 }
 
@@ -444,27 +499,13 @@ impl FitnessConfigBuilder<BuilderInitialized> {
     }
 }
 
-/// High-level simulation parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SimulationConfig {
-    /// Number of diploid individuals in population
-    pub population_size: usize,
-    /// Total number of generations to simulate
-    pub total_generations: usize,
-    /// Optional RNG seed for reproducibility
-    pub seed: Option<u64>,
-    /// Encoding strategy for database storage
-    #[serde(default = "default_codec_compat")]
-    pub codec: CodecStrategy,
-}
-
 /// Default codec for backward compatibility (loading old configs).
 /// Old configurations used BitPackedRS implicitly.
 fn default_codec_compat() -> CodecStrategy {
     CodecStrategy::BitPackedRS
 }
 
-impl SimulationConfig {
+impl ExecutionConfig {
     /// Create new simulation configuration.
     pub fn new(population_size: usize, total_generations: usize, seed: Option<u64>) -> Self {
         Self {
@@ -488,7 +529,7 @@ mod tests {
 
     #[test]
     fn test_simulation_config_codec() {
-        let config = SimulationConfig::new(100, 100, None);
+        let config = ExecutionConfig::new(100, 100, None);
         // Default should be UnpackedZRS
         assert!(matches!(config.codec, CodecStrategy::UnpackedZRS));
 
@@ -710,7 +751,7 @@ mod tests {
 
     #[test]
     fn test_simulation_config_new() {
-        let config = SimulationConfig::new(100, 1000, Some(42));
+        let config = ExecutionConfig::new(100, 1000, Some(42));
 
         assert_eq!(config.population_size, 100);
         assert_eq!(config.total_generations, 1000);

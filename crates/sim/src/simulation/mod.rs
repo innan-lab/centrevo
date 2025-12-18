@@ -23,9 +23,9 @@ pub mod sequence;
 pub use builder::SimulationBuilder;
 pub use centrevo_codec::CodecStrategy;
 pub use configs::{
-    BuilderEmpty, BuilderInitialized, FitnessConfig, FitnessConfigBuilder, GenerationMode,
-    MutationConfig, RecombinationConfig, SequenceConfig, SequenceSource, SimulationConfig,
-    UniformRepeatStructure,
+    BuilderEmpty, BuilderInitialized, Configuration, EvolutionConfig, ExecutionConfig,
+    FitnessConfig, FitnessConfigBuilder, GenerationMode, InitializationConfig, MutationConfig,
+    RecombinationConfig, SequenceSource, UniformRepeatStructure,
 };
 pub use engine::Simulation;
 pub use population::Population;

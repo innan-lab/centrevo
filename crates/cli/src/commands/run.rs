@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use centrevo_sim::simulation::Simulation;
-use centrevo_sim::storage::{QueryBuilder, Recorder, RecordingStrategy, SimulationSnapshot};
+use centrevo_sim::simulation::{Configuration, Simulation};
+use centrevo_sim::storage::{QueryBuilder, Recorder, RecordingStrategy};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 
@@ -37,10 +37,10 @@ pub fn run_simulation(
         let record_every = record_every_override.unwrap_or(100);
 
         let start_generation = sim.generation();
-        let total_generations = sim.config().total_generations;
+        let total_generations = sim.simulation_config().total_generations;
 
         println!("✓ Loaded checkpoint from generation {start_generation}");
-        println!("  Population size: {}", sim.config().population_size);
+        println!("  Population size: {}", sim.simulation_config().population_size);
         println!("  Target generations: {total_generations}");
         println!();
 
@@ -51,16 +51,8 @@ pub fn run_simulation(
 
         rt.block_on(async {
             // Setup recorder with full config
-            let snapshot = SimulationSnapshot {
-                structure: sim
-                    .structure()
-                    .cloned()
-                    .expect("Cannot resume without uniform structure"),
-                mutation: sim.mutation().clone(),
-                recombination: sim.recombination().clone(),
-                fitness: sim.fitness().clone(),
-                config: sim.config().clone(),
-            };
+            // Use the simulation's configuration directly
+            let config = sim.configuration();
 
             let buffer_config = centrevo_sim::storage::BufferConfig {
                 compression_level: 0,
@@ -71,13 +63,11 @@ pub fn run_simulation(
                 database,
                 name,
                 buffer_config,
-                snapshot.config.codec,
+                config.execution.codec,
             )
             .context("Failed to create recorder")?;
-
-            // Record full config if not already recorded (idempotent-ish)
             recorder
-                .record_full_config(&snapshot)
+                .record_full_config(config)
                 .await
                 .context("Failed to record configuration")?;
 
@@ -152,8 +142,8 @@ pub fn run_simulation(
         // Open database
         let query = QueryBuilder::new(database).context("Failed to open database")?;
 
-        // Load full configuration
-        let snapshot = query
+        // Load full configuration (now returns Configuration directly)
+        let config = query
             .get_full_config(name)
             .context("Failed to load configuration. Did you run 'centrevo init' first?")?;
 
@@ -169,36 +159,31 @@ pub fn run_simulation(
         query.close().ok();
 
         // Apply Overrides
-        let mut config = snapshot.config.clone();
-        if let Some(seed) = seed_override {
-            println!("ℹ️  Overriding random seed: {seed}");
-            config.seed = Some(seed);
-        }
-
         let record_every = record_every_override.unwrap_or(100);
 
-        println!("Simulation: {name}");
-        println!("Population size: {}", config.population_size);
-        println!("Target generations: {}", config.total_generations);
-        println!();
-
-        // Setup simulation using the configuration loaded from DB
-        let mut sim = Simulation::from_config(
-            centrevo_sim::simulation::SequenceConfig::Load {
-                source: centrevo_sim::simulation::SequenceSource::Database {
-                    path: database.to_string_lossy().to_string(),
-                    sim_id: name.to_string(),
-                    generation: Some(0),
-                },
-                structure: Some(snapshot.structure.clone()),
+        let initialization_config = centrevo_sim::simulation::InitializationConfig::Load {
+            source: centrevo_sim::simulation::SequenceSource::Database {
+                path: database.to_string_lossy().to_string(),
+                sim_id: name.to_string(),
+                generation: Some(0),
             },
-            Some(snapshot.structure.clone()),
-            snapshot.mutation.clone(),
-            snapshot.recombination.clone(),
-            snapshot.fitness.clone(),
-            config.clone(), // Use the config with potentially overridden seed
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to initialize simulation: {e}"))?;
+        };
+
+        // Construct simulation config based on loaded config but overriding initialization
+        let sim_config = Configuration {
+            execution: config.execution.clone(),
+            evolution: config.evolution.clone(), // Use loaded evolution config
+            initialization: initialization_config,
+        };
+
+        // If seed override is present, we must update execution config inside sim_config
+        let mut sim_config = sim_config;
+        if let Some(seed) = seed_override {
+            sim_config.execution.seed = Some(seed);
+        }
+
+        let mut sim = Simulation::new(sim_config)
+            .map_err(|e| anyhow::anyhow!("Failed to initialize simulation: {e}"))?;
 
         rt.block_on(async {
             // Setup recorder
@@ -210,7 +195,7 @@ pub fn run_simulation(
                 database,
                 name,
                 buffer_config,
-                config.codec,
+                config.execution.codec,
             )
             .context("Failed to create recorder")?;
 
@@ -219,10 +204,10 @@ pub fn run_simulation(
             print_simulation_parameters(&sim);
 
             // Run simulation
-            println!("Running {} generations...", config.total_generations);
+            println!("Running {} generations...", config.execution.total_generations);
 
             let pb = if show_progress {
-                let pb = ProgressBar::new(config.total_generations as u64);
+                let pb = ProgressBar::new(config.execution.total_generations as u64);
                 pb.set_style(
                     ProgressStyle::default_bar()
                         .template(
@@ -236,7 +221,7 @@ pub fn run_simulation(
                 None
             };
 
-            for generation in 1..=config.total_generations {
+            for generation in 1..=config.execution.total_generations {
                 // Determine if we need to record BEFORE stepping, or just check generation index
                 // We check if we SHOULD record this generation
                 let should_record =
@@ -277,7 +262,7 @@ pub fn run_simulation(
         })?;
 
         println!("\n✓ Simulation complete!");
-        println!("  Final generation: {}", config.total_generations);
+        println!("  Final generation: {}", config.execution.total_generations);
     }
 
     println!("\n💡 Use 'centrevo info -N {name}' to view results");

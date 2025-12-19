@@ -80,21 +80,33 @@ enum Commands {
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
 
-        /// Generation to export
-        #[arg(short, long)]
-        generation: usize,
+        /// Generation(s) to export (e.g., "100", "0..1000", "10,20", "all")
+        #[arg(short = 'g', long)]
+        generations: Option<String>,
 
-        /// Output format (csv, json, fasta)
+        /// Output format (csv, json, fasta, formatted-text)
         #[arg(short, long, default_value = "csv")]
         format: String,
 
-        /// Output file (stdout if not specified)
+        /// Output file
         #[arg(short, long)]
         output: Option<PathBuf>,
 
         /// What to export (sequences, metadata, fitness)
         #[arg(long, default_value = "sequences")]
         data_type: String,
+
+        /// Delimiter for Repeat Units (formatted-text only)
+        #[arg(long, default_value = ":")]
+        ru_delimiter: String,
+
+        /// Delimiter for Higher Order Repeats (formatted-text only)
+        #[arg(long, default_value = "|")]
+        hor_delimiter: String,
+
+        /// Delimiter for Chromosomes (formatted-text only)
+        #[arg(long, default_value = "\n")]
+        chr_delimiter: String,
     },
 
     // /// Analyze simulation data (statistics).
@@ -170,12 +182,24 @@ fn main() -> Result<()> {
         }
         Commands::Export {
             database,
-            generation,
+            generations,
             format,
             output,
             data_type,
+            ru_delimiter,
+            hor_delimiter,
+            chr_delimiter,
         } => {
-            export::export_data(&database, generation, &format, output.as_ref(), &data_type)?;
+            export::export_data(
+                &database,
+                generations,
+                &format,
+                output.as_ref(),
+                &data_type,
+                &ru_delimiter,
+                &hor_delimiter,
+                &chr_delimiter,
+            )?;
         }
         // Commands::Analyze {
         //     database,

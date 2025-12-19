@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 centrevo-sim = { path = "../sim" }
 centrevo-analysis = { path = "../analysis" }
+centrevo-codec = { path = "../codec" }
 clap = { version = "4.5", features = ["derive", "cargo"] }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }

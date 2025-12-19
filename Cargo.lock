@@ -193,6 +193,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "centrevo-analysis",
+ "centrevo-codec",
  "centrevo-sim",
  "clap",
  "indicatif",

@@ -444,7 +444,7 @@ pub fn load_individuals_from_database(
     // Convert snapshots to Individuals
     let mut individuals = Vec::with_capacity(snapshots_with_ids.len());
     for (id_num, snapshot) in snapshots_with_ids {
-        let ind_id = format!("ind_{}", id_num);
+        let ind_id = format!("ind{id_num}");
         let ind = snapshot.to_individual(&ind_id, codec).map_err(|e| {
             InitializationError::Database(format!("Failed to reconstruct individual: {e}"))
         })?;

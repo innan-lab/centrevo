@@ -183,10 +183,7 @@ impl AsyncRecorder {
             .collect();
 
         if self.is_buffer_high() {
-            eprintln!(
-                "Warning: Recorder buffer high at generation {}.",
-                generation
-            );
+            eprintln!("Warning: Recorder buffer high at generation {generation}.");
         }
 
         self.buffer_fill
@@ -473,7 +470,7 @@ mod tests {
                 1,
                 chr_length / 10,
             )]);
-            let mut ind = Individual::new(format!("ind{}", i), h1, h2);
+            let mut ind = Individual::new(format!("ind{i}"), h1, h2);
             ind.set_cached_fitness(FitnessValue::new(0.5));
             individuals.push(ind);
         }

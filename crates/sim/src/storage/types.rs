@@ -1,4 +1,3 @@
-use crate::base::FitnessValue;
 use crate::genome::Individual;
 use crate::simulation::Population;
 use centrevo_codec::CodecStrategy;
@@ -80,13 +79,13 @@ impl IndividualSnapshot {
             haplotype1_map: h1_map,
             haplotype2_seq: h2_seq,
             haplotype2_map: h2_map,
-            fitness: ind.cached_fitness().map(|f| f64::from(*f)),
+            fitness: ind.cached_fitness().map(|f| f.ln().into()),
         }
     }
 
     /// Reconstruct an Individual from a snapshot.
     pub fn to_individual(&self, id: &str, codec: &CodecStrategy) -> Result<Individual, String> {
-        use crate::base::{Nucleotide, Sequence};
+        use crate::base::{LogFitnessValue, Nucleotide, Sequence};
         use crate::genome::repeat_map::RepeatMap;
         use crate::genome::{Chromosome, Haplotype};
 
@@ -100,7 +99,7 @@ impl IndividualSnapshot {
                 // Handle empty chromosome case if needed, though usually means logic error if expected
                 // For now, assume if check handles it upstream or returns empty chromosome
                 return Ok(Chromosome::new(
-                    format!("{}_{}", id, chr_suffix),
+                    format!("{id}_{chr_suffix}"),
                     Sequence::new(),
                     RepeatMap::new(vec![0], vec![0])
                         .unwrap_or_else(|_| RepeatMap::uniform(0, 0, 0)),
@@ -129,7 +128,7 @@ impl IndividualSnapshot {
                 RepeatMap::new(vec![0], vec![0]).unwrap_or_else(|_| RepeatMap::uniform(0, 0, 0))
             };
 
-            Ok(Chromosome::new(format!("{}_{}", id, chr_suffix), seq, map))
+            Ok(Chromosome::new(format!("{id}_{chr_suffix}"), seq, map))
         };
 
         let chr1 = reconstruct_chr(
@@ -150,7 +149,7 @@ impl IndividualSnapshot {
 
         let mut individual = Individual::new(id, hap1, hap2);
         if let Some(f) = self.fitness {
-            individual.set_cached_fitness(FitnessValue::new(f));
+            individual.set_cached_fitness(LogFitnessValue::new(f).exp());
         }
 
         Ok(individual)
@@ -168,15 +167,16 @@ pub struct FitnessStats {
 
 impl FitnessStats {
     /// Calculate fitness statistics from a population.
+    /// Returns stats in log-scale for consistency with stored fitness.
     pub fn from_population(pop: &Population) -> Self {
-        let fitnesses: Vec<f64> = pop
+        let log_fitnesses: Vec<f64> = pop
             .individuals()
             .iter()
             .filter_map(|ind| ind.cached_fitness())
-            .map(|f| *f)
+            .map(|f| f.ln().into())
             .collect();
 
-        if fitnesses.is_empty() {
+        if log_fitnesses.is_empty() {
             return Self {
                 mean: 0.0,
                 min: 0.0,
@@ -185,24 +185,27 @@ impl FitnessStats {
             };
         }
 
-        let sum: f64 = fitnesses.iter().sum();
-        let mean = sum / fitnesses.len() as f64;
+        let sum: f64 = log_fitnesses.iter().sum();
+        let mean = sum / log_fitnesses.len() as f64;
 
-        let min = fitnesses
+        let min = log_fitnesses
             .iter()
             .copied()
             .min_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
 
-        let max = fitnesses
+        let max = log_fitnesses
             .iter()
             .copied()
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0);
 
-        // Calculate standard deviation
-        let variance: f64 =
-            fitnesses.iter().map(|&f| (f - mean).powi(2)).sum::<f64>() / fitnesses.len() as f64;
+        // Calculate standard deviation in log-space
+        let variance: f64 = log_fitnesses
+            .iter()
+            .map(|&f| (f - mean).powi(2))
+            .sum::<f64>()
+            / log_fitnesses.len() as f64;
         let std = variance.sqrt();
 
         Self {
@@ -211,5 +214,60 @@ impl FitnessStats {
             max,
             std,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::base::{FitnessValue, Nucleotide};
+    use crate::genome::{Chromosome, Haplotype, Individual};
+
+    #[test]
+    fn test_individual_snapshot_log_fitness_roundtrip() {
+        let h1 =
+            Haplotype::from_chromosomes(vec![Chromosome::uniform("c1", Nucleotide::A, 10, 1, 1)]);
+        let h2 =
+            Haplotype::from_chromosomes(vec![Chromosome::uniform("c1", Nucleotide::T, 10, 1, 1)]);
+        let mut ind = Individual::new("test", h1, h2);
+
+        // Linear fitness 0.5 -> Log fitness ln(0.5)
+        let linear_fitness = FitnessValue::new(0.5);
+        ind.set_cached_fitness(linear_fitness);
+
+        let codec = CodecStrategy::default();
+        let snapshot = IndividualSnapshot::from_individual(&ind, &codec);
+
+        // Verify stored fitness is in log-space
+        let expected_log_fitness: f64 = linear_fitness.ln().into();
+        assert!((snapshot.fitness.unwrap() - expected_log_fitness).abs() < 1e-12);
+
+        // Verify round-trip back to linear-space
+        let recovered_ind = snapshot.to_individual("test", &codec).unwrap();
+        let recovered_fitness: f64 = recovered_ind.cached_fitness().unwrap().into();
+        assert!((recovered_fitness - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_fitness_stats_log_space() {
+        use std::f64::consts::LN_2;
+        let h1 = Haplotype::new();
+        let h2 = Haplotype::new();
+
+        let mut ind1 = Individual::new("1", h1.clone(), h2.clone());
+        ind1.set_cached_fitness(FitnessValue::new(0.5)); // ln(0.5) = -LN_2
+
+        let mut ind2 = Individual::new("2", h1, h2);
+        ind2.set_cached_fitness(FitnessValue::new(0.25)); // ln(0.25) = -2 * LN_2
+
+        let pop = Population::new("test", vec![ind1, ind2]);
+        let stats = FitnessStats::from_population(&pop);
+
+        let log_f1 = -LN_2;
+        let log_f2 = -2.0 * LN_2;
+
+        assert!((stats.min - log_f2).abs() < 1e-12);
+        assert!((stats.max - log_f1).abs() < 1e-12);
+        assert!((stats.mean - (log_f1 + log_f2) / 2.0).abs() < 1e-12);
     }
 }

@@ -2,21 +2,6 @@ use anyhow::{Context, Result};
 use centrevo_sim::storage::QueryBuilder;
 use std::path::PathBuf;
 
-pub fn list_simulations(database: &PathBuf) -> Result<()> {
-    let query = QueryBuilder::new(database).context("Failed to open database")?;
-    // In one-db-per-sim model, listing just shows info for the current DB file
-    let config = query
-        .get_full_config()
-        .context("Failed to read simulation config")?;
-
-    println!("\n📊 Simulation in {}:", database.display());
-    println!("{}", "=".repeat(50));
-    println!("  • Population: {}", config.execution.population_size);
-    println!("  • Generations: {}", config.execution.total_generations);
-
-    Ok(())
-}
-
 pub fn show_info(database: &PathBuf) -> Result<()> {
     let query = QueryBuilder::new(database).context("Failed to open database")?;
     let config = query
@@ -30,7 +15,7 @@ pub fn show_info(database: &PathBuf) -> Result<()> {
 
     let params_json = serde_json::to_string_pretty(&config).unwrap_or_default();
     println!("\nParameters:");
-    println!("{}", params_json);
+    println!("{params_json}");
 
     Ok(())
 }

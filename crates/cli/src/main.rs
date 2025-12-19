@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use args::InitArgs;
-use commands::{analyze, export, init, list, run, setup, validate};
+use commands::{export, init, inspect, run, setup, validate};
 
 /// Centrevo: A Centromere Evolution Simulator
 ///
@@ -58,13 +58,6 @@ enum Commands {
         progress: bool,
     },
 
-    /// List all simulations stored in a database.
-    List {
-        /// Database path
-        #[arg(short, long, default_value = "simulation.db")]
-        database: PathBuf,
-    },
-
     /// Info: Show detailed configuration of a simulation.
     Info {
         /// Database path
@@ -104,31 +97,30 @@ enum Commands {
         data_type: String,
     },
 
-    /// Analyze simulation data (statistics).
-    ///
-    /// Calculates stats like sequence length, GC content, and entropy.
-    Analyze {
-        /// Database path
-        #[arg(short, long, default_value = "simulation.db")]
-        database: PathBuf,
+    // /// Analyze simulation data (statistics).
+    // ///
+    // /// Calculates stats like sequence length, GC content, and entropy.
+    // Analyze {
+    //     /// Database path
+    //     #[arg(short, long, default_value = "simulation.db")]
+    //     database: PathBuf,
 
-        /// Generation to analyze
-        #[arg(short, long)]
-        generation: usize,
+    //     /// Generation to analyze
+    //     #[arg(short, long)]
+    //     generation: usize,
 
-        /// Chromosome index (which chromosome to analyze)
-        #[arg(long, default_value = "0")]
-        chromosome: usize,
+    //     /// Chromosome index (which chromosome to analyze)
+    //     #[arg(long, default_value = "0")]
+    //     chromosome: usize,
 
-        /// Output format (pretty, json)
-        #[arg(short, long, default_value = "pretty")]
-        format: String,
+    //     /// Output format (pretty, json)
+    //     #[arg(short, long, default_value = "pretty")]
+    //     format: String,
 
-        /// Output file (stdout if not specified)
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-    },
-
+    //     /// Output file (stdout if not specified)
+    //     #[arg(short, long)]
+    //     output: Option<PathBuf>,
+    // },
     /// Validate database integrity.
     ///
     /// Checks if the database file is healthy and fixes simple issues.
@@ -170,14 +162,11 @@ fn main() -> Result<()> {
         } => {
             run::run_simulation(&database, resume, seed, record_every, progress)?;
         }
-        Commands::List { database } => {
-            list::list_simulations(&database)?;
-        }
         Commands::Info { database } => {
-            list::show_info(&database)?;
+            inspect::show_info(&database)?;
         }
         Commands::Generations { database } => {
-            list::show_generations(&database)?;
+            inspect::show_generations(&database)?;
         }
         Commands::Export {
             database,
@@ -188,15 +177,15 @@ fn main() -> Result<()> {
         } => {
             export::export_data(&database, generation, &format, output.as_ref(), &data_type)?;
         }
-        Commands::Analyze {
-            database,
-            generation,
-            chromosome,
-            format,
-            output,
-        } => {
-            analyze::analyze_data(&database, generation, chromosome, &format, output.as_ref())?;
-        }
+        // Commands::Analyze {
+        //     database,
+        //     generation,
+        //     chromosome,
+        //     format,
+        //     output,
+        // } => {
+        //     analyze::analyze_data(&database, generation, chromosome, &format, output.as_ref())?;
+        // }
         Commands::Validate { database, fix } => {
             validate::validate_database(&database, fix)?;
         }

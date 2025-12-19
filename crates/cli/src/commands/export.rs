@@ -60,11 +60,11 @@ fn export_sequences(
                 let ind_id = format!("ind_{id}");
                 // Haplotype 1
                 let seq1 = sequence_from_indices(snap.haplotype1_seq.clone());
-                content.push_str(&format!("{},h1,0,{}\n", ind_id, seq1));
+                content.push_str(&format!("{ind_id},h1,0,{seq1}\n"));
 
                 // Haplotype 2
                 let seq2 = sequence_from_indices(snap.haplotype2_seq.clone());
-                content.push_str(&format!("{},h2,0,{}\n", ind_id, seq2));
+                content.push_str(&format!("{ind_id},h2,0,{seq2}\n"));
             }
         }
         "fasta" => {
@@ -72,11 +72,11 @@ fn export_sequences(
                 let ind_id = format!("ind_{id}");
                 // Haplotype 1
                 let seq1 = sequence_from_indices(snap.haplotype1_seq.clone());
-                content.push_str(&format!(">{}|h1|chr0\n{}\n", ind_id, seq1));
+                content.push_str(&format!(">{ind_id}|h1|chr0\n{seq1}\n"));
 
                 // Haplotype 2
                 let seq2 = sequence_from_indices(snap.haplotype2_seq.clone());
-                content.push_str(&format!(">{}|h2|chr0\n{}\n", ind_id, seq2));
+                content.push_str(&format!(">{ind_id}|h2|chr0\n{seq2}\n"));
             }
         }
         "json" => {
@@ -132,8 +132,7 @@ fn export_metadata(
         }
         "csv" => {
             format!(
-                "key,value\nname,{}\npopulation_size,{}\ngenerations,{}\n",
-                name, pop_size, generations
+                "key,value\nname,{name}\npopulation_size,{pop_size}\ngenerations,{generations}\n",
             )
         }
         _ => anyhow::bail!("Format '{format}' not supported for metadata. Use: json or csv"),

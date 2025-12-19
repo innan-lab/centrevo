@@ -40,68 +40,43 @@ impl Database {
     fn initialize_schema(&mut self) -> Result<(), DatabaseError> {
         self.conn
             .execute_batch(
-                "-- Main population state table
-                CREATE TABLE IF NOT EXISTS population_state (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sim_id TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    individual_id TEXT NOT NULL,
-                    haplotype1_chr_id TEXT NOT NULL,
-                    haplotype1_map BLOB,
-                    haplotype1_seq BLOB NOT NULL,
-                    haplotype2_chr_id TEXT NOT NULL,
-                    haplotype2_map BLOB,
-                    haplotype2_seq BLOB NOT NULL,
+                "-- Metadata table (Configuration items)
+                CREATE TABLE IF NOT EXISTS metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
 
-                    haplotype1_fitness REAL,
-                    haplotype2_fitness REAL,
+                -- Normalized Population State
+                -- ONE ROW PER CHROMOSOME
+                CREATE TABLE IF NOT EXISTS state (
+                    generation INTEGER NOT NULL,
+                    individual_id INTEGER NOT NULL,
+                    haplotype_id INTEGER NOT NULL, -- 1 or 2
+                    chromosome_id INTEGER NOT NULL, -- 1-based index
+                    seq BLOB,       -- Encoded sequence
+                    map BLOB,       -- Encoded map structure
+                    PRIMARY KEY (generation, individual_id, haplotype_id, chromosome_id)
+                );
+
+                -- Individual Fitness
+                CREATE TABLE IF NOT EXISTS individual_fitness (
+                    generation INTEGER NOT NULL,
+                    individual_id INTEGER NOT NULL,
                     fitness REAL,
-                    timestamp INTEGER DEFAULT (strftime('%s', 'now'))
+                    timestamp INTEGER,
+                    PRIMARY KEY (generation, individual_id)
                 );
 
-                -- Simulation metadata table (expanded for full config)
-                CREATE TABLE IF NOT EXISTS simulations (
-                    sim_id TEXT PRIMARY KEY,
-                    start_time INTEGER NOT NULL,
-                    end_time INTEGER,
-                    pop_size INTEGER NOT NULL,
-                    num_generations INTEGER NOT NULL,
-                    mutation_rate REAL NOT NULL,
-                    recombination_rate REAL NOT NULL,
-                    parameters_json TEXT NOT NULL,
-                    -- Full configuration for resumability
-                    config_json TEXT  -- Complete simulation configuration
-                );
-
-                -- Fitness history table for aggregated statistics
-                CREATE TABLE IF NOT EXISTS fitness_history (
-                    sim_id TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    mean_fitness REAL NOT NULL,
-                    min_fitness REAL NOT NULL,
-                    max_fitness REAL NOT NULL,
-                    std_fitness REAL NOT NULL,
-                    PRIMARY KEY (sim_id, generation)
-                );
-
-                -- Checkpoints table for resumability
+                -- Checkpoints for resumability (RNG state)
                 CREATE TABLE IF NOT EXISTS checkpoints (
-                    sim_id TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    rng_state BLOB NOT NULL,  -- 32 bytes: 4x u64 for Xoshiro256PlusPlus
-                    timestamp INTEGER NOT NULL,
-                    PRIMARY KEY (sim_id, generation)
+                    generation INTEGER PRIMARY KEY,
+                    rng_state BLOB NOT NULL,
+                    timestamp INTEGER NOT NULL
                 );
 
-                -- Indices for fast queries
-                CREATE INDEX IF NOT EXISTS idx_pop_sim_gen
-                    ON population_state(sim_id, generation);
-                CREATE INDEX IF NOT EXISTS idx_pop_individual
-                    ON population_state(individual_id);
-                CREATE INDEX IF NOT EXISTS idx_fitness_sim_gen
-                    ON fitness_history(sim_id, generation);
-                CREATE INDEX IF NOT EXISTS idx_checkpoints_sim_gen
-                    ON checkpoints(sim_id, generation);",
+                -- Indices
+                CREATE INDEX IF NOT EXISTS idx_state_gen ON state(generation);
+                CREATE INDEX IF NOT EXISTS idx_fitness_gen ON individual_fitness(generation);",
             )
             .map_err(|e| DatabaseError::Initialization(e.to_string()))?;
 
@@ -187,21 +162,21 @@ impl Database {
         }
 
         // Get row counts for main tables
-        let pop_count: i64 = self
+        let state_count: i64 = self
             .conn
-            .query_row("SELECT COUNT(*) FROM population_state", [], |row| {
+            .query_row("SELECT COUNT(*) FROM state", [], |row| row.get(0))
+            .unwrap_or(0);
+
+        let fitness_count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM individual_fitness", [], |row| {
                 row.get(0)
             })
             .unwrap_or(0);
 
-        let sim_count: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM simulations", [], |row| row.get(0))
-            .unwrap_or(0);
-
         Ok(DatabaseStats {
-            population_records: pop_count as usize,
-            simulation_count: sim_count as usize,
+            state_records: state_count as usize,
+            fitness_records: fitness_count as usize,
             tables,
         })
     }
@@ -210,12 +185,10 @@ impl Database {
 /// Database statistics.
 #[derive(Debug, Clone)]
 pub struct DatabaseStats {
-    pub population_records: usize,
-    pub simulation_count: usize,
+    pub state_records: usize,
+    pub fitness_records: usize,
     pub tables: Vec<String>,
 }
-
-// Removed DatabaseError definition, imported from crate::errors
 
 #[cfg(test)]
 mod tests {
@@ -224,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_database_creation() {
-        let path = "/tmp/test_centrevo_db.sqlite";
+        let path = "/tmp/test_centrevo_db_v2.sqlite";
         let _ = fs::remove_file(path); // Clean up if exists
 
         let db = Database::open(path).expect("Failed to create database");
@@ -236,15 +209,16 @@ mod tests {
 
     #[test]
     fn test_schema_initialization() {
-        let path = "/tmp/test_centrevo_schema.sqlite";
+        let path = "/tmp/test_centrevo_schema_v2.sqlite";
         let _ = fs::remove_file(path);
 
         let db = Database::open(path).expect("Failed to create database");
         let stats = db.stats().expect("Failed to get stats");
 
-        assert!(stats.tables.contains(&"population_state".to_string()));
-        assert!(stats.tables.contains(&"simulations".to_string()));
-        assert!(stats.tables.contains(&"fitness_history".to_string()));
+        assert!(stats.tables.contains(&"metadata".to_string()));
+        assert!(stats.tables.contains(&"state".to_string()));
+        assert!(stats.tables.contains(&"individual_fitness".to_string()));
+        assert!(stats.tables.contains(&"checkpoints".to_string()));
 
         db.close().expect("Failed to close database");
         fs::remove_file(path).expect("Failed to remove test database");

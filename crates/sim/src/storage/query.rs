@@ -2,7 +2,8 @@
 
 use crate::errors::DatabaseError;
 use crate::storage::{Database, FitnessStats, IndividualSnapshot};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
+use std::collections::HashMap;
 
 /// Query builder for analyzing simulation data.
 pub struct QueryBuilder {
@@ -16,124 +17,170 @@ impl QueryBuilder {
         Ok(Self { db })
     }
 
-    /// List all simulation IDs in the database.
-    pub fn list_simulations(&self) -> Result<Vec<String>, DatabaseError> {
+    /// Get raw metadata value by key.
+    pub fn get_metadata_value(&self, key: &str) -> Result<Option<String>, DatabaseError> {
         let mut stmt = self
             .db
             .connection()
-            .prepare("SELECT sim_id FROM simulations ORDER BY start_time DESC")
+            .prepare("SELECT value FROM metadata WHERE key = ?1")
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        stmt.query_row(params![key], |row| row.get(0))
+            .optional()
+            .map_err(|e| DatabaseError::Query(e.to_string()))
+    }
+
+    /// Get all metadata as a map.
+    pub fn get_metadata(&self) -> Result<HashMap<String, String>, DatabaseError> {
+        let mut stmt = self
+            .db
+            .connection()
+            .prepare("SELECT key, value FROM metadata")
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        let mut sims = Vec::new();
+        let mut meta = HashMap::new();
         for row in rows {
-            sims.push(row.map_err(|e| DatabaseError::Query(e.to_string()))?);
+            let (k, v): (String, String) = row.map_err(|e| DatabaseError::Query(e.to_string()))?;
+            meta.insert(k, v);
         }
-
-        Ok(sims)
-    }
-
-    /// Get simulation metadata.
-    pub fn get_simulation_info(&self, sim_id: &str) -> Result<SimulationInfo, DatabaseError> {
-        let mut stmt = self
-            .db
-            .connection()
-            .prepare(
-                "SELECT start_time, end_time, pop_size, num_generations,
-                       mutation_rate, recombination_rate, parameters_json
-                FROM simulations WHERE sim_id = ?1",
-            )
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let info = stmt
-            .query_row(params![sim_id], |row| {
-                Ok(SimulationInfo {
-                    sim_id: sim_id.to_string(),
-                    start_time: row.get(0)?,
-                    end_time: row.get(1)?,
-                    pop_size: row.get(2)?,
-                    num_generations: row.get(3)?,
-                    mutation_rate: row.get(4)?,
-                    recombination_rate: row.get(5)?,
-                    parameters_json: row.get(6)?,
-                })
-            })
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        Ok(info)
+        Ok(meta)
     }
 
     /// Get all individuals at a specific generation.
     pub fn get_generation(
         &self,
-        sim_id: &str,
         generation: usize,
-    ) -> Result<Vec<IndividualSnapshot>, DatabaseError> {
+    ) -> Result<Vec<(usize, IndividualSnapshot)>, DatabaseError> {
+        // 1. Get Fitnesses
+        let mut fitness_map: HashMap<usize, f64> = HashMap::new();
+        {
+            let mut stmt = self
+                .db
+                .connection()
+                .prepare(
+                    "SELECT individual_id, fitness FROM individual_fitness WHERE generation = ?1",
+                )
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+            let rows = stmt
+                .query_map(params![generation], |row| {
+                    Ok((row.get::<_, i64>(0)? as usize, row.get::<_, f64>(1)?))
+                })
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+            for r in rows {
+                let (id, f) = r.map_err(|e| DatabaseError::Query(e.to_string()))?;
+                fitness_map.insert(id, f);
+            }
+        }
+
+        // 2. Get State (Chromosomes)
         let mut stmt = self
             .db
             .connection()
             .prepare(
-                "SELECT individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
-                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, haplotype1_fitness, haplotype2_fitness, fitness
-                FROM population_state
-                WHERE sim_id = ?1 AND generation = ?2
-                ORDER BY individual_id",
+                "SELECT individual_id, haplotype_id, seq, map 
+             FROM state 
+             WHERE generation = ?1 
+             ORDER BY individual_id, haplotype_id",
             )
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let rows = stmt
-            .query_map(params![sim_id, generation as i64], |row| {
-                Ok(IndividualSnapshot {
-                    individual_id: row.get(0)?,
-                    haplotype1_chr_id: row.get(1)?,
-                    haplotype1_seq: row.get(2)?,
-                    haplotype1_map: row.get(3)?,
-                    haplotype2_chr_id: row.get(4)?,
-                    haplotype2_seq: row.get(5)?,
-                    haplotype2_map: row.get(6)?,
-                    haplotype1_fitness: row.get(7)?,
-                    haplotype2_fitness: row.get(8)?,
-                    fitness: row.get(9)?,
-                })
+            .query_map(params![generation], |row| {
+                Ok((
+                    row.get::<_, i64>(0)? as usize,    // ind_id
+                    row.get::<_, i64>(1)? as usize,    // hap_id
+                    row.get::<_, Vec<u8>>(2)?,         // seq
+                    row.get::<_, Option<Vec<u8>>>(3)?, // map
+                ))
             })
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        let mut snapshots = Vec::new();
-        for row in rows {
-            snapshots.push(row.map_err(|e| DatabaseError::Query(e.to_string()))?);
+        // Reconstruct Snapshots
+        // Assuming strict ordering or collecting into map first
+        struct PartialSnap {
+            h1_seq: Vec<u8>,
+            h1_map: Option<Vec<u8>>,
+            h2_seq: Vec<u8>,
+            h2_map: Option<Vec<u8>>,
         }
 
-        Ok(snapshots)
+        let mut partials: HashMap<usize, PartialSnap> = HashMap::new();
+
+        for r in rows {
+            let (ind_id, hap_id, seq, map) = r.map_err(|e| DatabaseError::Query(e.to_string()))?;
+            let entry = partials.entry(ind_id).or_insert(PartialSnap {
+                h1_seq: vec![],
+                h1_map: None,
+                h2_seq: vec![],
+                h2_map: None,
+            });
+
+            if hap_id == 1 {
+                entry.h1_seq = seq;
+                entry.h1_map = map;
+            } else if hap_id == 2 {
+                entry.h2_seq = seq;
+                entry.h2_map = map;
+            }
+        }
+
+        let mut results = Vec::new();
+        // Sort by ID for deterministic output
+        let mut ids: Vec<_> = partials.keys().cloned().collect();
+        ids.sort();
+
+        for id in ids {
+            if let Some(p) = partials.remove(&id) {
+                results.push((
+                    id,
+                    IndividualSnapshot {
+                        haplotype1_seq: p.h1_seq,
+                        haplotype1_map: p.h1_map,
+                        haplotype2_seq: p.h2_seq,
+                        haplotype2_map: p.h2_map,
+                        fitness: fitness_map.get(&id).copied(),
+                    },
+                ));
+            }
+        }
+
+        Ok(results)
     }
 
-    /// Get fitness history for a simulation.
-    pub fn get_fitness_history(
-        &self,
-        sim_id: &str,
-    ) -> Result<Vec<(usize, FitnessStats)>, DatabaseError> {
+    /// Calculate fitness history from `individual_fitness` table.
+    pub fn get_fitness_history(&self) -> Result<Vec<(usize, FitnessStats)>, DatabaseError> {
+        // SQLite aggregation
         let mut stmt = self
             .db
             .connection()
             .prepare(
-                "SELECT generation, mean_fitness, min_fitness, max_fitness, std_fitness
-                FROM fitness_history
-                WHERE sim_id = ?1
-                ORDER BY generation",
+                "SELECT generation, 
+                        AVG(fitness) as mean, 
+                        MIN(fitness) as min, 
+                        MAX(fitness) as max,
+                        AVG(fitness*fitness) - AVG(fitness)*AVG(fitness) as var
+                 FROM individual_fitness
+                 GROUP BY generation
+                 ORDER BY generation",
             )
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let rows = stmt
-            .query_map(params![sim_id], |row| {
+            .query_map([], |row| {
+                let var: f64 = row.get(4)?;
                 Ok((
                     row.get::<_, i64>(0)? as usize,
                     FitnessStats {
                         mean: row.get(1)?,
                         min: row.get(2)?,
                         max: row.get(3)?,
-                        std: row.get(4)?,
+                        std: var.sqrt(),
                     },
                 ))
             })
@@ -147,198 +194,41 @@ impl QueryBuilder {
         Ok(history)
     }
 
-    /// Get all recorded generations for a simulation.
-    pub fn get_recorded_generations(&self, sim_id: &str) -> Result<Vec<usize>, DatabaseError> {
+    /// Get all recorded generations.
+    pub fn get_recorded_generations(&self) -> Result<Vec<usize>, DatabaseError> {
         let mut stmt = self
             .db
             .connection()
-            .prepare(
-                "SELECT DISTINCT generation FROM population_state
-                WHERE sim_id = ?1
-                ORDER BY generation",
-            )
+            .prepare("SELECT DISTINCT generation FROM state ORDER BY generation")
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let rows = stmt
-            .query_map(params![sim_id], |row| row.get::<_, i64>(0))
+            .query_map([], |row| row.get::<_, i64>(0))
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        let mut generations = Vec::new();
+        let mut gens = Vec::new();
         for row in rows {
-            generations.push(row.map_err(|e| DatabaseError::Query(e.to_string()))? as usize);
+            gens.push(row.map_err(|e| DatabaseError::Query(e.to_string()))? as usize);
         }
-
-        Ok(generations)
+        Ok(gens)
     }
 
-    /// Trace an individual across generations (if same ID is maintained).
-    pub fn trace_individual(
-        &self,
-        sim_id: &str,
-        individual_id: &str,
-    ) -> Result<Vec<(usize, IndividualSnapshot)>, DatabaseError> {
-        let mut stmt = self
-            .db
-            .connection()
-            .prepare(
-                "SELECT generation, individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
-                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, haplotype1_fitness, haplotype2_fitness, fitness
-                FROM population_state
-                WHERE sim_id = ?1 AND individual_id = ?2
-                ORDER BY generation",
-            )
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let rows = stmt
-            .query_map(params![sim_id, individual_id], |row| {
-                Ok((
-                    row.get::<_, i64>(0)? as usize,
-                    IndividualSnapshot {
-                        individual_id: row.get(1)?,
-                        haplotype1_chr_id: row.get(2)?,
-                        haplotype1_seq: row.get(3)?,
-                        haplotype1_map: row.get(4)?,
-                        haplotype2_chr_id: row.get(5)?,
-                        haplotype2_seq: row.get(6)?,
-                        haplotype2_map: row.get(7)?,
-                        haplotype1_fitness: row.get(8)?,
-                        haplotype2_fitness: row.get(9)?,
-                        fitness: row.get(10)?,
-                    },
-                ))
-            })
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let mut lineage = Vec::new();
-        for row in rows {
-            lineage.push(row.map_err(|e| DatabaseError::Query(e.to_string()))?);
-        }
-
-        Ok(lineage)
-    }
-
-    /// Get fitness statistics for a specific generation.
-    pub fn get_generation_fitness(
-        &self,
-        sim_id: &str,
-        generation: usize,
-    ) -> Result<FitnessStats, DatabaseError> {
-        let mut stmt = self
-            .db
-            .connection()
-            .prepare(
-                "SELECT mean_fitness, min_fitness, max_fitness, std_fitness
-                FROM fitness_history
-                WHERE sim_id = ?1 AND generation = ?2",
-            )
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let stats = stmt
-            .query_row(params![sim_id, generation as i64], |row| {
-                Ok(FitnessStats {
-                    mean: row.get(0)?,
-                    min: row.get(1)?,
-                    max: row.get(2)?,
-                    std: row.get(3)?,
-                })
-            })
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        Ok(stats)
-    }
-
-    /// Get individuals with fitness above a threshold at a generation.
-    pub fn get_high_fitness_individuals(
-        &self,
-        sim_id: &str,
-        generation: usize,
-        min_fitness: f64,
-    ) -> Result<Vec<IndividualSnapshot>, DatabaseError> {
-        let mut stmt = self
-            .db
-            .connection()
-            .prepare(
-                "SELECT individual_id, haplotype1_chr_id, haplotype1_seq, haplotype1_map,
-                       haplotype2_chr_id, haplotype2_seq, haplotype2_map, haplotype1_fitness, haplotype2_fitness, fitness
-                FROM population_state
-                WHERE sim_id = ?1 AND generation = ?2 AND fitness >= ?3
-                ORDER BY fitness DESC",
-            )
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let rows = stmt
-            .query_map(params![sim_id, generation as i64, min_fitness], |row| {
-                Ok(IndividualSnapshot {
-                    individual_id: row.get(0)?,
-                    haplotype1_chr_id: row.get(1)?,
-                    haplotype1_seq: row.get(2)?,
-                    haplotype1_map: row.get(3)?,
-                    haplotype2_chr_id: row.get(4)?,
-                    haplotype2_seq: row.get(5)?,
-                    haplotype2_map: row.get(6)?,
-                    haplotype1_fitness: row.get(7)?,
-                    haplotype2_fitness: row.get(8)?,
-                    fitness: row.get(9)?,
-                })
-            })
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let mut snapshots = Vec::new();
-        for row in rows {
-            snapshots.push(row.map_err(|e| DatabaseError::Query(e.to_string()))?);
-        }
-
-        Ok(snapshots)
-    }
-
-    /// Get the latest checkpoint for a simulation.
-    pub fn get_latest_checkpoint(&self, sim_id: &str) -> Result<CheckpointInfo, DatabaseError> {
+    /// Get the latest checkpoint for current DB.
+    pub fn get_latest_checkpoint(&self) -> Result<CheckpointInfo, DatabaseError> {
         let mut stmt = self
             .db
             .connection()
             .prepare(
                 "SELECT generation, rng_state, timestamp
                 FROM checkpoints
-                WHERE sim_id = ?1
                 ORDER BY generation DESC
                 LIMIT 1",
             )
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
         let checkpoint = stmt
-            .query_row(params![sim_id], |row| {
+            .query_row([], |row| {
                 Ok(CheckpointInfo {
-                    sim_id: sim_id.to_string(),
-                    generation: row.get::<_, i64>(0)? as usize,
-                    rng_state: row.get(1)?,
-                    timestamp: row.get(2)?,
-                })
-            })
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        Ok(checkpoint)
-    }
-
-    /// Get a specific checkpoint by generation.
-    pub fn get_checkpoint(
-        &self,
-        sim_id: &str,
-        generation: usize,
-    ) -> Result<CheckpointInfo, DatabaseError> {
-        let mut stmt = self
-            .db
-            .connection()
-            .prepare(
-                "SELECT generation, rng_state, timestamp
-                FROM checkpoints
-                WHERE sim_id = ?1 AND generation = ?2",
-            )
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let checkpoint = stmt
-            .query_row(params![sim_id, generation as i64], |row| {
-                Ok(CheckpointInfo {
-                    sim_id: sim_id.to_string(),
                     generation: row.get::<_, i64>(0)? as usize,
                     rng_state: row.get(1)?,
                     timestamp: row.get(2)?,
@@ -350,21 +240,14 @@ impl QueryBuilder {
     }
 
     /// Get complete simulation configuration from database.
-    pub fn get_full_config(
-        &self,
-        sim_id: &str,
-    ) -> Result<crate::simulation::Configuration, DatabaseError> {
-        let mut stmt = self
-            .db
-            .connection()
-            .prepare("SELECT config_json FROM simulations WHERE sim_id = ?1")
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+    pub fn get_full_config(&self) -> Result<crate::simulation::Configuration, DatabaseError> {
+        let json = self
+            .get_metadata_value("full_config_json")?
+            .ok_or_else(|| {
+                DatabaseError::Query("Missing full_config_json in metadata".to_string())
+            })?;
 
-        let config_json: String = stmt
-            .query_row(params![sim_id], |row| row.get(0))
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let config: crate::simulation::Configuration = serde_json::from_str(&config_json)
+        let config: crate::simulation::Configuration = serde_json::from_str(&json)
             .map_err(|e| DatabaseError::Query(format!("Failed to parse config: {e}")))?;
 
         Ok(config)
@@ -376,23 +259,9 @@ impl QueryBuilder {
     }
 }
 
-/// Simulation metadata information.
-#[derive(Debug, Clone)]
-pub struct SimulationInfo {
-    pub sim_id: String,
-    pub start_time: i64,
-    pub end_time: Option<i64>,
-    pub pop_size: usize,
-    pub num_generations: usize,
-    pub mutation_rate: f64,
-    pub recombination_rate: f64,
-    pub parameters_json: String,
-}
-
-/// Checkpoint information for resumability.
+/// Checkpoint information.
 #[derive(Debug, Clone)]
 pub struct CheckpointInfo {
-    pub sim_id: String,
     pub generation: usize,
     pub rng_state: Vec<u8>,
     pub timestamp: i64,
@@ -403,153 +272,94 @@ mod tests {
     use super::*;
     use crate::base::{FitnessValue, Nucleotide};
     use crate::genome::{Chromosome, Haplotype, Individual};
+    use crate::simulation::{
+        Configuration, EvolutionConfig, FitnessConfig, GenerationMode, InitializationConfig,
+        MutationConfig, RecombinationConfig, UniformRepeatStructure,
+    };
     use crate::simulation::{ExecutionConfig, Population};
-    use crate::storage::Recorder;
+    use crate::storage::{AsyncRecorder, BufferConfig};
+    use centrevo_codec::CodecStrategy;
 
-    fn create_test_individual(id: &str, length: usize) -> Individual {
-        // Convert total length to num_hors: ru_length=20, rus_per_hor=5, so one HOR = 100 bp
-        let num_hors = length / 100;
-        let chr1 = Chromosome::uniform(format!("{id}_h1_chr1"), Nucleotide::A, 20, 5, num_hors);
-        let chr2 = Chromosome::uniform(format!("{id}_h2_chr1"), Nucleotide::C, 20, 5, num_hors);
-
-        let h1 = Haplotype::from_chromosomes(vec![chr1]);
-        let h2 = Haplotype::from_chromosomes(vec![chr2]);
-
-        Individual::new(id, h1, h2)
-    }
-
-    fn create_test_population(size: usize, chr_length: usize) -> Population {
-        let mut individuals = Vec::new();
-        for i in 0..size {
-            let mut ind = create_test_individual(&format!("ind_{i}"), chr_length);
-            ind.set_cached_fitness(FitnessValue::new(i as f64 / size as f64));
-            individuals.push(ind);
+    fn mock_config() -> Configuration {
+        Configuration {
+            execution: ExecutionConfig::new(10, 3, Some(1)),
+            evolution: EvolutionConfig {
+                mutation: MutationConfig::uniform(0.01).unwrap(),
+                recombination: RecombinationConfig::standard(0.01, 0.5, 0.1).unwrap(),
+                fitness: FitnessConfig::neutral(),
+            },
+            initialization: InitializationConfig::Generate {
+                structure: UniformRepeatStructure::new(Nucleotide::A, 10, 2, 2, 1),
+                mode: GenerationMode::Uniform,
+            },
         }
-        Population::new("test_pop", individuals)
     }
 
-    fn create_test_config() -> ExecutionConfig {
-        ExecutionConfig::new(10, 100, Some(42))
+    fn create_test_individual(id: &str) -> Individual {
+        let h1 =
+            Haplotype::from_chromosomes(vec![Chromosome::uniform("c1", Nucleotide::A, 10, 1, 1)]);
+        let h2 =
+            Haplotype::from_chromosomes(vec![Chromosome::uniform("c1", Nucleotide::T, 10, 1, 1)]);
+        let mut ind = Individual::new(id, h1, h2);
+        ind.set_cached_fitness(FitnessValue::new(1.0));
+        ind
     }
 
-    async fn setup_test_db(path: &str) -> (Recorder, ExecutionConfig) {
+    #[tokio::test]
+    async fn test_query_flow() {
+        let path = "/tmp/test_query_new.sqlite";
         let _ = std::fs::remove_file(path);
-        let buffer_config = crate::storage::BufferConfig {
-            compression_level: 0,
-            ..Default::default()
-        };
-        let recorder = Recorder::new(
-            path,
-            "test_sim",
-            buffer_config,
-            crate::simulation::CodecStrategy::default(),
-        )
-        .expect("Failed to create recorder");
 
-        let config = create_test_config();
-        recorder
-            .record_metadata(&config)
-            .await
-            .expect("Failed to record metadata");
+        let config = mock_config();
 
-        // Record a few generations
-        for generation in 0..3 {
-            let pop = create_test_population(5, 100);
-            let dummy_rng = vec![0u8; 32];
+        // 1. Record
+        {
+            let recorder = AsyncRecorder::new(
+                path,
+                &config,
+                BufferConfig::small(),
+                CodecStrategy::default(),
+            )
+            .expect("Rec created");
+            let mut inds = Vec::new();
+            for i in 0..5 {
+                let mut ind = create_test_individual(&format!("{}", i + 1));
+                ind.set_cached_fitness(FitnessValue::new(i as f64));
+                inds.push(ind);
+            }
+            let pop = Population::new("p", inds);
+
             recorder
-                .record_generation(&pop, generation, dummy_rng)
+                .record_generation(&pop, 0, Some(vec![1, 2, 3]))
                 .await
-                .expect("Failed to record generation");
+                .expect("Rec gen");
+            recorder.close().await.expect("Close");
         }
 
-        (recorder, config)
-    }
+        // 2. Query
+        let q = QueryBuilder::new(path).expect("Query created");
 
-    #[tokio::test]
-    async fn test_list_simulations() {
-        let path = "/tmp/test_query_list.sqlite";
-        let (recorder, _config) = setup_test_db(path).await;
-        recorder.close().await.ok();
+        // Metadata
+        let meta = q.get_metadata().expect("Meta");
+        assert_eq!(meta.get("population_size").map(|s| s.as_str()), Some("10"));
 
-        let query = QueryBuilder::new(path).expect("Failed to create query builder");
-        let sims = query
-            .list_simulations()
-            .expect("Failed to list simulations");
+        // Generation
+        let gen0 = q.get_generation(0).expect("Get gen");
+        assert_eq!(gen0.len(), 5);
+        let id_1 = gen0.iter().find(|(id, _)| *id == 1).unwrap();
+        assert_eq!(id_1.1.fitness, Some(0.0));
 
-        assert_eq!(sims.len(), 1);
-        assert_eq!(sims[0], "test_sim");
+        // History
+        let hist = q.get_fitness_history().expect("History");
+        assert_eq!(hist.len(), 1);
+        assert_eq!(hist[0].1.max, 4.0);
 
-        query.close().ok();
-        std::fs::remove_file(path).ok();
-    }
+        // Checkpoint
+        let cp = q.get_latest_checkpoint().expect("Checkpoint");
+        assert_eq!(cp.generation, 0);
+        assert_eq!(cp.rng_state, vec![1, 2, 3]);
 
-    #[tokio::test]
-    async fn test_get_simulation_info() {
-        let path = "/tmp/test_query_info.sqlite";
-        let (recorder, _config) = setup_test_db(path).await;
-        recorder.close().await.ok();
-
-        let query = QueryBuilder::new(path).expect("Failed to create query builder");
-        let info = query
-            .get_simulation_info("test_sim")
-            .expect("Failed to get simulation info");
-
-        assert_eq!(info.sim_id, "test_sim");
-        assert_eq!(info.pop_size, 10);
-        assert_eq!(info.num_generations, 100);
-
-        query.close().ok();
-        std::fs::remove_file(path).ok();
-    }
-
-    #[tokio::test]
-    async fn test_get_generation() {
-        let path = "/tmp/test_query_gen.sqlite";
-        let (recorder, _config) = setup_test_db(path).await;
-        recorder.close().await.ok();
-
-        let query = QueryBuilder::new(path).expect("Failed to create query builder");
-        let individuals = query
-            .get_generation("test_sim", 0)
-            .expect("Failed to get generation");
-
-        assert_eq!(individuals.len(), 5);
-
-        query.close().ok();
-        std::fs::remove_file(path).ok();
-    }
-
-    #[tokio::test]
-    async fn test_get_fitness_history() {
-        let path = "/tmp/test_query_fitness.sqlite";
-        let (recorder, _config) = setup_test_db(path).await;
-        recorder.close().await.ok();
-
-        let query = QueryBuilder::new(path).expect("Failed to create query builder");
-        let history = query
-            .get_fitness_history("test_sim")
-            .expect("Failed to get fitness history");
-
-        assert_eq!(history.len(), 3); // 3 generations recorded
-
-        query.close().ok();
-        std::fs::remove_file(path).ok();
-    }
-
-    #[tokio::test]
-    async fn test_get_recorded_generations() {
-        let path = "/tmp/test_query_gens.sqlite";
-        let (recorder, _config) = setup_test_db(path).await;
-        recorder.close().await.ok();
-
-        let query = QueryBuilder::new(path).expect("Failed to create query builder");
-        let gens = query
-            .get_recorded_generations("test_sim")
-            .expect("Failed to get generations");
-
-        assert_eq!(gens, vec![0, 1, 2]);
-
-        query.close().ok();
+        q.close().ok();
         std::fs::remove_file(path).ok();
     }
 }

@@ -9,7 +9,6 @@ use crate::utils::sequence_from_indices;
 
 pub fn analyze_data(
     database: &PathBuf,
-    name: &str,
     generation: usize,
     chromosome: usize,
     format: &str,
@@ -20,12 +19,17 @@ pub fn analyze_data(
         polymorphism::count_segregating_sites, tajimas_d, wattersons_theta,
     };
 
+    let name = database
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("simulation");
+
     println!("🔬 Analyzing simulation '{name}'");
     println!("Generation: {generation}, Chromosome: {chromosome}");
 
     let query = QueryBuilder::new(database).context("Failed to open database")?;
     let snapshots = query
-        .get_generation(name, generation)
+        .get_generation(generation)
         .context("Failed to load generation")?;
 
     if snapshots.is_empty() {
@@ -35,7 +39,7 @@ pub fn analyze_data(
     // Convert snapshots to individuals for analysis
     let mut individuals = Vec::new();
 
-    for snap in snapshots {
+    for (id_num, snap) in snapshots {
         let seq1 = sequence_from_indices(snap.haplotype1_seq.clone());
         let seq2 = sequence_from_indices(snap.haplotype2_seq.clone());
 
@@ -50,13 +54,14 @@ pub fn analyze_data(
         let map =
             centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
 
-        let chr1 = Chromosome::new(snap.haplotype1_chr_id, seq1, map.clone());
-        let chr2 = Chromosome::new(snap.haplotype2_chr_id, seq2, map);
+        let chr1 = Chromosome::new(format!("c1_h1_{id_num}"), seq1, map.clone());
+        let chr2 = Chromosome::new(format!("c1_h2_{id_num}"), seq2, map);
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);
 
-        let mut ind = Individual::new(snap.individual_id, h1, h2);
+        let individual_id = format!("ind_{id_num}");
+        let mut ind = Individual::new(individual_id, h1, h2);
         if let Some(f) = snap.fitness {
             ind.set_cached_fitness(FitnessValue::new(f));
         }

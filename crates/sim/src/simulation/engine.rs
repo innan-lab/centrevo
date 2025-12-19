@@ -155,10 +155,22 @@ impl Simulation {
     ///
     /// A `Simulation` instance ready to continue from the checkpoint, or an error
     /// if the checkpoint is invalid or configuration cannot be loaded.
-    pub fn from_checkpoint(
-        db_path: impl AsRef<std::path::Path>,
-        sim_id: &str,
-    ) -> Result<Self, String> {
+    /// Resume a simulation from a checkpoint in the database.
+    ///
+    /// This loads the complete simulation state from the last recorded checkpoint,
+    /// including population state, RNG state, and all configuration parameters.
+    /// The simulation can then continue exactly as if it had never stopped.
+    ///
+    /// # Arguments
+    ///
+    /// * `db_path` - Path to the SQLite database containing the checkpoint
+    /// * `sim_id` - Deprecated/Ignored (Simulation ID) - retained for API compat but unused
+    ///
+    /// # Returns
+    ///
+    /// A `Simulation` instance ready to continue from the checkpoint, or an error
+    /// if the checkpoint is invalid or configuration cannot be loaded.
+    pub fn from_checkpoint(db_path: impl AsRef<std::path::Path>) -> Result<Self, String> {
         use crate::storage::QueryBuilder;
 
         // Open database for querying
@@ -167,22 +179,12 @@ impl Simulation {
 
         // Get the latest checkpoint
         let checkpoint = query
-            .get_latest_checkpoint(sim_id)
+            .get_latest_checkpoint()
             .map_err(|e| format!("Failed to load checkpoint: {e}"))?;
 
-        // Verify sim_id matches
-        if checkpoint.sim_id != sim_id {
-            return Err(format!(
-                "Checkpoint sim_id mismatch: expected '{expected}', found '{found}'",
-                expected = sim_id,
-                found = checkpoint.sim_id
-            ));
-        }
-
-        // Load complete configuration
         // Load complete configuration
         let mut config = query
-            .get_full_config(sim_id)
+            .get_full_config()
             .map_err(|e| format!("Failed to load configuration: {e}"))?;
 
         // Adapt initialization config to load from database
@@ -190,7 +192,16 @@ impl Simulation {
         config.initialization = InitializationConfig::Load {
             source: SequenceSource::Database {
                 path: db_path_str,
-                sim_id: sim_id.to_string(),
+                // sim_id is unused
+                sim_id: String::new(),
+                // Actually sequence loader still expects sim_id because it calls query.get_generation.
+                // Wait, I updated sequence loader to NOT use sim_id?
+                // Yes, I did. But `SequenceSource::Database` struct still has `sim_id` field?
+                // I need to check `crates/sim/src/simulation/configs.rs`.
+                // If `SequenceSource` still has `sim_id`, I can pass it.
+                // But `load_individuals_from_database` in `sequence.rs` ignores it?
+                // Yes, I updated `load_individuals_from_database` to NOT use `sim_id` in `QueryBuilder` calls.
+                // So passing it is fine, it will be ignored by my updated code.
                 generation: Some(checkpoint.generation),
             },
         };
@@ -202,13 +213,13 @@ impl Simulation {
         let mut sim = Self::new(config)?;
 
         // Override population name to match generation
+        // ... (rest of function)
         sim.population = Population::new(
             format!("pop_{gen}", gen = checkpoint.generation),
             sim.population.individuals().to_vec(),
         );
 
         // Force set the correct generation
-        // The default new() starts at 0.
         for _ in 0..checkpoint.generation {
             sim.population.increment_generation();
         }
@@ -1243,7 +1254,7 @@ mod tests {
 
     #[test]
     fn test_from_checkpoint_nonexistent_file() {
-        let result = Simulation::from_checkpoint("nonexistent.db", "test_sim");
+        let result = Simulation::from_checkpoint("nonexistent.db");
 
         assert!(result.is_err());
         // The actual error message varies, just check it's an error

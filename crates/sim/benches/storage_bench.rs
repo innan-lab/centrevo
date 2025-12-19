@@ -47,10 +47,33 @@ fn bench_recorder_write(c: &mut Criterion) {
                 // We need to establish recorder inside the runtime context if it spawns tasks?
                 // AsyncRecorder::new spawns a naked thread currently? Or tokio::spawn?
                 // It uses `tokio::spawn`. So we need to be in runtime context.
+                // Create dummy config for bench
+                let config = centrevo_sim::simulation::Configuration {
+                    execution: centrevo_sim::simulation::ExecutionConfig::new(pop_size, 100, None),
+                    evolution: centrevo_sim::simulation::EvolutionConfig {
+                        mutation: centrevo_sim::simulation::MutationConfig::uniform(0.0).unwrap(),
+                        recombination: centrevo_sim::simulation::RecombinationConfig::standard(
+                            0.0, 0.0, 0.0,
+                        )
+                        .unwrap(),
+                        fitness: centrevo_sim::simulation::FitnessConfig::neutral(),
+                    },
+                    initialization: centrevo_sim::simulation::InitializationConfig::Generate {
+                        structure: centrevo_sim::simulation::UniformRepeatStructure::new(
+                            centrevo_sim::base::Nucleotide::A,
+                            20,
+                            5,
+                            1,
+                            1,
+                        ),
+                        mode: centrevo_sim::simulation::GenerationMode::Uniform,
+                    },
+                };
+
                 let _guard = rt.enter();
                 let recorder = centrevo_sim::storage::AsyncRecorder::new(
                     &path,
-                    "bench_sim",
+                    &config,
                     buffer_config,
                     centrevo_sim::simulation::CodecStrategy::default(),
                 )
@@ -63,7 +86,11 @@ fn bench_recorder_write(c: &mut Criterion) {
                 rt.block_on(async {
                     let dummy_rng = vec![0u8; 32];
                     recorder
-                        .record_generation(black_box(&pop), black_box(0), black_box(dummy_rng))
+                        .record_generation(
+                            black_box(&pop),
+                            black_box(0),
+                            black_box(Some(dummy_rng)),
+                        )
                         .await
                         .unwrap();
                     // We should close to ensure flush in benchmark?

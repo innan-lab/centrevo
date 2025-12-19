@@ -9,7 +9,6 @@ use crate::printing::print_simulation_parameters;
 #[allow(clippy::too_many_arguments)]
 pub fn run_simulation(
     database: &PathBuf,
-    name: &str,
     resume: bool,
     seed_override: Option<u64>,
     record_every_override: Option<usize>,
@@ -25,7 +24,7 @@ pub fn run_simulation(
         println!("📂 Resuming simulation from checkpoint...");
 
         // Load simulation from checkpoint
-        let mut sim = Simulation::from_checkpoint(database, name)
+        let mut sim = Simulation::from_checkpoint(database)
             .map_err(|e| anyhow::anyhow!("Failed to resume: {e}"))?;
 
         // Apply seed override if provided
@@ -61,15 +60,12 @@ pub fn run_simulation(
 
             let recorder = Recorder::new(
                 database,
-                name,
+                config,
                 buffer_config,
                 config.execution.codec,
             )
             .context("Failed to create recorder")?;
-            recorder
-                .record_full_config(config)
-                .await
-                .context("Failed to record configuration")?;
+            // Metadata is recorded in Recorder::new
 
             // Print parameters
             println!("Resuming Configuration:");
@@ -108,7 +104,7 @@ pub fn run_simulation(
                 if should_record {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation, rng_state)
+                        .record_generation(sim.population(), generation, Some(rng_state))
                         .await
                         .context(format!("Failed to record generation {generation}"))?;
                 }
@@ -124,10 +120,8 @@ pub fn run_simulation(
             }
 
             // Finalize
-            recorder
-                .finalize_metadata()
-                .await
-                .context("Failed to finalize metadata")?;
+            // Metadata finalized implicitly on close or not needed
+
 
             recorder.close().await.context("Failed to close recorder")?;
 
@@ -144,12 +138,12 @@ pub fn run_simulation(
 
         // Load full configuration (now returns Configuration directly)
         let config = query
-            .get_full_config(name)
+            .get_full_config()
             .context("Failed to load configuration. Did you run 'centrevo init' first?")?;
 
         // Verify that Gen 0 exists
         let initial_individuals = query
-            .get_generation(name, 0)
+            .get_generation(0)
             .context("Failed to load initial population. Did you run 'centrevo init' first?")?;
 
         if initial_individuals.is_empty() {
@@ -164,7 +158,8 @@ pub fn run_simulation(
         let initialization_config = centrevo_sim::simulation::InitializationConfig::Load {
             source: centrevo_sim::simulation::SequenceSource::Database {
                 path: database.to_string_lossy().to_string(),
-                sim_id: name.to_string(),
+                // sim_id is unused in single-db model, passing empty
+                sim_id: String::new(),
                 generation: Some(0),
             },
         };
@@ -193,7 +188,7 @@ pub fn run_simulation(
             };
             let recorder = Recorder::new(
                 database,
-                name,
+                &config,
                 buffer_config,
                 config.execution.codec,
             )
@@ -235,7 +230,7 @@ pub fn run_simulation(
                 if should_record {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation, rng_state)
+                        .record_generation(sim.population(), generation, Some(rng_state))
                         .await
                         .context(format!("Failed to record generation {generation}"))?;
                 }
@@ -251,10 +246,8 @@ pub fn run_simulation(
             }
 
             // Finalize
-            recorder
-                .finalize_metadata()
-                .await
-                .context("Failed to finalize metadata")?;
+            // Finalize not needed
+
             
             recorder.close().await.context("Failed to close recorder")?;
 
@@ -265,7 +258,7 @@ pub fn run_simulation(
         println!("  Final generation: {}", config.execution.total_generations);
     }
 
-    println!("\n💡 Use 'centrevo info -N {name}' to view results");
+    println!("\n💡 Use 'centrevo info -d {}' to view results", database.display());
 
     Ok(())
 }

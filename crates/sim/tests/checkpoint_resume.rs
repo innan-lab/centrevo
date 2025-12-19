@@ -40,7 +40,7 @@ fn test_checkpoint_and_resume_basic() {
     let fitness = FitnessConfig::neutral();
     let config = ExecutionConfig::new(10, 100, Some(42)); // 100 generations
 
-    let sim_id = "test_sim";
+    let _sim_id = "test_sim";
     let rt = Runtime::new().unwrap();
 
     // Part 1: Run simulation for first 50 generations with checkpoints
@@ -69,15 +69,13 @@ fn test_checkpoint_and_resume_basic() {
             ..Default::default()
         };
 
-        let mut recorder = AsyncRecorder::new(
+        let recorder = AsyncRecorder::new(
             &db_path,
-            sim_id,
+            &sim_config,
             buffer_config,
             centrevo_sim::simulation::CodecStrategy::default(),
         )
         .unwrap();
-
-        recorder.record_full_config(&sim_config).await.unwrap();
 
         // Run first 50 generations
         for generation in 1..=50 {
@@ -86,7 +84,7 @@ fn test_checkpoint_and_resume_basic() {
             if strategy.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation, rng_state)
+                    .record_generation(sim.population(), generation, Some(rng_state))
                     .await
                     .unwrap();
                 // Checkpoint is implicit in AsyncRecorder?
@@ -135,7 +133,7 @@ fn test_checkpoint_and_resume_basic() {
 
     // Part 2: Resume from checkpoint and continue
     rt.block_on(async {
-        let mut sim = Simulation::from_checkpoint(&db_path, sim_id).unwrap();
+        let mut sim = Simulation::from_checkpoint(&db_path).unwrap();
 
         // Verify we resumed from generation 50 (last checkpoint at gen 50)
         assert_eq!(sim.generation(), 50, "Should resume from generation 50");
@@ -147,9 +145,9 @@ fn test_checkpoint_and_resume_basic() {
             compression_level: 0,
             ..Default::default()
         };
-        let mut recorder = AsyncRecorder::new(
+        let recorder = AsyncRecorder::new(
             &db_path,
-            sim_id,
+            sim.configuration(),
             buffer_config,
             centrevo_sim::simulation::CodecStrategy::default(),
         )
@@ -163,14 +161,13 @@ fn test_checkpoint_and_resume_basic() {
             if strategy.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation, rng_state)
+                    .record_generation(sim.population(), generation, Some(rng_state))
                     .await
                     .unwrap();
                 // recorder.record_checkpoint(generation, &rng_state).unwrap();
             }
         }
 
-        recorder.finalize_metadata().await.unwrap();
         recorder.close().await.unwrap();
 
         assert_eq!(sim.generation(), 100);
@@ -184,14 +181,14 @@ fn test_checkpoint_and_resume_basic() {
         let query = QueryBuilder::new(&db_path).unwrap();
 
         // Check recorded generations
-        let recorded_gens = query.get_recorded_generations(sim_id).unwrap();
+        let recorded_gens = query.get_recorded_generations().unwrap();
         assert!(!recorded_gens.is_empty());
         assert_eq!(*recorded_gens.last().unwrap(), 100);
 
         println!("✓ Recorded generations: {:?}", recorded_gens);
 
         // Verify we can load final population
-        let final_pop = query.get_generation(sim_id, 100).unwrap();
+        let final_pop = query.get_generation(100).unwrap();
         assert_eq!(final_pop.len(), 10);
 
         println!("✓ Final population has {} individuals", final_pop.len());
@@ -216,7 +213,7 @@ fn test_resume_multiple_times() {
     let fitness = FitnessConfig::neutral();
     let config = ExecutionConfig::new(5, 100, Some(123));
 
-    let sim_id = "multi_resume_sim";
+    let _sim_id = "multi_resume_sim";
     let rt = Runtime::new().unwrap();
 
     // Run simulation in 4 chunks: 0->25, 25->50, 50->75, 75->100
@@ -238,7 +235,7 @@ fn test_resume_multiple_times() {
                         mode: GenerationMode::Uniform,
                     },
                 };
-                let mut sim = Simulation::new(sim_config.clone()).unwrap();
+                let sim = Simulation::new(sim_config.clone()).unwrap();
 
                 // Record full config
                 // Record full config
@@ -250,19 +247,18 @@ fn test_resume_multiple_times() {
                 };
                 let recorder = AsyncRecorder::new(
                     &db_path,
-                    sim_id,
+                    &sim_config,
                     buffer_config,
                     centrevo_sim::simulation::CodecStrategy::default(),
                 )
                 .unwrap();
 
-                recorder.record_full_config(&sim_config).await.unwrap();
                 recorder.close().await.unwrap();
 
                 sim
             } else {
                 // Subsequent runs: resume from checkpoint
-                Simulation::from_checkpoint(&db_path, sim_id).unwrap()
+                Simulation::from_checkpoint(&db_path).unwrap()
             };
 
             let start_gen = sim.generation();
@@ -272,9 +268,9 @@ fn test_resume_multiple_times() {
                 compression_level: 0,
                 ..Default::default()
             };
-            let mut recorder = AsyncRecorder::new(
+            let recorder = AsyncRecorder::new(
                 &db_path,
-                sim_id,
+                sim.configuration(),
                 buffer_config,
                 centrevo_sim::simulation::CodecStrategy::default(),
             )
@@ -288,7 +284,7 @@ fn test_resume_multiple_times() {
                 if strategy.should_record(generation) {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation, rng_state)
+                        .record_generation(sim.population(), generation, Some(rng_state))
                         .await
                         .unwrap();
                 }
@@ -377,15 +373,13 @@ fn test_resume_preserves_rng_state() {
                 ..Default::default()
             };
 
-            let mut recorder = AsyncRecorder::new(
+            let recorder = AsyncRecorder::new(
                 &db_path2,
-                "rng_test_sim",
+                &sim_config,
                 buffer_config,
                 centrevo_sim::simulation::CodecStrategy::default(),
             )
             .unwrap();
-
-            recorder.record_full_config(&sim_config).await.unwrap();
 
             for generation in 1..=50 {
                 sim.step().unwrap();
@@ -393,7 +387,7 @@ fn test_resume_preserves_rng_state() {
                 if strategy.should_record(generation) {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation, rng_state)
+                        .record_generation(sim.population(), generation, Some(rng_state))
                         .await
                         .unwrap();
                 }
@@ -404,7 +398,7 @@ fn test_resume_preserves_rng_state() {
 
         // Part 2: Resume and complete
         {
-            let mut sim = Simulation::from_checkpoint(&db_path2, "rng_test_sim").unwrap();
+            let mut sim = Simulation::from_checkpoint(&db_path2).unwrap();
 
             assert_eq!(sim.generation(), 50);
 
@@ -452,82 +446,4 @@ fn test_resume_preserves_rng_state() {
     cleanup_db(&db_path1);
     cleanup_db(&db_path2);
     println!("✅ RNG state preservation test passed!");
-}
-
-#[test]
-fn test_resume_with_wrong_sim_id_fails() {
-    let db_path = test_db_path("wrong_id");
-    cleanup_db(&db_path);
-
-    // Create a simulation
-    let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 10, 1);
-
-    let mutation = MutationConfig::uniform(0.001).unwrap();
-    let recombination = RecombinationConfig::standard(0.01, 0.7, 0.1).unwrap();
-    let fitness = FitnessConfig::neutral();
-    let config = ExecutionConfig::new(5, 50, Some(42));
-
-    let correct_sim_id = "correct_sim";
-    let wrong_sim_id = "wrong_sim";
-    let rt = Runtime::new().unwrap();
-
-    // Run and record with correct_sim_id
-    rt.block_on(async {
-        let sim_config = Configuration {
-            execution: config.clone(),
-            evolution: EvolutionConfig {
-                mutation: mutation.clone(),
-                recombination: recombination.clone(),
-                fitness: fitness.clone(),
-            },
-            initialization: InitializationConfig::Generate {
-                structure: structure.clone(),
-                mode: GenerationMode::Uniform,
-            },
-        };
-        let mut sim = Simulation::new(sim_config.clone()).unwrap();
-
-        let strategy = RecordingStrategy::EveryN(10);
-        let buffer_config = BufferConfig {
-            compression_level: 0,
-            ..Default::default()
-        };
-
-        let mut recorder = AsyncRecorder::new(
-            &db_path,
-            correct_sim_id,
-            buffer_config,
-            centrevo_sim::simulation::CodecStrategy::default(),
-        )
-        .unwrap();
-
-        recorder.record_full_config(&sim_config).await.unwrap();
-
-        for generation in 1..=20 {
-            sim.step().unwrap();
-
-            if strategy.should_record(generation) {
-                let rng_state = sim.rng_state_bytes();
-                recorder
-                    .record_generation(sim.population(), generation, rng_state)
-                    .await
-                    .unwrap();
-            }
-        }
-
-        recorder.close().await.unwrap();
-    });
-
-    // Try to resume with wrong sim_id - should fail
-    let result = Simulation::from_checkpoint(&db_path, wrong_sim_id);
-
-    assert!(result.is_err(), "Should fail when using wrong sim_id");
-    println!("✓ Correctly rejected wrong sim_id");
-
-    // Resume with correct sim_id - should succeed
-    let result = Simulation::from_checkpoint(&db_path, correct_sim_id);
-    assert!(result.is_ok(), "Should succeed with correct sim_id");
-
-    cleanup_db(&db_path);
-    println!("✅ Wrong sim_id test passed!");
 }

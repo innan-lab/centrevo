@@ -13,11 +13,7 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
     use crate::defaults;
 
     // Simulation configuration
-    let name = if defaults {
-        defaults::SIMULATION_NAME.to_string()
-    } else {
-        prompt_string("Simulation name", Some(defaults::SIMULATION_NAME))?
-    };
+    // Name is no longer used, we just use database file path
 
     let database = if defaults {
         PathBuf::from(defaults::OUTPUT_DB)
@@ -239,7 +235,6 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
 
     println!("\n📋 Configuration Summary");
     println!("========================");
-    println!("Simulation name: {name}");
     println!("Database: {}", database.display());
     println!();
     println!("Population:");
@@ -315,8 +310,7 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
     println!("\n🚀 Starting simulation setup...\n");
 
     let args = InitArgs {
-        name: name.clone(),
-        output: database.clone(),
+        database: database.clone(),
         population_size,
         generations,
         ru_length,
@@ -362,13 +356,16 @@ pub fn setup_wizard(defaults: bool) -> Result<()> {
     if should_run {
         println!();
         run_simulation(
-            &database, &name, false, // not resume
+            &database, false, // not resume
             None,  // no seed override (use configured)
             None,  // no record override (use configured)
             true,  // show progress
         )?;
     } else {
-        println!("\n💡 To run later, use: centrevo run -N {name}");
+        println!(
+            "\n💡 To run later, use: centrevo run -d {}",
+            database.display()
+        );
     }
 
     Ok(())

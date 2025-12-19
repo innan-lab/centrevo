@@ -4,13 +4,9 @@ use std::path::PathBuf;
 
 #[derive(Args, Debug)]
 pub struct InitArgs {
-    /// Simulation name
-    #[arg(short = 'N', long, default_value = defaults::SIMULATION_NAME)]
-    pub name: String,
-
     /// Output database path
-    #[arg(short, long, default_value = defaults::OUTPUT_DB)]
-    pub output: PathBuf,
+    #[arg(short = 'd', long = "database", default_value = defaults::OUTPUT_DB)]
+    pub database: PathBuf,
 
     /// Population size
     #[arg(short = 'n', long, default_value_t = defaults::POPULATION_SIZE)]

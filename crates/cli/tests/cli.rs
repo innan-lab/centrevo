@@ -9,9 +9,7 @@ fn test_init_creates_database() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_sim_default")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .assert()
         .success()
@@ -29,9 +27,7 @@ fn test_init_population_param() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_pop_size")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--population-size")
         .arg("10")
@@ -47,9 +43,7 @@ fn test_init_generations_param() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_gen_count")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--generations")
         .arg("50")
@@ -65,9 +59,7 @@ fn test_init_mutation_rate_param() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_mut")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--mutation-rate")
         .arg("1e-4")
@@ -82,9 +74,7 @@ fn test_init_advanced_mutation_params() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_adv_mut")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--rate-ac")
         .arg("1e-6")
@@ -109,9 +99,7 @@ fn test_init_error_partial_mutation_rates() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_fail_mut")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--rate-ac")
         .arg("1e-6")
@@ -128,9 +116,7 @@ fn test_init_indel_params() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_indel")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--indel-ins-rate")
         .arg("0.01")
@@ -147,9 +133,7 @@ fn test_init_recombination_params() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_recomb")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--recomb-rate")
         .arg("0.05")
@@ -164,9 +148,7 @@ fn test_init_fitness_params() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_fit")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--fit-gc-opt")
         .arg("0.4")
@@ -183,10 +165,12 @@ fn test_init_defaults() {
     // But Command::cargo_bin executes the binary, so we need to set current_dir
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.current_dir(&temp)
-        .arg("init")
+        .arg("setup")
+        .arg("--defaults")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Name: simulation"));
+        // Setup defaults prints summary, but no name anymore
+        .stdout(predicate::str::contains("Database: simulation.db"));
 
     assert!(temp.path().join("simulation.db").exists());
 }
@@ -200,9 +184,7 @@ fn test_run_execution() {
     let mut cmd_init = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd_init
         .arg("init")
-        .arg("--name")
-        .arg("test_run_exec")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--generations")
         .arg("2")
@@ -222,8 +204,6 @@ fn test_run_execution() {
     let mut cmd_run = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd_run
         .arg("run")
-        .arg("--name")
-        .arg("test_run_exec")
         .arg("--database")
         .arg(&db_path)
         .assert()
@@ -238,8 +218,6 @@ fn test_run_error_missing_db() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("run")
-        .arg("--name")
-        .arg("test_run_missing")
         .arg("--database")
         .arg(&db_path)
         .assert()
@@ -280,9 +258,7 @@ fn test_list_displays_simulations() {
     let mut cmd_init = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd_init
         .arg("init")
-        .arg("--name")
-        .arg("my_simulation_name")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .assert()
         .success();
@@ -294,7 +270,8 @@ fn test_list_displays_simulations() {
         .arg(&db_path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("my_simulation_name"));
+        // No name to check, check for population size or similar
+        .stdout(predicate::str::contains("Population:"));
 }
 
 #[test]
@@ -304,9 +281,7 @@ fn test_init_recombination_advanced() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_recomb_adv")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--crossover-prob")
         .arg("0.05")
@@ -327,9 +302,7 @@ fn test_init_fitness_detailed() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_fit_detailed")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--fit-len-opt")
         .arg("100000")
@@ -350,9 +323,7 @@ fn test_init_indel_extended() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_centrevo"));
     cmd.arg("init")
-        .arg("--name")
-        .arg("test_indel_ext")
-        .arg("--output")
+        .arg("--database")
         .arg(&db_path)
         .arg("--indel-length-p")
         .arg("0.3")

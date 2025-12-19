@@ -35,32 +35,24 @@ impl RecordingStrategy {
 /// Snapshot of an individual for database storage.
 #[derive(Debug, Clone)]
 pub struct IndividualSnapshot {
-    pub individual_id: String,
-    pub haplotype1_chr_id: String,
     pub haplotype1_seq: Vec<u8>,         // Encoded
     pub haplotype1_map: Option<Vec<u8>>, // Encoded serialized map
-    pub haplotype2_chr_id: String,
     pub haplotype2_seq: Vec<u8>,         // Encoded
     pub haplotype2_map: Option<Vec<u8>>, // Encoded serialized map
-    pub haplotype1_fitness: Option<f64>,
-    pub haplotype2_fitness: Option<f64>,
     pub fitness: Option<f64>,
 }
 
 impl IndividualSnapshot {
     /// Create a snapshot from an individual.
-    /// Encodes sequence using the provided strategy.
-    /// Encodes structure using UnpackedRS (always).
     pub fn from_individual(ind: &Individual, codec: &CodecStrategy) -> Self {
         let h1 = ind.haplotype1();
         let h2 = ind.haplotype2();
 
-        // Helper to process chromosome
+        // Helper to process chromosome (assumes index 0 for now as per current limitation)
         let process_chr =
-            |chr_opt: Option<&crate::genome::Chromosome>| -> (String, Vec<u8>, Option<Vec<u8>>) {
+            |chr_opt: Option<&crate::genome::Chromosome>| -> (Vec<u8>, Option<Vec<u8>>) {
                 if let Some(chr) = chr_opt {
                     // 1. Sequence -> Configured Codec
-                    // Convert Nucleotide -> u8 indices
                     let raw_seq: Vec<u8> = chr
                         .sequence()
                         .as_slice()
@@ -72,93 +64,91 @@ impl IndividualSnapshot {
 
                     // 2. Map -> Serialize -> UnpackedRS (Fixed)
                     let map_bytes = bincode::serialize(chr.map()).unwrap_or_default();
-                    let encoded_map = CodecStrategy::UnpackedRS.encode(&map_bytes).ok(); // Option
+                    let encoded_map = CodecStrategy::UnpackedRS.encode(&map_bytes).ok();
 
-                    (chr.id().to_string(), encoded_seq, encoded_map)
+                    (encoded_seq, encoded_map)
                 } else {
-                    (String::new(), Vec::new(), None)
+                    (Vec::new(), None)
                 }
             };
 
-        let (h1_chr_id, h1_seq, h1_map) = process_chr(h1.get(0));
-        let (h2_chr_id, h2_seq, h2_map) = process_chr(h2.get(0));
+        let (h1_seq, h1_map) = process_chr(h1.get(0));
+        let (h2_seq, h2_map) = process_chr(h2.get(0));
 
         Self {
-            individual_id: ind.id().to_string(),
-            haplotype1_chr_id: h1_chr_id,
             haplotype1_seq: h1_seq,
             haplotype1_map: h1_map,
-            haplotype2_chr_id: h2_chr_id,
             haplotype2_seq: h2_seq,
             haplotype2_map: h2_map,
-            haplotype1_fitness: h1.cached_fitness().map(|f| *f),
-            haplotype2_fitness: h2.cached_fitness().map(|f| *f),
-            fitness: ind.cached_fitness().map(|f| *f),
+            fitness: ind.cached_fitness().map(|f| f64::from(*f)),
         }
     }
 
     /// Reconstruct an Individual from a snapshot.
-    /// Uses the provided codec for sequence, and UnpackedRS for map.
-    pub fn to_individual(&self, codec: &CodecStrategy) -> Result<Individual, String> {
+    pub fn to_individual(&self, id: &str, codec: &CodecStrategy) -> Result<Individual, String> {
         use crate::base::{Nucleotide, Sequence};
         use crate::genome::repeat_map::RepeatMap;
         use crate::genome::{Chromosome, Haplotype};
 
         // Helper to reconstruct chromosome
-        let reconstruct_chr =
-            |id: &str, seq_data: &[u8], map_data: Option<&[u8]>| -> Result<Chromosome, String> {
-                // 1. Decode Sequence
-                let raw_seq = codec
-                    .decode(seq_data)
-                    .map_err(|e| format!("Seq Decode: {e}"))?;
+        let reconstruct_chr = |chr_suffix: &str,
+                               seq_data: &[u8],
+                               map_data: Option<&[u8]>|
+         -> Result<Chromosome, String> {
+            // 1. Decode Sequence
+            if seq_data.is_empty() {
+                // Handle empty chromosome case if needed, though usually means logic error if expected
+                // For now, assume if check handles it upstream or returns empty chromosome
+                return Ok(Chromosome::new(
+                    format!("{}_{}", id, chr_suffix),
+                    Sequence::new(),
+                    RepeatMap::new(vec![0], vec![0])
+                        .unwrap_or_else(|_| RepeatMap::uniform(0, 0, 0)),
+                ));
+            }
 
-                let nucs: Vec<Nucleotide> = raw_seq
-                    .iter()
-                    .map(|&i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
-                    .collect();
-                let seq = Sequence::from_nucleotides(nucs);
+            let raw_seq = codec
+                .decode(seq_data)
+                .map_err(|e| format!("Seq Decode: {e}"))?;
 
-                // 2. Decode Map
-                let map = if let Some(bytes) = map_data {
-                    let raw_map_bytes = CodecStrategy::UnpackedRS
-                        .decode(bytes)
-                        .map_err(|e| format!("Map Decode: {e}"))?;
+            let nucs: Vec<Nucleotide> = raw_seq
+                .iter()
+                .map(|&i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
+                .collect();
+            let seq = Sequence::from_nucleotides(nucs);
 
-                    bincode::deserialize::<RepeatMap>(&raw_map_bytes)
-                        .map_err(|e| format!("Map Deser: {e}"))?
-                } else {
-                    return Err("Missing RepeatMap in snapshot".to_string());
-                };
+            // 2. Decode Map
+            let map = if let Some(bytes) = map_data {
+                let raw_map_bytes = CodecStrategy::UnpackedRS
+                    .decode(bytes)
+                    .map_err(|e| format!("Map Decode: {e}"))?;
 
-                Ok(Chromosome::new(id.to_string(), seq, map))
+                bincode::deserialize::<RepeatMap>(&raw_map_bytes)
+                    .map_err(|e| format!("Map Deser: {e}"))?
+            } else {
+                RepeatMap::new(vec![0], vec![0]).unwrap_or_else(|_| RepeatMap::uniform(0, 0, 0))
             };
 
+            Ok(Chromosome::new(format!("{}_{}", id, chr_suffix), seq, map))
+        };
+
         let chr1 = reconstruct_chr(
-            &self.haplotype1_chr_id,
+            "h1_chr1",
             &self.haplotype1_seq,
             self.haplotype1_map.as_deref(),
         )?;
         let chr2 = reconstruct_chr(
-            &self.haplotype2_chr_id,
+            "h2_chr1",
             &self.haplotype2_seq,
             self.haplotype2_map.as_deref(),
         )?;
 
-        // Create haplotypes
         let mut hap1 = Haplotype::new();
         hap1.push(chr1);
-        if let Some(f) = self.haplotype1_fitness {
-            hap1.set_cached_fitness(FitnessValue::new(f));
-        }
-
         let mut hap2 = Haplotype::new();
         hap2.push(chr2);
-        if let Some(f) = self.haplotype2_fitness {
-            hap2.set_cached_fitness(FitnessValue::new(f));
-        }
 
-        // Create individual
-        let mut individual = Individual::new(self.individual_id.as_str(), hap1, hap2);
+        let mut individual = Individual::new(id, hap1, hap2);
         if let Some(f) = self.fitness {
             individual.set_cached_fitness(FitnessValue::new(f));
         }

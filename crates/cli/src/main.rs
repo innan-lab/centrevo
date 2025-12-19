@@ -39,10 +39,6 @@ enum Commands {
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
 
-        /// Simulation name (identifier for this run)
-        #[arg(short = 'N', long)]
-        name: String,
-
         /// Resume from the last saved checkpoint
         ///
         /// Use this if a previous run was interrupted or if you want to extend it.
@@ -74,10 +70,6 @@ enum Commands {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
-
-        /// Simulation name
-        #[arg(short = 'N', long)]
-        name: String,
     },
 
     /// Generations: List all recorded timepoints for a simulation.
@@ -85,10 +77,6 @@ enum Commands {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
-
-        /// Simulation name
-        #[arg(short = 'N', long)]
-        name: String,
     },
 
     /// Export data to other formats (CSV, FASTA, JSON).
@@ -98,10 +86,6 @@ enum Commands {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
-
-        /// Simulation name
-        #[arg(short = 'N', long)]
-        name: String,
 
         /// Generation to export
         #[arg(short, long)]
@@ -128,10 +112,6 @@ enum Commands {
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
 
-        /// Simulation name
-        #[arg(short = 'N', long)]
-        name: String,
-
         /// Generation to analyze
         #[arg(short, long)]
         generation: usize,
@@ -156,10 +136,6 @@ enum Commands {
         /// Database path
         #[arg(short, long, default_value = "simulation.db")]
         database: PathBuf,
-
-        /// Simulation name (all if not specified)
-        #[arg(short = 'N', long)]
-        name: Option<String>,
 
         /// Attempt to fix found issues
         #[arg(long)]
@@ -187,63 +163,42 @@ fn main() -> Result<()> {
         }
         Commands::Run {
             database,
-            name,
             resume,
             seed,
             record_every,
             progress,
         } => {
-            run::run_simulation(&database, &name, resume, seed, record_every, progress)?;
+            run::run_simulation(&database, resume, seed, record_every, progress)?;
         }
         Commands::List { database } => {
             list::list_simulations(&database)?;
         }
-        Commands::Info { database, name } => {
-            list::show_info(&database, &name)?;
+        Commands::Info { database } => {
+            list::show_info(&database)?;
         }
-        Commands::Generations { database, name } => {
-            list::show_generations(&database, &name)?;
+        Commands::Generations { database } => {
+            list::show_generations(&database)?;
         }
         Commands::Export {
             database,
-            name,
             generation,
             format,
             output,
             data_type,
         } => {
-            export::export_data(
-                &database,
-                &name,
-                generation,
-                &format,
-                output.as_ref(),
-                &data_type,
-            )?;
+            export::export_data(&database, generation, &format, output.as_ref(), &data_type)?;
         }
         Commands::Analyze {
             database,
-            name,
             generation,
             chromosome,
             format,
             output,
         } => {
-            analyze::analyze_data(
-                &database,
-                &name,
-                generation,
-                chromosome,
-                &format,
-                output.as_ref(),
-            )?;
+            analyze::analyze_data(&database, generation, chromosome, &format, output.as_ref())?;
         }
-        Commands::Validate {
-            database,
-            name,
-            fix,
-        } => {
-            validate::validate_database(&database, name.as_deref(), fix)?;
+        Commands::Validate { database, fix } => {
+            validate::validate_database(&database, fix)?;
         }
         Commands::Setup { defaults } => {
             setup::setup_wizard(defaults)?;

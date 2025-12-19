@@ -4,56 +4,49 @@ use std::path::PathBuf;
 
 pub fn list_simulations(database: &PathBuf) -> Result<()> {
     let query = QueryBuilder::new(database).context("Failed to open database")?;
-    let simulations = query
-        .list_simulations()
-        .context("Failed to list simulations")?;
+    // In one-db-per-sim model, listing just shows info for the current DB file
+    let config = query
+        .get_full_config()
+        .context("Failed to read simulation config")?;
 
-    if simulations.is_empty() {
-        println!("No simulations found in database.");
-        return Ok(());
-    }
-
-    println!("\n📊 Simulations in {}:", database.display());
+    println!("\n📊 Simulation in {}:", database.display());
     println!("{}", "=".repeat(50));
-
-    for name in simulations {
-        println!("  • {name}");
-    }
-
-    println!("\n💡 Use 'centrevo info --name <name>' for details");
+    println!("  • Population: {}", config.execution.population_size);
+    println!("  • Generations: {}", config.execution.total_generations);
 
     Ok(())
 }
 
-pub fn show_info(database: &PathBuf, name: &str) -> Result<()> {
+pub fn show_info(database: &PathBuf) -> Result<()> {
     let query = QueryBuilder::new(database).context("Failed to open database")?;
-    let info = query
-        .get_simulation_info(name)
+    let config = query
+        .get_full_config()
         .context("Failed to get simulation info")?;
 
-    println!("\n📊 Simulation Information: {name}");
+    println!("\n📊 Simulation Information");
     println!("{}", "=".repeat(50));
-    println!("Created: {}", info.start_time);
-    println!("Population size: {}", info.pop_size);
-    println!("Generations: {}", info.num_generations);
+    println!("Population size: {}", config.execution.population_size);
+    println!("Generations: {}", config.execution.total_generations);
+
+    let params_json = serde_json::to_string_pretty(&config).unwrap_or_default();
     println!("\nParameters:");
-    println!("{}", info.parameters_json);
+    println!("{}", params_json);
 
     Ok(())
 }
 
-pub fn show_generations(database: &PathBuf, name: &str) -> Result<()> {
+pub fn show_generations(database: &PathBuf) -> Result<()> {
     let query = QueryBuilder::new(database).context("Failed to open database")?;
     let generations = query
-        .get_recorded_generations(name)
+        .get_recorded_generations()
         .context("Failed to get generations")?;
 
     if generations.is_empty() {
-        println!("No recorded generations found for '{name}'.");
+        println!("No recorded generations found.");
         return Ok(());
     }
 
-    println!("\n📈 Recorded Generations for '{name}':");
+    println!("\n📈 Recorded Generations:");
     println!("{}", "=".repeat(50));
     println!("Generations: {generations:?}");
     println!("Total: {} snapshots", generations.len());

@@ -6,21 +6,25 @@ use crate::utils::sequence_from_indices;
 
 pub fn export_data(
     database: &PathBuf,
-    name: &str,
     generation: usize,
     format: &str,
     output: Option<&PathBuf>,
     data_type: &str,
 ) -> Result<()> {
+    let name = database
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("simulation");
+
     println!("📤 Exporting data from simulation '{name}'");
     println!("Generation: {generation}, Format: {format}, Type: {data_type}");
 
     let query = QueryBuilder::new(database).context("Failed to open database")?;
 
     match data_type {
-        "sequences" => export_sequences(&query, name, generation, format, output)?,
+        "sequences" => export_sequences(&query, generation, format, output)?,
         "metadata" => export_metadata(&query, name, format, output)?,
-        "fitness" => export_fitness(&query, name, format, output)?,
+        "fitness" => export_fitness(&query, format, output)?,
         _ => anyhow::bail!("Unknown data type '{data_type}'. Use: sequences, metadata, or fitness"),
     }
 
@@ -35,13 +39,12 @@ pub fn export_data(
 
 fn export_sequences(
     query: &QueryBuilder,
-    name: &str,
     generation: usize,
     format: &str,
     output: Option<&PathBuf>,
 ) -> Result<()> {
     let snapshots = query
-        .get_generation(name, generation)
+        .get_generation(generation)
         .context("Failed to load generation")?;
 
     if snapshots.is_empty() {
@@ -53,36 +56,39 @@ fn export_sequences(
     match format {
         "csv" => {
             content.push_str("individual_id,haplotype,chromosome,sequence\n");
-            for snap in &snapshots {
+            for (id, snap) in &snapshots {
+                let ind_id = format!("ind_{id}");
                 // Haplotype 1
                 let seq1 = sequence_from_indices(snap.haplotype1_seq.clone());
-                content.push_str(&format!("{},h1,0,{}\n", snap.individual_id, seq1));
+                content.push_str(&format!("{},h1,0,{}\n", ind_id, seq1));
 
                 // Haplotype 2
                 let seq2 = sequence_from_indices(snap.haplotype2_seq.clone());
-                content.push_str(&format!("{},h2,0,{}\n", snap.individual_id, seq2));
+                content.push_str(&format!("{},h2,0,{}\n", ind_id, seq2));
             }
         }
         "fasta" => {
-            for snap in &snapshots {
+            for (id, snap) in &snapshots {
+                let ind_id = format!("ind_{id}");
                 // Haplotype 1
                 let seq1 = sequence_from_indices(snap.haplotype1_seq.clone());
-                content.push_str(&format!(">{}|h1|chr0\n{}\n", snap.individual_id, seq1));
+                content.push_str(&format!(">{}|h1|chr0\n{}\n", ind_id, seq1));
 
                 // Haplotype 2
                 let seq2 = sequence_from_indices(snap.haplotype2_seq.clone());
-                content.push_str(&format!(">{}|h2|chr0\n{}\n", snap.individual_id, seq2));
+                content.push_str(&format!(">{}|h2|chr0\n{}\n", ind_id, seq2));
             }
         }
         "json" => {
             use serde_json::json;
             let data: Vec<_> = snapshots
                 .iter()
-                .map(|snap| {
+                .map(|(id, snap)| {
+                    let ind_id = format!("ind_{id}");
                     let seq1 = sequence_from_indices(snap.haplotype1_seq.clone());
                     let seq2 = sequence_from_indices(snap.haplotype2_seq.clone());
                     json!({
-                        "id": snap.individual_id,
+                        "id": ind_id,
                         "fitness": snap.fitness,
                         "haplotype1": [seq1.to_string()],
                         "haplotype2": [seq2.to_string()],
@@ -109,23 +115,25 @@ fn export_metadata(
     format: &str,
     output: Option<&PathBuf>,
 ) -> Result<()> {
-    let info = query.get_simulation_info(name)?;
+    let config = query.get_full_config()?;
+    let pop_size = config.execution.population_size;
+    let generations = config.execution.total_generations;
+    // We don't have start_time in config atm, use current or omit
 
     let content = match format {
         "json" => {
             use serde_json::json;
             serde_json::to_string_pretty(&json!({
                 "name": name,
-                "population_size": info.pop_size,
-                "generations": info.num_generations,
-                "start_time": info.start_time,
-                "parameters": serde_json::from_str::<serde_json::Value>(&info.parameters_json)?
+                "population_size": pop_size,
+                "generations": generations,
+                "parameters": config
             }))?
         }
         "csv" => {
             format!(
-                "key,value\nname,{}\npopulation_size,{}\ngenerations,{}\nstart_time,{}\n",
-                name, info.pop_size, info.num_generations, info.start_time
+                "key,value\nname,{}\npopulation_size,{}\ngenerations,{}\n",
+                name, pop_size, generations
             )
         }
         _ => anyhow::bail!("Format '{format}' not supported for metadata. Use: json or csv"),
@@ -140,13 +148,8 @@ fn export_metadata(
     Ok(())
 }
 
-fn export_fitness(
-    query: &QueryBuilder,
-    name: &str,
-    format: &str,
-    output: Option<&PathBuf>,
-) -> Result<()> {
-    let history = query.get_fitness_history(name)?;
+fn export_fitness(query: &QueryBuilder, format: &str, output: Option<&PathBuf>) -> Result<()> {
+    let history = query.get_fitness_history()?;
 
     if history.is_empty() {
         anyhow::bail!("No fitness data found");

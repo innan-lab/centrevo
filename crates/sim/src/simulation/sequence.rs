@@ -331,7 +331,7 @@ pub fn parse_json(input: &str) -> Result<Vec<SequenceEntryWithIndices>, Initiali
 /// if not specified). Returns sequences with explicit indices.
 pub fn load_from_database(
     db_path: impl AsRef<Path>,
-    sim_id: &str,
+    mut _sim_id: &str,
     generation: Option<usize>,
     codec: &CodecStrategy,
 ) -> Result<Vec<SequenceEntryWithIndices>, InitializationError> {
@@ -345,7 +345,7 @@ pub fn load_from_database(
         Some(g) => g,
         None => {
             // Get the last recorded generation
-            let recorded_gens = query.get_recorded_generations(sim_id).map_err(|e| {
+            let recorded_gens = query.get_recorded_generations().map_err(|e| {
                 InitializationError::Database(format!("Failed to get generations: {e}"))
             })?;
 
@@ -356,8 +356,8 @@ pub fn load_from_database(
     };
 
     // Load population at that generation
-    let snapshots = query
-        .get_generation(sim_id, target_gen)
+    let snapshots_with_ids = query
+        .get_generation(target_gen)
         .map_err(|e| InitializationError::Database(format!("Failed to load generation: {e}")))?;
 
     // Close query builder directly since we don't need the config (sequences are self-contained)
@@ -371,7 +371,7 @@ pub fn load_from_database(
     // Database stores sequences per chromosome, so we need to group them properly
     // Assuming snapshots are for single-chromosome case (chr_idx = 0)
     // For multi-chromosome, database would need to be extended
-    for (ind_idx, snapshot) in snapshots.iter().enumerate() {
+    for (ind_idx, (_, snapshot)) in snapshots_with_ids.iter().enumerate() {
         // Convert Vec<u8> indices to String
         // Decode sequences
         let decoded_hap0 = codec
@@ -412,7 +412,7 @@ pub fn load_from_database(
 /// Load individuals directly from database, preserving RepeatMaps.
 pub fn load_individuals_from_database(
     db_path: impl AsRef<Path>,
-    sim_id: &str,
+    mut _sim_id: &str,
     generation: Option<usize>,
     codec: &CodecStrategy,
 ) -> Result<Vec<Individual>, InitializationError> {
@@ -425,7 +425,7 @@ pub fn load_individuals_from_database(
     let target_gen = match generation {
         Some(g) => g,
         None => {
-            let recorded_gens = query.get_recorded_generations(sim_id).map_err(|e| {
+            let recorded_gens = query.get_recorded_generations().map_err(|e| {
                 InitializationError::Database(format!("Failed to get generations: {e}"))
             })?;
             *recorded_gens
@@ -435,16 +435,17 @@ pub fn load_individuals_from_database(
     };
 
     // Load snapshots
-    let snapshots = query
-        .get_generation(sim_id, target_gen)
+    let snapshots_with_ids = query
+        .get_generation(target_gen)
         .map_err(|e| InitializationError::Database(format!("Failed to load generation: {e}")))?;
 
     query.close().ok();
 
     // Convert snapshots to Individuals
-    let mut individuals = Vec::with_capacity(snapshots.len());
-    for snapshot in snapshots {
-        let ind = snapshot.to_individual(codec).map_err(|e| {
+    let mut individuals = Vec::with_capacity(snapshots_with_ids.len());
+    for (id_num, snapshot) in snapshots_with_ids {
+        let ind_id = format!("ind_{}", id_num);
+        let ind = snapshot.to_individual(&ind_id, codec).map_err(|e| {
             InitializationError::Database(format!("Failed to reconstruct individual: {e}"))
         })?;
         individuals.push(ind);

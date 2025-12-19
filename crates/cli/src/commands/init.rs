@@ -14,8 +14,7 @@ use rayon::prelude::*;
 
 #[allow(clippy::too_many_arguments)]
 pub fn init_simulation(args: &InitArgs) -> Result<()> {
-    let name = &args.name;
-    let output = &args.output;
+    let output = &args.database;
     let population_size = args.population_size;
     let generations = args.generations;
     let _record_every = args.record_every;
@@ -28,7 +27,7 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
 
     println!("🧬 Centrevo - Centromeric Evolution Simulator");
     println!("============================================\n");
-    println!("Initializing simulation: {name}");
+    println!("Initializing simulation...");
     println!("Codec Strategy: {codec_strategy}");
 
     let config = build_configs(args, codec_strategy)?;
@@ -71,22 +70,18 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
         };
         let recorder = centrevo_sim::storage::AsyncRecorder::new(
             output,
-            name.as_str(),
+            &config,
             buffer_config,
             codec_strategy,
         )
         .context("Failed to create recorder")?;
 
-        // Record full configuration
-        recorder
-            .record_full_config(&config)
-            .await
-            .context("Failed to record configuration")?;
+        // Configuration is recorded in Recorder::new
 
         // Record initial generation
         let dummy_rng = vec![0u8; 32];
         recorder
-            .record_generation(&population, 0, dummy_rng)
+            .record_generation(&population, 0, Some(dummy_rng))
             .await
             .context("Failed to record initial generation")?;
 
@@ -97,10 +92,12 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
 
     println!("✓ Database created: {}", output.display());
     println!("\nSimulation initialized successfully!");
-    println!("  Name: {name}");
     println!("  Population size: {population_size}");
     println!("  Generations: {generations}");
-    println!("\n💡 Use 'centrevo run -N {name}' to start the simulation");
+    println!(
+        "\n💡 Use 'centrevo run -d {}' to start the simulation",
+        output.display()
+    );
 
     Ok(())
 }
@@ -288,8 +285,7 @@ mod tests {
     #[test]
     fn test_build_configs_defaults() {
         let args = InitArgs {
-            name: "test".to_string(),
-            output: PathBuf::from("test.db"),
+            database: PathBuf::from("test.db"),
             population_size: 100,
             generations: 100,
             ru_length: 171,
@@ -338,8 +334,7 @@ mod tests {
     #[test]
     fn test_build_configs_fitness() {
         let args = InitArgs {
-            name: "test".to_string(),
-            output: PathBuf::from("test.db"),
+            database: PathBuf::from("test.db"),
             population_size: 100,
             generations: 100,
             ru_length: 171,
@@ -380,8 +375,7 @@ mod tests {
     #[test]
     fn test_build_configs_advanced_mutation() {
         let args = InitArgs {
-            name: "test".to_string(),
-            output: PathBuf::from("test.db"),
+            database: PathBuf::from("test.db"),
             population_size: 100,
             generations: 100,
             ru_length: 171,
@@ -423,8 +417,7 @@ mod tests {
     #[test]
     fn test_build_configs_indels() {
         let args = InitArgs {
-            name: "test".to_string(),
-            output: PathBuf::from("test.db"),
+            database: PathBuf::from("test.db"),
             population_size: 100,
             generations: 100,
             ru_length: 171,
@@ -464,8 +457,7 @@ mod tests {
     #[test]
     fn test_build_configs_conflict() {
         let args = InitArgs {
-            name: "test".to_string(),
-            output: PathBuf::from("test.db"),
+            database: PathBuf::from("test.db"),
             population_size: 100,
             generations: 100,
             ru_length: 171,

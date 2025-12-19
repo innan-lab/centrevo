@@ -11,7 +11,7 @@ use tokio::runtime::Runtime;
 
 /// Helper to create a test database path
 fn test_db_path(name: &str) -> PathBuf {
-    PathBuf::from(format!("/tmp/centrevo_test_checkpoint_{}.sqlite", name))
+    PathBuf::from(format!("/tmp/centrevo_test_checkpoint_{name}.sqlite"))
 }
 
 /// Helper to remove test database
@@ -185,7 +185,7 @@ fn test_checkpoint_and_resume_basic() {
         assert!(!recorded_gens.is_empty());
         assert_eq!(*recorded_gens.last().unwrap(), 100);
 
-        println!("✓ Recorded generations: {:?}", recorded_gens);
+        println!("✓ Recorded generations: {recorded_gens:?}");
 
         // Verify we can load final population
         let final_pop = query.get_generation(100).unwrap();
@@ -217,7 +217,7 @@ fn test_resume_multiple_times() {
     let rt = Runtime::new().unwrap();
 
     // Run simulation in 4 chunks: 0->25, 25->50, 50->75, 75->100
-    let checkpoints = vec![25, 50, 75, 100];
+    let checkpoints = [25, 50, 75, 100];
 
     for (i, &target_gen) in checkpoints.iter().enumerate() {
         rt.block_on(async {
@@ -293,7 +293,7 @@ fn test_resume_multiple_times() {
             recorder.close().await.unwrap();
 
             assert_eq!(sim.generation(), target_gen);
-            println!("✓ Reached generation {}", target_gen);
+            println!("✓ Reached generation {target_gen}");
         });
     }
 

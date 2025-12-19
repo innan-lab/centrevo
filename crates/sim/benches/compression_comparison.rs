@@ -3,21 +3,21 @@ use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_mai
 use rand::Rng;
 
 fn generate_dna(len: usize) -> Vec<u8> {
-    let mut rng = rand::thread_rng();
-    (0..len).map(|_| rng.gen_range(0..4)).collect()
+    let mut rng = rand::rng();
+    (0..len).map(|_| rng.random_range(0..4)).collect()
 }
 
 fn generate_repetitive_dna(len: usize) -> Vec<u8> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // Simulate 171bp monomer repeats with slight variation
-    let monomer: Vec<u8> = (0..171).map(|_| rng.gen_range(0..4)).collect();
+    let monomer: Vec<u8> = (0..171).map(|_| rng.random_range(0..4)).collect();
     let mut seq = Vec::with_capacity(len);
     while seq.len() < len {
         // Copy monomer with 1% mutation rate to be realistic
         let mut variance = monomer.clone();
         for base in variance.iter_mut() {
-            if rng.gen_bool(0.01) {
-                *base = rng.gen_range(0..4);
+            if rng.random_bool(0.01) {
+                *base = rng.random_range(0..4);
             }
         }
         seq.extend(variance);
@@ -39,7 +39,7 @@ fn bench_compression(c: &mut Criterion) {
     let unpacked_z_random = CodecStrategy::UnpackedZ.encode(&random_data).unwrap();
     let unpacked_rsz_random = CodecStrategy::UnpackedZRS.encode(&random_data).unwrap();
 
-    println!("Original: {} bytes", len);
+    println!("Original: {len} bytes");
     println!(
         "BitPackedRS: {} bytes ({:.2}%)",
         packed_random.len(),
@@ -101,7 +101,7 @@ fn bench_compression(c: &mut Criterion) {
     let unpacked_z_rep = CodecStrategy::UnpackedZ.encode(&repetitive_data).unwrap();
     let unpacked_rsz_rep = CodecStrategy::UnpackedZRS.encode(&repetitive_data).unwrap();
 
-    println!("Original: {} bytes", len);
+    println!("Original: {len} bytes");
     println!(
         "BitPackedRS: {} bytes ({:.2}%)",
         packed_rep.len(),

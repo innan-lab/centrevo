@@ -392,7 +392,6 @@ impl IndividualFitness for LengthSimilarityFitness {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

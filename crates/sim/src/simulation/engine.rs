@@ -71,8 +71,7 @@ impl Simulation {
     /// Helper to compute valid initial fitness for a set of individuals.
     fn compute_population_fitness(individuals: &mut [Individual], fitness: &FitnessConfig) {
         individuals.par_iter_mut().for_each(|ind| {
-            let val = fitness.compute_fitness(ind);
-            ind.set_cached_fitness(val);
+            fitness.update_cached_fitness(ind);
         });
     }
     /// Apply a single recombination `event` to a pair of chromosomes.
@@ -417,8 +416,7 @@ impl Simulation {
                 let mut new_ind = Individual::new(id, gamete1, gamete2);
 
                 // Compute intrinsic fitness immediately (born with it)
-                let fitness = fitness_config.compute_fitness(&new_ind);
-                new_ind.set_cached_fitness(fitness);
+                fitness_config.update_cached_fitness(&mut new_ind);
 
                 Ok(new_ind)
             })

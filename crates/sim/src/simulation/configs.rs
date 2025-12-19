@@ -288,6 +288,39 @@ impl FitnessConfig {
 
         fitness
     }
+
+    /// Update cached fitness values for an individual and its haplotypes.
+    ///
+    /// This computes per-haplotype fitness (for compatible models like GC and Length)
+    /// and total individual fitness, caching all values in the provided individual.
+    pub fn update_cached_fitness(&self, individual: &mut crate::genome::Individual) {
+        use crate::evolution::HaplotypeFitness;
+
+        // 1. Compute and cache per-haplotype fitness components
+        // We only compute for models that implement HaplotypeFitness (GC and Length)
+        let mut h1_fitness = crate::base::FitnessValue::default();
+        let mut h2_fitness = crate::base::FitnessValue::default();
+
+        if let Some(gc) = &self.gc_content {
+            h1_fitness *=
+                gc.haplotype_fitness(individual.haplotype1().get(0).expect("Chromosome missing"));
+            h2_fitness *=
+                gc.haplotype_fitness(individual.haplotype2().get(0).expect("Chromosome missing"));
+        }
+        if let Some(len_fit) = &self.length {
+            h1_fitness *= len_fit
+                .haplotype_fitness(individual.haplotype1().get(0).expect("Chromosome missing"));
+            h2_fitness *= len_fit
+                .haplotype_fitness(individual.haplotype2().get(0).expect("Chromosome missing"));
+        }
+
+        individual.haplotype1_mut().set_cached_fitness(h1_fitness);
+        individual.haplotype2_mut().set_cached_fitness(h2_fitness);
+
+        // 2. Compute and cache total individual fitness
+        let total_fitness = self.compute_fitness(individual);
+        individual.set_cached_fitness(total_fitness);
+    }
 }
 
 /// Type state for an empty builder (no fitness components added yet).
@@ -756,5 +789,56 @@ mod tests {
         assert_eq!(config.population_size, 100);
         assert_eq!(config.total_generations, 1000);
         assert_eq!(config.seed, Some(42));
+    }
+
+    #[test]
+    fn test_fitness_config_update_cached_fitness() {
+        use crate::base::Nucleotide;
+        use crate::genome::{Chromosome, Haplotype, Individual, RepeatMap};
+
+        let gc_fitness = GCContentFitness::new(0.5, 10.0).unwrap();
+        let config = FitnessConfig::new(Some(gc_fitness), None, None, None);
+
+        let seq1 = crate::base::Sequence::from_nucleotides(vec![
+            Nucleotide::G,
+            Nucleotide::C,
+            Nucleotide::G,
+            Nucleotide::C,
+        ]);
+        let seq2 = crate::base::Sequence::from_nucleotides(vec![
+            Nucleotide::A,
+            Nucleotide::T,
+            Nucleotide::A,
+            Nucleotide::T,
+        ]);
+
+        // GC content: seq1=1.0, seq2=0.0. Optimum 0.5.
+        // Haplotype fitness will be non-zero (due to clamping in GCContentFitness)
+
+        let chr1 = Chromosome::new("c1", seq1, RepeatMap::uniform(4, 1, 1));
+        let chr2 = Chromosome::new("c2", seq2, RepeatMap::uniform(4, 1, 1));
+
+        let h1 = Haplotype::from_chromosomes(vec![chr1]);
+        let h2 = Haplotype::from_chromosomes(vec![chr2]);
+
+        let mut ind = Individual::new("ind1", h1, h2);
+
+        assert!(ind.cached_fitness().is_none());
+        assert!(ind.haplotype1().cached_fitness().is_none());
+        assert!(ind.haplotype2().cached_fitness().is_none());
+
+        config.update_cached_fitness(&mut ind);
+
+        assert!(ind.cached_fitness().is_some());
+        assert!(ind.haplotype1().cached_fitness().is_some());
+        assert!(ind.haplotype2().cached_fitness().is_some());
+
+        // Haplotype 1 (GC=1.0) and Haplotype 2 (GC=0.0) should have same fitness with optimum 0.5 and symmetric Beta
+        assert!(
+            (*ind.haplotype1().cached_fitness().unwrap()
+                - *ind.haplotype2().cached_fitness().unwrap())
+            .abs()
+                < 1e-10
+        );
     }
 }

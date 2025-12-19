@@ -10,6 +10,8 @@ use centrevo_sim::simulation::{
 use crate::args::InitArgs;
 use crate::printing::print_parameters;
 
+use rayon::prelude::*;
+
 #[allow(clippy::too_many_arguments)]
 pub fn init_simulation(args: &InitArgs) -> Result<()> {
     let name = &args.name;
@@ -47,8 +49,15 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
     // Note: Since Gen 0 is uniform, the seed actually doesn't matter for the content,
     // but we use it for consistency if we add random initialization later.
     println!("\nCreating initial population (Generation 0)...");
-    let population = create_initial_population(population_size, &structure);
+    let mut population = create_initial_population(population_size, structure);
     println!("✓ Created {} individuals", population.size());
+
+    // Calculate initial fitness
+    println!("Calculating initial fitness...");
+    population.individuals_mut().par_iter_mut().for_each(|ind| {
+        config.evolution.fitness.update_cached_fitness(ind);
+    });
+    println!("✓ Computed fitness for all individuals");
 
     // Setup database recorder
     println!("\nSetting up database...");

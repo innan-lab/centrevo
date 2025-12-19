@@ -25,3 +25,8 @@ dist/
 .DS_Store
 # VSCode
 .vscode/
+# Data
+*.fasta
+*.bed
+*.csv
+*.json

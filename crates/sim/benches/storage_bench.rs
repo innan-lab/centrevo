@@ -5,14 +5,32 @@ use centrevo_sim::simulation::Population;
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use tempfile::NamedTempFile;
 
-fn create_test_population(size: usize, chr_length: usize) -> Population {
+fn create_test_population(
+    size: usize,
+    chr_length: usize,
+    arena: &mut centrevo_sim::base::GenomeArena,
+) -> Population {
     let mut individuals = Vec::with_capacity(size);
     // Convert total length to num_hors: ru_length=20, rus_per_hor=5, so one HOR = 100 bp
     let num_hors = chr_length / 100;
 
     for i in 0..size {
-        let chr1 = Chromosome::uniform(format!("ind_{i}_h1_chr1"), Nucleotide::A, 20, 5, num_hors);
-        let chr2 = Chromosome::uniform(format!("ind_{i}_h2_chr1"), Nucleotide::C, 20, 5, num_hors);
+        let chr1 = Chromosome::uniform(
+            format!("ind_{i}_h1_chr1"),
+            Nucleotide::A,
+            20,
+            5,
+            num_hors,
+            arena,
+        );
+        let chr2 = Chromosome::uniform(
+            format!("ind_{i}_h2_chr1"),
+            Nucleotide::C,
+            20,
+            5,
+            num_hors,
+            arena,
+        );
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
         let h2 = Haplotype::from_chromosomes(vec![chr2]);
@@ -78,10 +96,11 @@ fn bench_recorder_write(c: &mut Criterion) {
                     centrevo_sim::simulation::CodecStrategy::default(),
                 )
                 .unwrap();
-                let pop = create_test_population(pop_size, chr_length);
-                (file, recorder, pop)
+                let mut arena = centrevo_sim::base::GenomeArena::new();
+                let pop = create_test_population(pop_size, chr_length, &mut arena);
+                (file, recorder, pop, arena)
             },
-            |(_file, recorder, pop)| {
+            |(_file, recorder, pop, arena)| {
                 // Perform async recording
                 rt.block_on(async {
                     let dummy_rng = vec![0u8; 32];
@@ -90,6 +109,7 @@ fn bench_recorder_write(c: &mut Criterion) {
                             black_box(&pop),
                             black_box(0),
                             black_box(Some(dummy_rng)),
+                            black_box(&arena),
                         )
                         .await
                         .unwrap();

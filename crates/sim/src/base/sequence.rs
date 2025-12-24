@@ -1,8 +1,8 @@
 use super::Nucleotide;
-use std::fmt;
-use std::sync::Arc;
-use std::str::FromStr;
 use crate::errors::{InvalidNucleotide, InvalidSequence, OutOfBounds};
+use std::fmt;
+use std::str::FromStr;
+use std::sync::Arc;
 
 /// Mutable biological sequence backed by a vector of `Nucleotide`s.
 ///
@@ -79,7 +79,7 @@ impl Sequence {
     ///
     /// Returns `OutOfBounds` if `index` is greater than or equal to the
     /// sequence length.
-    /// 
+    ///
     /// # Arguments
     /// * `index` - The position in the sequence to set (0-based).
     /// * `base` - The `Nucleotide` to set at the specified index.
@@ -458,7 +458,6 @@ mod tests {
     fn test_sequence_remove_out_of_bounds() {
         let mut seq = Sequence::from_str("ACGT").unwrap();
         seq.remove(10);
-
     }
 
     #[test]

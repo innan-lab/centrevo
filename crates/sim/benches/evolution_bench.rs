@@ -42,7 +42,7 @@ fn bench_mutation(c: &mut Criterion) {
                 |b, _| {
                     b.iter_batched(
                         || sequence.clone(),
-                        |mut seq| uniform_model.mutate_sequence(&mut seq, &mut rng),
+                        |mut seq| uniform_model.mutate_sequence(seq.as_mut_slice(), &mut rng),
                         criterion::BatchSize::SmallInput,
                     )
                 },
@@ -55,7 +55,9 @@ fn bench_mutation(c: &mut Criterion) {
                 |b, _| {
                     b.iter_batched(
                         || sequence.clone(),
-                        |mut seq| uniform_model.mutate_sequence_sparse(&mut seq, &mut rng),
+                        |mut seq| {
+                            uniform_model.mutate_sequence_sparse(seq.as_mut_slice(), &mut rng)
+                        },
                         criterion::BatchSize::SmallInput,
                     )
                 },
@@ -68,7 +70,7 @@ fn bench_mutation(c: &mut Criterion) {
                 |b, _| {
                     b.iter_batched(
                         || sequence.clone(),
-                        |mut seq| general_model.mutate_sequence(&mut seq, &mut rng),
+                        |mut seq| general_model.mutate_sequence(seq.as_mut_slice(), &mut rng),
                         criterion::BatchSize::SmallInput,
                     )
                 },
@@ -81,7 +83,9 @@ fn bench_mutation(c: &mut Criterion) {
                 |b, _| {
                     b.iter_batched(
                         || sequence.clone(),
-                        |mut seq| general_model.mutate_sequence_sparse(&mut seq, &mut rng),
+                        |mut seq| {
+                            general_model.mutate_sequence_sparse(seq.as_mut_slice(), &mut rng)
+                        },
                         criterion::BatchSize::SmallInput,
                     )
                 },
@@ -132,6 +136,7 @@ fn bench_indels(c: &mut Criterion) {
 
 fn bench_recombination(c: &mut Criterion) {
     let mut group = c.benchmark_group("recombination");
+    let mut arena = centrevo_sim::base::GenomeArena::new();
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
     let break_probs = [1e-3, 0.1]; // Test valid range
@@ -148,8 +153,11 @@ fn bench_recombination(c: &mut Criterion) {
     let seq = Sequence::from_str(&seq_str).unwrap();
     // Uniform map: 1bp RUs -> 100,000 candidates
     let map = RepeatMap::uniform(1, 1, seq_len);
-    let chr1 = Chromosome::new("chr1", seq.clone(), map.clone());
-    let chr2 = Chromosome::new("chr2", seq, map);
+    let seq_handle = arena.alloc(seq.as_slice());
+    let chr1 = Chromosome::new("chr1", seq_handle, map.clone());
+
+    let seq_handle2 = arena.alloc(seq.as_slice());
+    let chr2 = Chromosome::new("chr2", seq_handle2, map);
 
     for &break_prob in &break_probs {
         for &strength in &homology_strengths {
@@ -177,6 +185,7 @@ fn bench_recombination(c: &mut Criterion) {
                         black_box(model.sample_events(
                             black_box(&chr1),
                             black_box(&chr2),
+                            &mut arena,
                             &mut rng,
                         ));
                     })

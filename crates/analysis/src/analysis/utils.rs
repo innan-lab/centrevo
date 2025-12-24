@@ -2,7 +2,7 @@
 //!
 //! Shared helper functions used across analysis submodules.
 
-use centrevo_sim::base::{Nucleotide, Sequence};
+use centrevo_sim::base::Nucleotide;
 
 /// Calculate mean of a vector
 pub fn mean(values: &[f64]) -> f64 {
@@ -17,10 +17,8 @@ pub fn mean(values: &[f64]) -> f64 {
 /// This function is performance-critical and used throughout the analysis module.
 /// It directly accesses sequence indices for better performance.
 #[inline]
-pub fn hamming_distance_fast(seq1: &Sequence, seq2: &Sequence) -> usize {
-    let len = seq1.len().min(seq2.len());
-    let indices1 = seq1.as_slice();
-    let indices2 = seq2.as_slice();
+pub fn hamming_distance_fast(indices1: &[Nucleotide], indices2: &[Nucleotide]) -> usize {
+    let len = indices1.len().min(indices2.len());
 
     // Process in chunks of 8 for better CPU pipelining
     let mut distance = 0;
@@ -79,8 +77,7 @@ pub fn harmonic_number(n: usize) -> f64 {
 /// Optimized nucleotide composition counting
 /// Returns (A_count, C_count, G_count, T_count)
 #[inline]
-pub fn count_nucleotides_fast(seq: &Sequence) -> (usize, usize, usize, usize) {
-    let indices = seq.as_slice();
+pub fn count_nucleotides_fast(indices: &[Nucleotide]) -> (usize, usize, usize, usize) {
     let mut a_count = 0;
     let mut c_count = 0;
     let mut g_count = 0;
@@ -149,7 +146,7 @@ pub fn count_nucleotides_fast(seq: &Sequence) -> (usize, usize, usize, usize) {
 
 /// Fast GC content calculation
 #[inline]
-pub fn gc_content_fast(seq: &Sequence) -> f64 {
+pub fn gc_content_fast(seq: &[Nucleotide]) -> f64 {
     let (_, c_count, g_count, _) = count_nucleotides_fast(seq);
     let len = seq.len();
     if len == 0 {

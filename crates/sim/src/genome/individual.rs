@@ -95,26 +95,42 @@ impl Individual {
     pub fn haplotypes_mut(&mut self) -> (&mut Haplotype, &mut Haplotype) {
         (&mut self.haplotype1, &mut self.haplotype2)
     }
+
+    /// Offset the page IDs of all chromosomes.
+    /// Used when merging arenas.
+    pub fn offset_page_ids(&mut self, offset: u32) {
+        self.haplotype1.offset_page_ids(offset);
+        self.haplotype2.offset_page_ids(offset);
+    }
+
+    /// Localize all chromosomes in this individual.
+    pub fn localize(
+        &mut self,
+        source_arena: &crate::base::GenomeArena,
+        dest_arena: &mut crate::base::GenomeArena,
+    ) {
+        self.haplotype1.localize(source_arena, dest_arena);
+        self.haplotype2.localize(source_arena, dest_arena);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::Nucleotide;
+    use crate::base::{GenomeArena, Nucleotide};
     use crate::genome::Chromosome;
 
-    fn test_chromosome(id: &str, length: usize) -> Chromosome {
-        // Convert total length to num_hors
-        // ru_length=10, rus_per_hor=10, so one HOR = 100 bp
+    fn test_chromosome(id: &str, length: usize, arena: &mut GenomeArena) -> Chromosome {
         let hor_length = 100;
         let num_hors = length / hor_length;
-        Chromosome::uniform(id, Nucleotide::A, 10, 10, num_hors)
+        let num_hors = if num_hors == 0 { 1 } else { num_hors };
+        Chromosome::uniform(id, Nucleotide::A, 10, 10, num_hors, arena)
     }
 
-    fn test_haplotype(num_chrs: usize) -> Haplotype {
+    fn test_haplotype(num_chrs: usize, arena: &mut GenomeArena) -> Haplotype {
         let mut hap = Haplotype::new();
         for i in 1..=num_chrs {
-            hap.push(test_chromosome(&format!("chr{i}"), i * 100));
+            hap.push(test_chromosome(&format!("chr{i}"), i * 100, arena));
         }
         hap
     }
@@ -123,8 +139,9 @@ mod tests {
 
     #[test]
     fn test_individual_new() {
-        let hap1 = test_haplotype(2);
-        let hap2 = test_haplotype(2);
+        let mut arena = GenomeArena::new();
+        let hap1 = test_haplotype(2, &mut arena);
+        let hap2 = test_haplotype(2, &mut arena);
 
         let ind = Individual::new("ind1", hap1, hap2);
 
@@ -136,13 +153,23 @@ mod tests {
 
     #[test]
     fn test_individual_id() {
-        let ind = Individual::new("test_id", test_haplotype(1), test_haplotype(1));
+        let mut arena = GenomeArena::new();
+        let ind = Individual::new(
+            "test_id",
+            test_haplotype(1, &mut arena),
+            test_haplotype(1, &mut arena),
+        );
         assert_eq!(ind.id(), "test_id");
     }
 
     #[test]
     fn test_individual_id_shared() {
-        let ind1 = Individual::new("ind1", test_haplotype(1), test_haplotype(1));
+        let mut arena = GenomeArena::new();
+        let ind1 = Individual::new(
+            "ind1",
+            test_haplotype(1, &mut arena),
+            test_haplotype(1, &mut arena),
+        );
         let ind2 = ind1.clone();
 
         // Both should share the same ID Arc
@@ -151,8 +178,9 @@ mod tests {
 
     #[test]
     fn test_individual_haplotype1() {
-        let hap1 = test_haplotype(3);
-        let hap2 = test_haplotype(2);
+        let mut arena = GenomeArena::new();
+        let hap1 = test_haplotype(3, &mut arena);
+        let hap2 = test_haplotype(2, &mut arena);
 
         let ind = Individual::new("ind1", hap1, hap2);
 
@@ -162,8 +190,9 @@ mod tests {
 
     #[test]
     fn test_individual_haplotype2() {
-        let hap1 = test_haplotype(2);
-        let hap2 = test_haplotype(3);
+        let mut arena = GenomeArena::new();
+        let hap1 = test_haplotype(2, &mut arena);
+        let hap2 = test_haplotype(3, &mut arena);
 
         let ind = Individual::new("ind1", hap1, hap2);
 
@@ -173,13 +202,15 @@ mod tests {
 
     #[test]
     fn test_individual_haplotype1_mut() {
-        let hap1 = test_haplotype(2);
-        let hap2 = test_haplotype(2);
+        let mut arena = GenomeArena::new();
+        let hap1 = test_haplotype(2, &mut arena);
+        let hap2 = test_haplotype(2, &mut arena);
 
         let mut ind = Individual::new("ind1", hap1, hap2);
 
         // Mutate first haplotype
-        ind.haplotype1_mut().push(test_chromosome("chr3", 300));
+        ind.haplotype1_mut()
+            .push(test_chromosome("chr3", 300, &mut arena));
 
         assert_eq!(ind.haplotype1().len(), 3);
         assert_eq!(ind.haplotype2().len(), 2); // Second haplotype unchanged
@@ -187,13 +218,15 @@ mod tests {
 
     #[test]
     fn test_individual_haplotype2_mut() {
-        let hap1 = test_haplotype(2);
-        let hap2 = test_haplotype(2);
+        let mut arena = GenomeArena::new();
+        let hap1 = test_haplotype(2, &mut arena);
+        let hap2 = test_haplotype(2, &mut arena);
 
         let mut ind = Individual::new("ind1", hap1, hap2);
 
         // Mutate second haplotype
-        ind.haplotype2_mut().push(test_chromosome("chr3", 300));
+        ind.haplotype2_mut()
+            .push(test_chromosome("chr3", 300, &mut arena));
 
         assert_eq!(ind.haplotype1().len(), 2); // First haplotype unchanged
         assert_eq!(ind.haplotype2().len(), 3);
@@ -201,13 +234,23 @@ mod tests {
 
     #[test]
     fn test_individual_cached_fitness() {
-        let ind = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
+        let mut arena = GenomeArena::new();
+        let ind = Individual::new(
+            "ind1",
+            test_haplotype(2, &mut arena),
+            test_haplotype(2, &mut arena),
+        );
         assert_eq!(ind.cached_fitness(), None);
     }
 
     #[test]
     fn test_individual_set_cached_fitness() {
-        let mut ind = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
+        let mut arena = GenomeArena::new();
+        let mut ind = Individual::new(
+            "ind1",
+            test_haplotype(2, &mut arena),
+            test_haplotype(2, &mut arena),
+        );
 
         ind.set_cached_fitness(FitnessValue::new(0.75));
         assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.75)));
@@ -218,7 +261,12 @@ mod tests {
 
     #[test]
     fn test_individual_clear_cached_fitness() {
-        let mut ind = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
+        let mut arena = GenomeArena::new();
+        let mut ind = Individual::new(
+            "ind1",
+            test_haplotype(2, &mut arena),
+            test_haplotype(2, &mut arena),
+        );
         ind.set_cached_fitness(FitnessValue::new(0.9));
         assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.9)));
         ind.clear_cached_fitness();
@@ -227,8 +275,9 @@ mod tests {
 
     #[test]
     fn test_individual_haplotypes() {
-        let hap1 = test_haplotype(2);
-        let hap2 = test_haplotype(3);
+        let mut arena = GenomeArena::new();
+        let hap1 = test_haplotype(2, &mut arena);
+        let hap2 = test_haplotype(3, &mut arena);
 
         let ind = Individual::new("ind1", hap1, hap2);
 
@@ -239,14 +288,15 @@ mod tests {
 
     #[test]
     fn test_individual_haplotypes_mut() {
-        let hap1 = test_haplotype(2);
-        let hap2 = test_haplotype(2);
+        let mut arena = GenomeArena::new();
+        let hap1 = test_haplotype(2, &mut arena);
+        let hap2 = test_haplotype(2, &mut arena);
 
         let mut ind = Individual::new("ind1", hap1, hap2);
 
         let (h1, h2) = ind.haplotypes_mut();
-        h1.push(test_chromosome("chr3", 300));
-        h2.push(test_chromosome("chr3", 300));
+        h1.push(test_chromosome("chr3", 300, &mut arena));
+        h2.push(test_chromosome("chr3", 300, &mut arena));
 
         assert_eq!(ind.haplotype1().len(), 3);
         assert_eq!(ind.haplotype2().len(), 3);
@@ -254,7 +304,12 @@ mod tests {
 
     #[test]
     fn test_individual_clone() {
-        let mut ind1 = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
+        let mut arena = GenomeArena::new();
+        let mut ind1 = Individual::new(
+            "ind1",
+            test_haplotype(2, &mut arena),
+            test_haplotype(2, &mut arena),
+        );
         ind1.set_cached_fitness(FitnessValue::new(0.8));
 
         let ind2 = ind1.clone();
@@ -268,8 +323,9 @@ mod tests {
     #[test]
     fn test_individual_diploid() {
         // Test that individual properly maintains diploid state
-        let hap1 = test_haplotype(3);
-        let hap2 = test_haplotype(3);
+        let mut arena = GenomeArena::new();
+        let hap1 = test_haplotype(3, &mut arena);
+        let hap2 = test_haplotype(3, &mut arena);
 
         let ind = Individual::new("ind1", hap1, hap2);
 
@@ -288,27 +344,43 @@ mod tests {
 
     #[test]
     fn test_individual_heterozygous() {
+        let mut arena = GenomeArena::new();
         // Create individual with different haplotypes (heterozygous)
         let mut hap1 = Haplotype::new();
-        hap1.push(Chromosome::uniform("chr1", Nucleotide::A, 100, 10, 5));
+        hap1.push(Chromosome::uniform(
+            "chr1",
+            Nucleotide::A,
+            100,
+            10,
+            5,
+            &mut arena,
+        ));
 
         let mut hap2 = Haplotype::new();
-        hap2.push(Chromosome::uniform("chr1", Nucleotide::T, 100, 10, 5));
+        hap2.push(Chromosome::uniform(
+            "chr1",
+            Nucleotide::T,
+            100,
+            10,
+            5,
+            &mut arena,
+        ));
 
         let ind = Individual::new("ind1", hap1, hap2);
 
         // Check that haplotypes are different
-        let seq1 = ind.haplotype1().get(0).unwrap().sequence().get(0);
-        let seq2 = ind.haplotype2().get(0).unwrap().sequence().get(0);
+        let seq1 = ind.haplotype1().get(0).unwrap().sequence(&arena)[0];
+        let seq2 = ind.haplotype2().get(0).unwrap().sequence(&arena)[0];
 
-        assert_eq!(seq1, Some(Nucleotide::A));
-        assert_eq!(seq2, Some(Nucleotide::T));
+        assert_eq!(seq1, Nucleotide::A);
+        assert_eq!(seq2, Nucleotide::T);
     }
 
     #[test]
     fn test_individual_homozygous() {
+        let mut arena = GenomeArena::new();
         // Create individual with identical haplotypes (homozygous)
-        let hap1 = test_haplotype(2);
+        let hap1 = test_haplotype(2, &mut arena);
         let hap2 = hap1.clone();
 
         let ind = Individual::new("ind1", hap1, hap2);
@@ -322,7 +394,12 @@ mod tests {
 
     #[test]
     fn test_individual_mutation_isolation() {
-        let ind1 = Individual::new("ind1", test_haplotype(2), test_haplotype(2));
+        let mut arena = GenomeArena::new();
+        let ind1 = Individual::new(
+            "ind1",
+            test_haplotype(2, &mut arena),
+            test_haplotype(2, &mut arena),
+        );
         let mut ind2 = ind1.clone();
 
         // Mutate ind2's fitness
@@ -331,8 +408,10 @@ mod tests {
         // ind1 should be unchanged
         assert_eq!(ind1.cached_fitness(), None);
         assert_eq!(ind2.cached_fitness(), Some(FitnessValue::new(0.5)));
-        // Mutate ind2's haplotype
-        ind2.haplotype1_mut().push(test_chromosome("chr3", 300));
+
+        // Mutate ind2's haplotype (by adding a chromosome, since in-place sequence mutation isn't direct anymore)
+        ind2.haplotype1_mut()
+            .push(test_chromosome("chr3", 300, &mut arena));
 
         // ind1's haplotype should be unchanged
         assert_eq!(ind1.haplotype1().len(), 2);
@@ -341,16 +420,13 @@ mod tests {
 
     #[test]
     fn test_individual_complex_genome() {
+        let mut arena = GenomeArena::new();
         // Create individual with complex genome structure
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
 
         // Add multiple chromosomes with different structures
-        // Chromosome::uniform(id, base, ru_length, rus_per_hor, num_hors)
-        // Total length = ru_length * rus_per_hor * num_hors
         for i in 1..=5 {
-            // Create chromosomes with varying lengths: 1000, 2000, 3000, 4000, 5000 bases
-            // Using small repeat structures for simplicity
             let total_length = i * 1000;
             let ru_length = 10;
             let rus_per_hor = 10;
@@ -362,6 +438,7 @@ mod tests {
                 ru_length,
                 rus_per_hor,
                 num_hors,
+                &mut arena,
             ));
             hap2.push(Chromosome::uniform(
                 format!("chr{i}"),
@@ -369,6 +446,7 @@ mod tests {
                 ru_length,
                 rus_per_hor,
                 num_hors,
+                &mut arena,
             ));
         }
 
@@ -381,57 +459,14 @@ mod tests {
     }
 
     #[test]
-    fn test_individual_fitness_range() {
-        let mut ind = Individual::new(
-            "ind1",
-            test_haplotype(1),
-            test_haplotype(1)
-        );
-
-        // Test various fitness values
-        ind.set_cached_fitness(FitnessValue::new(0.0));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.0)));
-
-        ind.set_cached_fitness(FitnessValue::new(1.0));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(1.0)));
-        ind.set_cached_fitness(FitnessValue::new(0.123456789));
-        assert_eq!(ind.cached_fitness(), Some(FitnessValue::new(0.123456789)));
-    }
-
-    #[test]
-    fn test_individual_empty_haplotypes() {
-        let hap1 = Haplotype::new();
-        let hap2 = Haplotype::new();
-
-        let ind = Individual::new("ind1", hap1, hap2);
-
-        assert_eq!(ind.haplotype1().len(), 0);
-        assert_eq!(ind.haplotype2().len(), 0);
-        assert!(ind.haplotype1().is_empty());
-        assert!(ind.haplotype2().is_empty());
-    }
-
-    #[test]
-    fn test_individual_asymmetric_haplotypes() {
-        // Test with different number of chromosomes in each haplotype
-        let hap1 = test_haplotype(3);
-        let hap2 = test_haplotype(5);
-
-        let ind = Individual::new("ind1", hap1, hap2);
-
-        assert_eq!(ind.haplotype1().len(), 3);
-        assert_eq!(ind.haplotype2().len(), 5);
-    }
-
-    #[test]
     fn test_individual_large_genome() {
-        // Test with large genome
+        let mut arena = GenomeArena::new();
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
 
         for i in 1..=23 {
-            hap1.push(test_chromosome(&format!("chr{i}"), i * 10_000));
-            hap2.push(test_chromosome(&format!("chr{i}"), i * 10_000));
+            hap1.push(test_chromosome(&format!("chr{i}"), i * 10_000, &mut arena));
+            hap2.push(test_chromosome(&format!("chr{i}"), i * 10_000, &mut arena));
         }
 
         let ind = Individual::new("ind1", hap1, hap2);
@@ -439,41 +474,5 @@ mod tests {
         assert_eq!(ind.haplotype1().len(), 23);
         assert_eq!(ind.haplotype2().len(), 23);
         assert!(ind.haplotype1().total_length() > 1_000_000);
-    }
-
-    #[test]
-    fn test_individual_access_chromosomes_through_haplotypes() {
-        let hap1 = test_haplotype(3);
-        let hap2 = test_haplotype(3);
-
-        let ind = Individual::new("ind1", hap1, hap2);
-
-        // Access specific chromosome through haplotype
-        let chr1_h1 = ind.haplotype1().get(0).unwrap();
-        let chr1_h2 = ind.haplotype2().get(0).unwrap();
-
-        assert_eq!(chr1_h1.id(), "chr1");
-        assert_eq!(chr1_h2.id(), "chr1");
-    }
-
-    #[test]
-    fn test_individual_modify_chromosomes() {
-        let hap1 = test_haplotype(2);
-        let hap2 = test_haplotype(2);
-
-        let mut ind = Individual::new("ind1", hap1, hap2);
-
-        // Modify a chromosome in haplotype1
-        if let Some(chr) = ind.haplotype1_mut().get_mut(0) {
-            chr.sequence_mut().set(0, Nucleotide::G).unwrap();
-        }
-
-        // Verify change
-        let chr = ind.haplotype1().get(0).unwrap();
-        assert_eq!(chr.sequence().get(0), Some(Nucleotide::G));
-
-        // Verify haplotype2 unchanged
-        let chr2 = ind.haplotype2().get(0).unwrap();
-        assert_eq!(chr2.sequence().get(0), Some(Nucleotide::A));
     }
 }

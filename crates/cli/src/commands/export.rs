@@ -228,14 +228,17 @@ fn export_sequences(
             let mut bed_content = String::new();
 
             for (id, snap) in &snapshots {
+                let mut arena = centrevo_sim::base::GenomeArena::new();
                 let ind = snap
-                    .to_individual(&id.to_string(), &codec)
+                    .to_individual(&id.to_string(), &codec, &mut arena)
                     .map_err(|e| anyhow::anyhow!(e))?;
 
                 // Haplotype 1
                 if let Some(chr) = ind.haplotype1().get(0) {
                     let header = format!("ind_{id}|h1|chr0");
-                    fasta_content.push_str(&format!(">{header}\n{}\n", chr.sequence()));
+                    let seq_str: String =
+                        chr.sequence(&arena).iter().map(|n| n.to_char()).collect();
+                    fasta_content.push_str(&format!(">{header}\n{seq_str}\n"));
 
                     let map = chr.map();
                     for i in 0..map.num_rus() {
@@ -249,7 +252,9 @@ fn export_sequences(
                 // Haplotype 2
                 if let Some(chr) = ind.haplotype2().get(0) {
                     let header = format!("ind_{id}|h2|chr0");
-                    fasta_content.push_str(&format!(">{header}\n{}\n", chr.sequence()));
+                    let seq_str: String =
+                        chr.sequence(&arena).iter().map(|n| n.to_char()).collect();
+                    fasta_content.push_str(&format!(">{header}\n{seq_str}\n"));
 
                     let map = chr.map();
                     for i in 0..map.num_rus() {
@@ -268,43 +273,16 @@ fn export_sequences(
         }
         "formatted-text" => {
             let mut content = String::new();
+            let mut arena = centrevo_sim::base::GenomeArena::new();
 
             for (id, snap) in &snapshots {
                 let ind = snap
-                    .to_individual(&id.to_string(), &codec)
+                    .to_individual(&id.to_string(), &codec, &mut arena)
                     .map_err(|e| anyhow::anyhow!(e))?;
 
                 // Helper to format a chromosome
                 let format_chr = |chr: &centrevo_sim::genome::Chromosome| -> String {
-                    let seq_str = chr.sequence().to_string();
-                    let map = chr.map();
-                    let mut formatted = String::new();
-
-                    // Iterate RUs
-                    for i in 0..map.num_rus() {
-                        if i > 0 {
-                            // Check if we crossed an HOR boundary
-                            let is_hor_start = map
-                                .find_hor_index(i)
-                                .map(|hor_idx| {
-                                    map.get_hor_interval(hor_idx)
-                                        .map(|(s, _)| s == map.get_ru_interval(i).unwrap().0)
-                                        .unwrap_or(false)
-                                })
-                                .unwrap_or(false);
-
-                            if is_hor_start {
-                                formatted.push_str(hor_delimiter);
-                            } else {
-                                formatted.push_str(ru_delimiter);
-                            }
-                        }
-
-                        if let Some((start, end)) = map.get_ru_interval(i) {
-                            formatted.push_str(&seq_str[start..end]);
-                        }
-                    }
-                    formatted
+                    chr.to_formatted_string(ru_delimiter, hor_delimiter, &arena)
                 };
 
                 let h1_str = ind

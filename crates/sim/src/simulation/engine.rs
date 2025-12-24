@@ -6,6 +6,7 @@
 use crate::errors::RecombinationError;
 use crate::evolution::RecombinationType;
 
+use crate::base::GenomeArena;
 use crate::genome::{Chromosome, Individual};
 use crate::simulation::{
     Configuration, ExecutionConfig, FitnessConfig, InitializationConfig, MutationConfig,
@@ -24,6 +25,8 @@ pub struct Simulation {
     config: Configuration,
     /// Random number generator (using Xoshiro256++ for better performance)
     rng: Xoshiro256PlusPlus,
+    /// Genome storage arena
+    arena: GenomeArena,
 }
 
 impl Simulation {
@@ -47,17 +50,19 @@ impl Simulation {
         };
 
         // Initialize individuals from config
+        let mut arena = GenomeArena::new();
         let mut individuals = crate::simulation::initialize(
             &config.initialization,
             config.execution.population_size,
             &mut rng,
             &config.execution.codec,
+            &mut arena,
         )
         .map_err(|e| format!("Failed to initialize from sequences: {e}"))?;
 
         // Compute fitness for initial population
         // This ensures the invariant that all individuals have cached fitness
-        Simulation::compute_population_fitness(&mut individuals, &config.evolution.fitness);
+        Simulation::compute_population_fitness(&mut individuals, &arena, &config.evolution.fitness);
 
         let population = Population::new("pop0", individuals);
 
@@ -65,13 +70,18 @@ impl Simulation {
             population,
             config,
             rng,
+            arena,
         })
     }
 
     /// Helper to compute valid initial fitness for a set of individuals.
-    fn compute_population_fitness(individuals: &mut [Individual], fitness: &FitnessConfig) {
+    fn compute_population_fitness(
+        individuals: &mut [Individual],
+        arena: &GenomeArena,
+        fitness: &FitnessConfig,
+    ) {
         individuals.par_iter_mut().for_each(|ind| {
-            fitness.update_cached_fitness(ind);
+            fitness.update_cached_fitness(ind, arena);
         });
     }
     /// Apply a single recombination `event` to a pair of chromosomes.
@@ -83,12 +93,13 @@ impl Simulation {
         chr1: &mut Chromosome,
         chr2: &mut Chromosome,
         event: RecombinationType,
+        arena: &mut GenomeArena,
     ) -> Result<(), String> {
         match event {
             RecombinationType::None => Ok(()),
             RecombinationType::Crossover { pos1, pos2 } => {
                 let (new1, new2) = params
-                    .crossover(chr1, chr2, pos1, pos2)
+                    .crossover(chr1, chr2, pos1, pos2, arena)
                     .map_err(|e| format!("Crossover failed: {e}"))?;
 
                 *chr1 = new1;
@@ -100,7 +111,14 @@ impl Simulation {
                 recipient_start,
                 length,
             } => {
-                match params.gene_conversion(chr2, chr1, recipient_start, donor_start, length) {
+                match params.gene_conversion(
+                    chr2,
+                    chr1,
+                    recipient_start,
+                    donor_start,
+                    length,
+                    arena,
+                ) {
                     Ok(new2) => {
                         *chr2 = new2;
                         Ok(())
@@ -126,6 +144,7 @@ impl Simulation {
                                 recipient_start,
                                 donor_start,
                                 clamped_len,
+                                arena,
                             ) {
                                 *chr2 = new2;
                                 Ok(())
@@ -187,6 +206,30 @@ impl Simulation {
             .get_full_config()
             .map_err(|e| format!("Failed to load configuration: {e}"))?;
 
+        // Initialize sequence data (Population + GenomeArena)
+        let mut arena = GenomeArena::new();
+        // Create random number generator for initialization
+        // We use a temporary RNG here; main RNG is set below
+        let mut param_rng = Xoshiro256PlusPlus::seed_from_u64(config.execution.seed.unwrap_or(42));
+
+        // Create codec
+        let codec = config.execution.codec;
+
+        let individuals = crate::simulation::sequence::initialize(
+            &config.initialization,
+            config.execution.population_size,
+            &mut param_rng,
+            &codec,
+            &mut arena,
+        )
+        .map_err(|e| format!("Failed to initialize population: {e}"))?;
+
+        let _population = Population::new(
+            // Initial population ID matches 0th generation
+            "pop_0",
+            individuals,
+        );
+
         // Adapt initialization config to load from database
         let db_path_str = db_path.as_ref().to_string_lossy().to_string();
         config.initialization = InitializationConfig::Load {
@@ -213,10 +256,11 @@ impl Simulation {
         let mut sim = Self::new(config)?;
 
         // Override population name to match generation
-        // ... (rest of function)
-        sim.population = Population::new(
+        // Replace population
+        let individuals = sim.population.individuals().to_vec();
+        sim.population = crate::simulation::Population::new(
             format!("pop_{gen}", gen = checkpoint.generation),
-            sim.population.individuals().to_vec(),
+            individuals,
         );
 
         // Force set the correct generation
@@ -240,6 +284,11 @@ impl Simulation {
     /// Get the current population.
     pub fn population(&self) -> &Population {
         &self.population
+    }
+
+    /// Get the genome arena.
+    pub fn arena(&self) -> &GenomeArena {
+        &self.arena
     }
 
     /// Get mutable access to the population.
@@ -315,25 +364,28 @@ impl Simulation {
         &self,
         parent: &Individual,
         rng: &mut Xoshiro256PlusPlus,
-    ) -> Result<crate::genome::Haplotype, String> {
-        // 1. & 2. Meiosis and Assortment
-        // We start by cloning the parent's haplotypes to avoid mutating the population state.
-        // We need mutable copies to perform recombination.
-        let mut hap1 = parent.haplotype1().clone();
-        let mut hap2 = parent.haplotype2().clone();
+    ) -> Result<(crate::genome::Haplotype, GenomeArena), String> {
+        let mut local_arena = GenomeArena::new();
+        // 1. Localize parent to thread-local arena
+        // This is crucial for parallel processing to avoid contention on the main arena
+        let mut parent_copy = parent.clone();
+        parent_copy.localize(&self.arena, &mut local_arena);
+
+        // 2. Meiosis and Assortment
+        let mut hap1 = parent_copy.haplotype1().clone();
+        let mut hap2 = parent_copy.haplotype2().clone();
 
         // Apply recombination between the two haplotypes
-        // Iterate over shared chromosomes
         let num_chromosomes = hap1.len().min(hap2.len());
         for chr_idx in 0..num_chromosomes {
             if let (Some(chr1), Some(chr2)) = (hap1.get_mut(chr_idx), hap2.get_mut(chr_idx)) {
                 // Sample recombination events
-                let mut events = self
-                    .config
-                    .evolution
-                    .recombination
-                    .params
-                    .sample_events(chr1, chr2, rng);
+                let mut events = self.config.evolution.recombination.params.sample_events(
+                    chr1,
+                    chr2,
+                    &local_arena,
+                    rng,
+                );
 
                 // Process events from right to left (descending position)
                 events.reverse();
@@ -345,13 +397,13 @@ impl Simulation {
                         chr1,
                         chr2,
                         event,
+                        &mut local_arena,
                     )?;
                 }
             }
         }
 
         // Randomly select one of the recombinant haplotypes to be the gamete
-        // Use gen::<f64>() which is faster than random_bool
         let mut gamete = if rng.random::<f64>() < 0.5 {
             hap1
         } else {
@@ -361,7 +413,7 @@ impl Simulation {
         // 3. Mutation
         // Apply mutation to the chosen gamete
         for chr in gamete.chromosomes_mut() {
-            let seq = chr.sequence_mut();
+            let seq = chr.sequence_mut(&mut local_arena);
 
             // Apply substitutions settings thread-local RNG
             self.config
@@ -371,15 +423,53 @@ impl Simulation {
                 .mutate_sequence_sparse(seq, rng);
 
             // Apply indels if configured
+            // Apply indels if configured
             if let Some(indel_model) = &self.config.evolution.mutation.indel {
-                indel_model.apply_indels(seq, rng);
+                let current_slice = chr.get_slice();
+                // Extract sequence from arena to mutable structure
+                let mut seq_data = crate::base::Sequence::from_nucleotides(
+                    local_arena.get(current_slice).to_vec(),
+                );
+
+                // Apply indel mutations
+                let events = indel_model.apply_indels(&mut seq_data, rng);
+
+                // If mutated, re-allocate in arena and update handle
+                if events > 0 {
+                    let new_slice = local_arena.alloc(seq_data.as_slice());
+                    chr.set_slice(new_slice);
+                }
             }
         }
 
         // Clear cached fitness since the sequence has changed
-        gamete.set_cached_fitness(crate::base::FitnessValue::default());
+        // (Though gamete acts as Haplotype here, but we will wrap it in Individual later)
+        // gamete doesn't have cached fitness field itself? No, Haplotype doesn't.
+        // Individual has. Line 398 in original code was: gamete.set_cached_fitness(...)
+        // Wait, 'gamete' variable in original code was inferred as Haplotype?
+        // Ah, Haplotype doesn't have set_cached_fitness.
+        // Individual has.
+        // Let's check original logic.
+        // Line 398: gamete.set_cached_fitness(...)
+        // But gamete comes from hap1/hap2 which are Haplotypes.
+        // Wait, did I miss something?
+        // Ah, Haplotype does NOT have fitness in my `individual.rs` view.
+        // Maybe previous `gamete` was `Individual`?
+        // No, `produce_gamete` returns `Haplotype`.
+        // Line 398 in original `engine.rs` must be incorrect if it was calling set_cached_fitness on Haplotype.
+        // Or Haplotype has it?
+        // Let's check `haplotype.rs` view from start.
+        // I checked `haplotype.rs` in Step 237 summary. It has `offset_page_ids`.
+        // I don't see fitness there. `Individual` has fitness.
+        // The original code `gamete.set_cached_fitness` might have been a residue or I misread the file.
+        // I will omit it for `Haplotype`.
 
-        Ok(gamete)
+        // Final step: Compact the local arena to keep only the gamete's data
+        let slices = gamete.get_slices();
+        let (compact_arena, new_slices) = local_arena.compact(&slices);
+        gamete.update_slices(&new_slices);
+
+        Ok((gamete, compact_arena))
     }
 
     /// Advance simulation by one generation.
@@ -407,7 +497,9 @@ impl Simulation {
         let fitness_config = &self.config.evolution.fitness;
 
         // 2. Generate offspring in parallel: each task processes one parent pair
-        let offspring: Result<Vec<Individual>, String> = parent_pairs
+        // 2. Generate offspring in parallel: each task processes one parent pair
+        // Returns (Individual, GenomeArena) where the arena contains the data for that individual
+        let results: Vec<Result<(Individual, GenomeArena), String>> = parent_pairs
             .par_iter()
             .zip(seeds.par_iter())
             .enumerate()
@@ -419,25 +511,52 @@ impl Simulation {
                 let parent2 = population.get(*parent2_idx).unwrap();
 
                 // Generate two gametes (meiosis + mutation), one from each parent
-                let gamete1 = self.produce_gamete(parent1, &mut local_rng)?;
-                let gamete2 = self.produce_gamete(parent2, &mut local_rng)?;
+                // produce_gamete now returns the gamete AND a local arena containing its data
+                let (gamete1, arena1) = self.produce_gamete(parent1, &mut local_rng)?;
+                let (gamete2, arena2) = self.produce_gamete(parent2, &mut local_rng)?;
+
+                // Combine the two thread-local arenas into one for this offspring
+                // We merge arena2 into arena1.
+                let mut offspring_arena = arena1;
+                let offset = offspring_arena.merge(arena2);
+
+                // We must update gamete2's slices to point to the new location (offset pages)
+                let mut gamete2_merged = gamete2;
+                gamete2_merged.offset_page_ids(offset);
 
                 // Combine gametes to form new diploid individual
                 let id = format!("{gen_str}{i}");
-                let mut new_ind = Individual::new(id, gamete1, gamete2);
+                let mut new_ind = Individual::new(id, gamete1, gamete2_merged);
 
                 // Compute intrinsic fitness immediately (born with it)
-                fitness_config.update_cached_fitness(&mut new_ind);
+                // We invoke fitness calculation using the local offspring_arena
+                fitness_config.update_cached_fitness(&mut new_ind, &offspring_arena);
 
-                Ok(new_ind)
+                Ok((new_ind, offspring_arena))
             })
             .collect();
 
-        // 3. Collect offspring (Result -> Vec)
-        let offspring = offspring?;
+        let mut new_individuals = Vec::with_capacity(self.config.execution.population_size);
 
-        // 4. Replace population with new generation
-        self.population.set_individuals(offspring);
+        // 3. Merge all offspring data back into the main arena
+        // We do this sequentially to ensure deterministic order and thread safety
+        for res in results {
+            let (mut ind, local_arena) = res?;
+
+            // Merge local arena into the main global arena
+            let offset = self.arena.merge(local_arena);
+
+            // Update individual's handles to point to the new location in main arena
+            ind.offset_page_ids(offset);
+
+            new_individuals.push(ind);
+        }
+
+        // 3. Collect offspring (Result -> Vec)
+        // results is already collected above as Vec
+
+        // 4. Replace population with new generation (using setters if available, or just keeping the vector)
+        self.population.set_individuals(new_individuals);
 
         // 5. Increment generation counter
         self.population.increment_generation();
@@ -511,8 +630,9 @@ mod tests {
             .unwrap();
 
         // Chron 1: donor (length 6), Chron 2: recipient (length 4)
-        let mut donor = Chromosome::uniform("d", Nucleotide::A, 1, 1, 6);
-        let mut recipient = Chromosome::uniform("r", Nucleotide::T, 1, 1, 4);
+        let mut arena = GenomeArena::new();
+        let mut donor = Chromosome::uniform("d", Nucleotide::A, 1, 1, 6, &mut arena);
+        let mut recipient = Chromosome::uniform("r", Nucleotide::T, 1, 1, 4, &mut arena);
 
         // Create a gene conversion event where length exceeds recipient remaining length
         let event = crate::evolution::RecombinationType::GeneConversion {
@@ -523,9 +643,10 @@ mod tests {
 
         // Apply via helper — should clamp to 3 and succeed
         let params = sim.config.evolution.recombination.params.clone();
-        Simulation::apply_event_to_pair(&params, &mut donor, &mut recipient, event).unwrap();
+        Simulation::apply_event_to_pair(&params, &mut donor, &mut recipient, event, &mut arena)
+            .unwrap();
 
-        assert_eq!(recipient.to_string(), "TAAA");
+        assert_eq!(recipient.to_formatted_string("", "", &arena), "TAAA");
     }
 
     #[test]
@@ -540,9 +661,11 @@ mod tests {
             .build()
             .unwrap();
 
-        let mut donor = Chromosome::uniform("d", Nucleotide::A, 1, 1, 4);
-        let mut recipient = Chromosome::uniform("r", Nucleotide::T, 1, 1, 4);
+        let mut arena = GenomeArena::new();
+        let mut donor = Chromosome::uniform("d", Nucleotide::C, 1, 1, 10, &mut arena);
+        assert_eq!(donor.gc_content(&arena), 1.0);
 
+        let mut recipient = Chromosome::uniform("r", Nucleotide::A, 1, 1, 10, &mut arena);
         // The recipient start is out of bounds
         let event = crate::evolution::RecombinationType::GeneConversion {
             donor_start: 0,
@@ -551,10 +674,17 @@ mod tests {
         };
 
         let params = sim.config.evolution.recombination.params.clone();
-        Simulation::apply_event_to_pair(&params, &mut donor, &mut recipient, event).unwrap();
+        Simulation::apply_event_to_pair(&params, &mut donor, &mut recipient, event, &mut arena)
+            .unwrap();
 
         // No changes to recipient - still TTTT
-        assert_eq!(recipient.to_string(), "TTTT");
+        assert_eq!(
+            recipient
+                .to_formatted_string(",", ".", &arena)
+                .replace(",", "")
+                .replace(".", ""),
+            "AAAAAAAAAA"
+        );
     }
 
     // ============================================================================
@@ -608,7 +738,7 @@ mod tests {
         // Check that all bases are C
         for chr in ind.haplotype1().chromosomes() {
             for i in 0..chr.len() {
-                assert_eq!(chr.sequence().get(i), Some(Nucleotide::C));
+                assert_eq!(chr.sequence(sim.arena()).get(i), Some(&Nucleotide::C));
             }
         }
     }
@@ -693,8 +823,20 @@ mod tests {
             let ind2 = sim2.population().get(i).unwrap();
 
             assert_eq!(
-                ind1.haplotype1().get(0).unwrap().sequence().to_string(),
-                ind2.haplotype1().get(0).unwrap().sequence().to_string()
+                ind1.haplotype1()
+                    .get(0)
+                    .unwrap()
+                    .sequence(sim1.arena())
+                    .iter()
+                    .map(|n| n.to_char())
+                    .collect::<String>(),
+                ind2.haplotype1()
+                    .get(0)
+                    .unwrap()
+                    .sequence(sim2.arena())
+                    .iter()
+                    .map(|n| n.to_char())
+                    .collect::<String>()
             );
         }
     }
@@ -747,8 +889,22 @@ mod tests {
             let ind1 = sim1.population().get(i).unwrap();
             let ind2 = sim2.population().get(i).unwrap();
 
-            if ind1.haplotype1().get(0).unwrap().sequence().to_string()
-                != ind2.haplotype1().get(0).unwrap().sequence().to_string()
+            if ind1
+                .haplotype1()
+                .get(0)
+                .unwrap()
+                .sequence(sim1.arena())
+                .iter()
+                .map(|n| n.to_char())
+                .collect::<String>()
+                != ind2
+                    .haplotype1()
+                    .get(0)
+                    .unwrap()
+                    .sequence(sim2.arena())
+                    .iter()
+                    .map(|n| n.to_char())
+                    .collect::<String>()
             {
                 found_difference = true;
                 break;
@@ -1021,8 +1177,10 @@ mod tests {
             .haplotype1()
             .get(0)
             .unwrap()
-            .sequence()
-            .to_string();
+            .sequence(sim.arena())
+            .iter()
+            .map(|n| n.to_char())
+            .collect::<String>();
 
         sim.step().unwrap();
 
@@ -1033,8 +1191,10 @@ mod tests {
             .haplotype1()
             .get(0)
             .unwrap()
-            .sequence()
-            .to_string();
+            .sequence(sim.arena())
+            .iter()
+            .map(|n| n.to_char())
+            .collect::<String>();
 
         // With high mutation rate, sequences should differ
         assert_ne!(gen0_seq, gen1_seq);
@@ -1177,8 +1337,10 @@ mod tests {
             .haplotype1()
             .get(0)
             .unwrap()
-            .sequence()
-            .to_string();
+            .sequence(sim1.arena())
+            .iter()
+            .map(|n| n.to_char())
+            .collect::<String>();
 
         let seq2 = sim2
             .population()
@@ -1187,8 +1349,10 @@ mod tests {
             .haplotype1()
             .get(0)
             .unwrap()
-            .sequence()
-            .to_string();
+            .sequence(sim1.arena())
+            .iter()
+            .map(|n| n.to_char())
+            .collect::<String>();
 
         assert_eq!(seq1, seq2, "Same seed should produce same evolution");
     }

@@ -2,7 +2,7 @@
 //!
 //! Measures non-random association of alleles at different loci.
 
-use centrevo_sim::base::Nucleotide;
+use centrevo_sim::base::{GenomeArena, Nucleotide};
 use centrevo_sim::simulation::Population;
 
 /// Linkage disequilibrium statistics
@@ -40,6 +40,7 @@ pub fn linkage_disequilibrium(
     pos2: usize,
     chromosome_idx: usize,
     haplotype_idx: usize,
+    arena: &GenomeArena,
 ) -> Option<LDStatistics> {
     // Extract alleles at both positions
     let alleles: Vec<(Nucleotide, Nucleotide)> = population
@@ -52,9 +53,9 @@ pub fn linkage_disequilibrium(
                 ind.haplotype2()
             };
             haplotype.get(chromosome_idx).and_then(|chr| {
-                let seq = chr.sequence();
+                let seq = chr.sequence(arena);
                 match (seq.get(pos1), seq.get(pos2)) {
-                    (Some(n1), Some(n2)) => Some((n1, n2)),
+                    (Some(n1), Some(n2)) => Some((*n1, *n2)),
                     _ => None,
                 }
             })
@@ -160,6 +161,7 @@ pub fn ld_decay(
     haplotype_idx: usize,
     max_distance: usize,
     bin_size: usize,
+    arena: &GenomeArena,
 ) -> Vec<(usize, f64)> {
     // Get sequence length
     let seq_len = population
@@ -174,7 +176,7 @@ pub fn ld_decay(
             haplotype.get(chromosome_idx)
         })
         .next()
-        .map(|chr| chr.sequence().len())
+        .map(|chr| chr.sequence(arena).len())
         .unwrap_or(0);
 
     if seq_len == 0 {
@@ -194,7 +196,7 @@ pub fn ld_decay(
             let bin_idx = (distance / bin_size).min(num_bins - 1);
 
             if let Some(ld) =
-                linkage_disequilibrium(population, pos1, pos2, chromosome_idx, haplotype_idx)
+                linkage_disequilibrium(population, pos1, pos2, chromosome_idx, haplotype_idx, arena)
             {
                 bin_sums[bin_idx] += ld.r_squared;
                 bin_counts[bin_idx] += 1;
@@ -233,6 +235,7 @@ pub fn haplotype_blocks(
     chromosome_idx: usize,
     haplotype_idx: usize,
     ld_threshold: f64,
+    arena: &GenomeArena,
 ) -> Vec<(usize, usize)> {
     let seq_len = population
         .individuals()
@@ -246,7 +249,7 @@ pub fn haplotype_blocks(
             haplotype.get(chromosome_idx)
         })
         .next()
-        .map(|chr| chr.sequence().len())
+        .map(|chr| chr.sequence(arena).len())
         .unwrap_or(0);
 
     if seq_len == 0 {
@@ -266,6 +269,7 @@ pub fn haplotype_blocks(
             pos + sample_step,
             chromosome_idx,
             haplotype_idx,
+            arena,
         ) {
             if ld.r_squared >= ld_threshold {
                 if !in_block {
@@ -289,11 +293,14 @@ pub fn haplotype_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use centrevo_sim::base::Sequence;
     use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 
-    fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
-        let mut seq = Sequence::with_capacity(sequence.len());
+    fn create_test_individual(
+        id: &str,
+        sequence: &[Nucleotide],
+        arena: &mut GenomeArena,
+    ) -> Individual {
+        let mut seq = centrevo_sim::base::Sequence::with_capacity(sequence.len());
         for &nuc in sequence {
             seq.push(nuc);
         }
@@ -304,9 +311,11 @@ mod tests {
         let hor_len = ru_len * rus_per_hor;
         let hors_per_chr = if hor_len > 0 { seq.len() / hor_len } else { 0 };
 
-        let map = centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+        let map =
+            centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+        let data = arena.alloc(seq.as_slice());
 
-        let chr = Chromosome::new(format!("chr_{id}"), seq, map);
+        let chr = Chromosome::new(format!("chr_{id}"), data, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr);
         let hap2 = Haplotype::new();
@@ -316,17 +325,18 @@ mod tests {
 
     #[test]
     fn test_linkage_disequilibrium_perfect() {
+        let mut arena = GenomeArena::new();
         // Perfect LD: if pos1=A then pos2=T, if pos1=C then pos2=G
         let seq1 = vec![Nucleotide::A, Nucleotide::T];
         let seq2 = vec![Nucleotide::C, Nucleotide::G];
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let ld = linkage_disequilibrium(&pop, 0, 1, 0, 0);
+        let ld = linkage_disequilibrium(&pop, 0, 1, 0, 0, &arena);
 
         assert!(ld.is_some());
         let ld = ld.unwrap();
@@ -335,17 +345,18 @@ mod tests {
 
     #[test]
     fn test_linkage_disequilibrium_no_variation() {
+        let mut arena = GenomeArena::new();
         // No variation at one site
         let seq1 = vec![Nucleotide::A, Nucleotide::A];
         let seq2 = vec![Nucleotide::A, Nucleotide::T];
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let ld = linkage_disequilibrium(&pop, 0, 1, 0, 0);
+        let ld = linkage_disequilibrium(&pop, 0, 1, 0, 0, &arena);
 
         assert!(ld.is_some());
         let ld = ld.unwrap();
@@ -354,6 +365,7 @@ mod tests {
 
     #[test]
     fn test_linkage_disequilibrium_independent() {
+        let mut arena = GenomeArena::new();
         // Independent sites
         let seq1 = vec![Nucleotide::A, Nucleotide::T];
         let seq2 = vec![Nucleotide::A, Nucleotide::C];
@@ -361,14 +373,14 @@ mod tests {
         let seq4 = vec![Nucleotide::C, Nucleotide::C];
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
-            create_test_individual("ind3", &seq3),
-            create_test_individual("ind4", &seq4),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
+            create_test_individual("ind3", &seq3, &mut arena),
+            create_test_individual("ind4", &seq4, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let ld = linkage_disequilibrium(&pop, 0, 1, 0, 0);
+        let ld = linkage_disequilibrium(&pop, 0, 1, 0, 0, &arena);
 
         assert!(ld.is_some());
         let ld = ld.unwrap();
@@ -378,15 +390,16 @@ mod tests {
 
     #[test]
     fn test_ld_decay() {
+        let mut arena = GenomeArena::new();
         // Create population with some LD structure
         let seq = vec![Nucleotide::A; 1000];
         let individuals = vec![
-            create_test_individual("ind1", &seq),
-            create_test_individual("ind2", &seq),
+            create_test_individual("ind1", &seq, &mut arena),
+            create_test_individual("ind2", &seq, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let decay = ld_decay(&pop, 0, 0, 500, 100);
+        let decay = ld_decay(&pop, 0, 0, 500, 100, &arena);
 
         // Should return some results
         assert!(!decay.is_empty());
@@ -394,14 +407,15 @@ mod tests {
 
     #[test]
     fn test_haplotype_blocks_simple() {
+        let mut arena = GenomeArena::new();
         let seq = vec![Nucleotide::A; 100];
         let individuals = vec![
-            create_test_individual("ind1", &seq),
-            create_test_individual("ind2", &seq),
+            create_test_individual("ind1", &seq, &mut arena),
+            create_test_individual("ind2", &seq, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let blocks = haplotype_blocks(&pop, 0, 0, 0.8);
+        let blocks = haplotype_blocks(&pop, 0, 0, 0.8, &arena);
 
         // With no variation, might get one large block or none
         assert!(blocks.len() <= 1);

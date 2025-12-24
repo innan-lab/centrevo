@@ -6,7 +6,7 @@
 //! across all individuals and both haplotypes (2n sequences total).
 
 use crate::analysis::utils::hamming_distance_fast;
-use centrevo_sim::base::Sequence;
+use centrevo_sim::base::{GenomeArena, Nucleotide};
 use centrevo_sim::simulation::Population;
 use rayon::prelude::*;
 
@@ -33,21 +33,25 @@ use rayon::prelude::*;
 /// # // let population = ...; // Create your population here
 ///
 /// // Get all pairwise distances for chromosome 0
-/// // let distances = pairwise_distances(&population, 0);
+/// // let distances = pairwise_distances(&population, 0, &arena);
 /// ```
-pub fn pairwise_distances(population: &Population, chromosome_idx: usize) -> Vec<usize> {
+pub fn pairwise_distances(
+    population: &Population,
+    chromosome_idx: usize,
+    arena: &GenomeArena,
+) -> Vec<usize> {
     // Collect all sequences from both haplotypes of all individuals
-    let sequences: Vec<&Sequence> = population
+    let sequences: Vec<&[Nucleotide]> = population
         .individuals()
         .iter()
         .flat_map(|ind| {
             [
                 ind.haplotype1()
                     .get(chromosome_idx)
-                    .map(|chr| chr.sequence()),
+                    .map(|chr| chr.sequence(arena)),
                 ind.haplotype2()
                     .get(chromosome_idx)
-                    .map(|chr| chr.sequence()),
+                    .map(|chr| chr.sequence(arena)),
             ]
             .into_iter()
             .flatten()
@@ -93,22 +97,26 @@ pub fn pairwise_distances(population: &Population, chromosome_idx: usize) -> Vec
 /// # // let population = ...; // Create your population here
 ///
 /// // Get distance matrix for chromosome 0
-/// // let matrix = distance_matrix(&population, 0);
+/// // let matrix = distance_matrix(&population, 0, &arena);
 /// // matrix[i][j] is the normalized distance between sequences i and j
 /// ```
-pub fn distance_matrix(population: &Population, chromosome_idx: usize) -> Vec<Vec<f64>> {
+pub fn distance_matrix(
+    population: &Population,
+    chromosome_idx: usize,
+    arena: &GenomeArena,
+) -> Vec<Vec<f64>> {
     // Collect all sequences from both haplotypes of all individuals
-    let sequences: Vec<&Sequence> = population
+    let sequences: Vec<&[Nucleotide]> = population
         .individuals()
         .iter()
         .flat_map(|ind| {
             [
                 ind.haplotype1()
                     .get(chromosome_idx)
-                    .map(|chr| chr.sequence()),
+                    .map(|chr| chr.sequence(arena)),
                 ind.haplotype2()
                     .get(chromosome_idx)
-                    .map(|chr| chr.sequence()),
+                    .map(|chr| chr.sequence(arena)),
             ]
             .into_iter()
             .flatten()
@@ -155,8 +163,12 @@ mod tests {
     use centrevo_sim::base::Nucleotide;
     use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 
-    fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
-        let mut seq = Sequence::with_capacity(sequence.len());
+    fn create_test_individual(
+        id: &str,
+        sequence: &[Nucleotide],
+        arena: &mut GenomeArena,
+    ) -> Individual {
+        let mut seq = centrevo_sim::base::Sequence::with_capacity(sequence.len());
         for &nuc in sequence {
             seq.push(nuc);
         }
@@ -167,9 +179,12 @@ mod tests {
         let hor_len = ru_len * rus_per_hor;
         let hors_per_chr = if hor_len > 0 { seq.len() / hor_len } else { 0 };
 
-        let map = centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+        let map =
+            centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
 
-        let chr = Chromosome::new(format!("chr_{id}"), seq, map);
+        let data = arena.alloc(seq.as_slice());
+
+        let chr = Chromosome::new(format!("chr_{id}"), data, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr);
         let hap2 = Haplotype::new();
@@ -179,18 +194,19 @@ mod tests {
 
     #[test]
     fn test_pairwise_distances() {
+        let mut arena = GenomeArena::new();
         let seq1 = vec![Nucleotide::A; 10];
         let seq2 = vec![Nucleotide::T; 10];
         let seq3 = vec![Nucleotide::C; 10];
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
-            create_test_individual("ind3", &seq3),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
+            create_test_individual("ind3", &seq3, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let distances = pairwise_distances(&pop, 0);
+        let distances = pairwise_distances(&pop, 0, &arena);
 
         // 3 individuals = 3 sequences (only haplotype1 has data)
         // = 3 pairs: (0,1), (0,2), (1,2)
@@ -201,18 +217,22 @@ mod tests {
 
     #[test]
     fn test_pairwise_distances_both_haplotypes() {
+        let mut arena = GenomeArena::new();
         // Create individuals with data in both haplotypes
-        let mut seq1 = Sequence::with_capacity(5);
-        let mut seq2 = Sequence::with_capacity(5);
+        let mut seq1 = centrevo_sim::base::Sequence::with_capacity(5);
+        let mut seq2 = centrevo_sim::base::Sequence::with_capacity(5);
 
         for _ in 0..5 {
             seq1.push(Nucleotide::A);
             seq2.push(Nucleotide::T);
         }
 
+        let data1 = arena.alloc(seq1.as_slice());
+        let data2 = arena.alloc(seq2.as_slice());
+
         let map = centrevo_sim::genome::repeat_map::RepeatMap::uniform(5, 1, 1);
-        let chr1 = Chromosome::new("chr1", seq1, map.clone());
-        let chr2 = Chromosome::new("chr2", seq2, map);
+        let chr1 = Chromosome::new("chr1", data1, map.clone());
+        let chr2 = Chromosome::new("chr2", data2, map);
 
         let mut hap1 = Haplotype::new();
         hap1.push(chr1);
@@ -222,7 +242,7 @@ mod tests {
         let ind = Individual::new("ind1", hap1, hap2);
         let pop = Population::new("pop1", vec![ind]);
 
-        let distances = pairwise_distances(&pop, 0);
+        let distances = pairwise_distances(&pop, 0, &arena);
 
         // 1 individual with 2 haplotypes = 2 sequences = 1 pair
         assert_eq!(distances.len(), 1);
@@ -232,17 +252,18 @@ mod tests {
 
     #[test]
     fn test_distance_matrix() {
+        let mut arena = GenomeArena::new();
         let seq1 = vec![Nucleotide::A; 10];
         let mut seq2 = vec![Nucleotide::A; 10];
         seq2[0] = Nucleotide::T; // 1 difference
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let matrix = distance_matrix(&pop, 0);
+        let matrix = distance_matrix(&pop, 0, &arena);
 
         // 2 individuals with only haplotype1 = 2 sequences
         assert_eq!(matrix.len(), 2);
@@ -255,11 +276,12 @@ mod tests {
 
     #[test]
     fn test_distance_matrix_both_haplotypes() {
+        let mut arena = GenomeArena::new();
         // Create two individuals, each with different sequences in both haplotypes
-        let mut seq1 = Sequence::with_capacity(4);
-        let mut seq2 = Sequence::with_capacity(4);
-        let mut seq3 = Sequence::with_capacity(4);
-        let mut seq4 = Sequence::with_capacity(4);
+        let mut seq1 = centrevo_sim::base::Sequence::with_capacity(4);
+        let mut seq2 = centrevo_sim::base::Sequence::with_capacity(4);
+        let mut seq3 = centrevo_sim::base::Sequence::with_capacity(4);
+        let mut seq4 = centrevo_sim::base::Sequence::with_capacity(4);
 
         for _ in 0..4 {
             seq1.push(Nucleotide::A); // All A
@@ -268,11 +290,16 @@ mod tests {
             seq4.push(Nucleotide::G); // All G
         }
 
+        let data1 = arena.alloc(seq1.as_slice());
+        let data2 = arena.alloc(seq2.as_slice());
+        let data3 = arena.alloc(seq3.as_slice());
+        let data4 = arena.alloc(seq4.as_slice());
+
         let map = centrevo_sim::genome::repeat_map::RepeatMap::uniform(4, 1, 1);
-        let chr1 = Chromosome::new("chr1", seq1, map.clone());
-        let chr2 = Chromosome::new("chr2", seq2, map.clone());
-        let chr3 = Chromosome::new("chr3", seq3, map.clone());
-        let chr4 = Chromosome::new("chr4", seq4, map);
+        let chr1 = Chromosome::new("chr1", data1, map.clone());
+        let chr2 = Chromosome::new("chr2", data2, map.clone());
+        let chr3 = Chromosome::new("chr3", data3, map.clone());
+        let chr4 = Chromosome::new("chr4", data4, map);
 
         let mut hap1_ind1 = Haplotype::new();
         hap1_ind1.push(chr1);
@@ -288,7 +315,7 @@ mod tests {
         let ind2 = Individual::new("ind2", hap1_ind2, hap2_ind2);
 
         let pop = Population::new("pop1", vec![ind1, ind2]);
-        let matrix = distance_matrix(&pop, 0);
+        let matrix = distance_matrix(&pop, 0, &arena);
 
         // 2 individuals × 2 haplotypes = 4 sequences
         assert_eq!(matrix.len(), 4);

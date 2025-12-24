@@ -17,6 +17,7 @@
 //! simulation of genetic drift and molecular evolution under specific mutation
 //! regimes (e.g., conservation vs. rapidly evolving regions).
 
+// use crate::base::{GenomeArena, SequenceSlice};
 use crate::base::{Nucleotide, Sequence};
 pub use crate::errors::MutationError;
 use rand::Rng;
@@ -53,13 +54,13 @@ pub trait SubstitutionVariant: std::fmt::Debug + Send + Sync {
     /// Mutate a single base.
     fn mutate_base<R: Rng + ?Sized>(&self, base: Nucleotide, rng: &mut R) -> Nucleotide;
 
-    /// Mutate a sequence in place (standard approach).
-    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize;
+    /// Mutate a sequence in place.
+    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut [Nucleotide], rng: &mut R) -> usize;
 
     /// Mutate a sequence using sparse sampling.
     fn mutate_sequence_sparse<R: Rng + ?Sized>(
         &self,
-        sequence: &mut Sequence,
+        sequence: &mut [Nucleotide],
         rng: &mut R,
     ) -> usize;
 }
@@ -113,14 +114,15 @@ impl SubstitutionVariant for UniformSubstitution {
         Nucleotide::from_index(new_idx).unwrap()
     }
 
-    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize {
+    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut [Nucleotide], rng: &mut R) -> usize {
         let len = sequence.len();
         if len == 0 || self.rate <= 0.0 {
             return 0;
         }
 
         let mut mutation_count = 0;
-        let indices = sequence.as_mut_slice();
+        // sequence is already a slice
+        let indices = sequence;
 
         // Optimized loop
         for base_mut in indices {
@@ -141,7 +143,7 @@ impl SubstitutionVariant for UniformSubstitution {
 
     fn mutate_sequence_sparse<R: Rng + ?Sized>(
         &self,
-        sequence: &mut Sequence,
+        sequence: &mut [Nucleotide],
         rng: &mut R,
     ) -> usize {
         let len = sequence.len();
@@ -155,7 +157,8 @@ impl SubstitutionVariant for UniformSubstitution {
         }
 
         let mut mutation_count = 0;
-        let indices = sequence.as_mut_slice();
+        // sequence is already a slice
+        let indices = sequence;
         let mut current_pos = 0;
 
         // Geometric distribution logic
@@ -351,14 +354,14 @@ impl SubstitutionVariant for GeneralSubstitution {
         self.mutate_base_direct(base, rng)
     }
 
-    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize {
+    fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut [Nucleotide], rng: &mut R) -> usize {
         let len = sequence.len();
         if len == 0 {
             return 0;
         }
 
         let mut mutation_count = 0;
-        let indices = sequence.as_mut_slice();
+        let indices = sequence;
 
         // Bulk generate random floats
         let mut random_floats = vec![0.0f64; len * 2];
@@ -393,7 +396,7 @@ impl SubstitutionVariant for GeneralSubstitution {
 
     fn mutate_sequence_sparse<R: Rng + ?Sized>(
         &self,
-        sequence: &mut Sequence,
+        sequence: &mut [Nucleotide],
         rng: &mut R,
     ) -> usize {
         let len = sequence.len();
@@ -412,7 +415,7 @@ impl SubstitutionVariant for GeneralSubstitution {
         }
 
         let mut mutation_count = 0;
-        let indices = sequence.as_mut_slice();
+        let indices = sequence;
         let mut current_pos = 0;
 
         let log_1_minus_p = (1.0 - max_rate).ln();
@@ -507,7 +510,11 @@ impl SubstitutionModel {
     }
 
     /// Mutate a sequence in place.
-    pub fn mutate_sequence<R: Rng + ?Sized>(&self, sequence: &mut Sequence, rng: &mut R) -> usize {
+    pub fn mutate_sequence<R: Rng + ?Sized>(
+        &self,
+        sequence: &mut [Nucleotide],
+        rng: &mut R,
+    ) -> usize {
         match self {
             Self::Uniform(m) => m.mutate_sequence(sequence, rng),
             Self::General(m) => m.mutate_sequence(sequence, rng),
@@ -518,7 +525,7 @@ impl SubstitutionModel {
     #[inline]
     pub fn mutate_sequence_sparse<R: Rng + ?Sized>(
         &self,
-        sequence: &mut Sequence,
+        sequence: &mut [Nucleotide],
         rng: &mut R,
     ) -> usize {
         match self {
@@ -938,7 +945,7 @@ mod tests {
         let mut seq = Sequence::from_str("ACGTACGT").unwrap();
         let original = seq.to_string();
 
-        let count = model.mutate_sequence(&mut seq, &mut rng);
+        let count = model.mutate_sequence(seq.as_mut_slice(), &mut rng);
 
         assert_eq!(count, 0);
         assert_eq!(seq.to_string(), original);
@@ -950,7 +957,7 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         let mut seq = Sequence::from_str("ACGTACGTACGTACGT").unwrap();
-        let count = model.mutate_sequence(&mut seq, &mut rng);
+        let count = model.mutate_sequence(seq.as_mut_slice(), &mut rng);
 
         // With low rate, should have few mutations
         assert!(count < 5);
@@ -962,7 +969,7 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         let mut seq = Sequence::from_str("ACGTACGTACGTACGT").unwrap();
-        let count = model.mutate_sequence(&mut seq, &mut rng);
+        let count = model.mutate_sequence(seq.as_mut_slice(), &mut rng);
 
         // With high rate, should have many mutations
         assert!(count > 10);
@@ -974,7 +981,7 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         let mut seq = Sequence::new();
-        let count = model.mutate_sequence(&mut seq, &mut rng);
+        let count = model.mutate_sequence(seq.as_mut_slice(), &mut rng);
 
         assert_eq!(count, 0);
         assert!(seq.is_empty());
@@ -990,8 +997,8 @@ mod tests {
         let mut rng1 = Xoshiro256PlusPlus::seed_from_u64(123);
         let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(123);
 
-        let count1 = model.mutate_sequence(&mut seq1, &mut rng1);
-        let count2 = model.mutate_sequence(&mut seq2, &mut rng2);
+        let count1 = model.mutate_sequence(seq1.as_mut_slice(), &mut rng1);
+        let count2 = model.mutate_sequence(seq2.as_mut_slice(), &mut rng2);
 
         // Same seed should produce same results
         assert_eq!(count1, count2);
@@ -1082,7 +1089,7 @@ mod tests {
         let mut seq = Sequence::from_str("ACGTACGT").unwrap();
         let original = seq.to_string();
 
-        let count = model.mutate_sequence_sparse(&mut seq, &mut rng);
+        let count = model.mutate_sequence_sparse(seq.as_mut_slice(), &mut rng);
 
         assert_eq!(count, 0);
         assert_eq!(seq.to_string(), original);
@@ -1094,7 +1101,7 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         let mut seq = Sequence::from_str("ACGT".repeat(250).as_str()).unwrap();
-        let count = model.mutate_sequence_sparse(&mut seq, &mut rng);
+        let count = model.mutate_sequence_sparse(seq.as_mut_slice(), &mut rng);
 
         // With low rate on 1000bp, expect 0-5 mutations
         assert!(count < 10);
@@ -1106,7 +1113,7 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         let mut seq = Sequence::from_str("ACGT".repeat(250).as_str()).unwrap();
-        let count = model.mutate_sequence_sparse(&mut seq, &mut rng);
+        let count = model.mutate_sequence_sparse(seq.as_mut_slice(), &mut rng);
 
         // With medium rate on 1000bp, expect 5-20 mutations
         assert!(count > 0);
@@ -1120,7 +1127,7 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         let mut seq = Sequence::from_str("ACGTACGTACGTACGT").unwrap();
-        let count = model.mutate_sequence_sparse(&mut seq, &mut rng);
+        let count = model.mutate_sequence_sparse(seq.as_mut_slice(), &mut rng);
 
         // Should have many mutations
         assert!(count > 5);
@@ -1132,7 +1139,7 @@ mod tests {
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
 
         let mut seq = Sequence::new();
-        let count = model.mutate_sequence_sparse(&mut seq, &mut rng);
+        let count = model.mutate_sequence_sparse(seq.as_mut_slice(), &mut rng);
 
         assert_eq!(count, 0);
         assert!(seq.is_empty());
@@ -1148,8 +1155,8 @@ mod tests {
         let mut rng1 = Xoshiro256PlusPlus::seed_from_u64(123);
         let mut rng2 = Xoshiro256PlusPlus::seed_from_u64(123);
 
-        let count1 = model.mutate_sequence_sparse(&mut seq1, &mut rng1);
-        let count2 = model.mutate_sequence_sparse(&mut seq2, &mut rng2);
+        let count1 = model.mutate_sequence_sparse(seq1.as_mut_slice(), &mut rng1);
+        let count2 = model.mutate_sequence_sparse(seq2.as_mut_slice(), &mut rng2);
 
         // Same seed should produce same results
         assert_eq!(count1, count2);
@@ -1173,8 +1180,11 @@ mod tests {
             let mut rng_standard = Xoshiro256PlusPlus::seed_from_u64(seed);
             let mut rng_sparse = Xoshiro256PlusPlus::seed_from_u64(seed + 10000); // Different seed
 
-            standard_mutations.push(model.mutate_sequence(&mut seq_standard, &mut rng_standard));
-            sparse_mutations.push(model.mutate_sequence_sparse(&mut seq_sparse, &mut rng_sparse));
+            standard_mutations
+                .push(model.mutate_sequence(seq_standard.as_mut_slice(), &mut rng_standard));
+
+            sparse_mutations
+                .push(model.mutate_sequence_sparse(seq_sparse.as_mut_slice(), &mut rng_sparse));
         }
 
         // Calculate means

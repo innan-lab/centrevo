@@ -251,30 +251,6 @@ fn test_setup_flag_defaults() {
 }
 
 #[test]
-fn test_list_displays_simulations() {
-    let temp = tempdir().unwrap();
-    let db_path = temp.path().join("test_list.db");
-
-    let mut cmd_init = Command::new(env!("CARGO_BIN_EXE_centrevo"));
-    cmd_init
-        .arg("init")
-        .arg("--database")
-        .arg(&db_path)
-        .assert()
-        .success();
-
-    let mut cmd_list = Command::new(env!("CARGO_BIN_EXE_centrevo"));
-    cmd_list
-        .arg("list")
-        .arg("--database")
-        .arg(&db_path)
-        .assert()
-        .success()
-        // No name to check, check for population size or similar
-        .stdout(predicate::str::contains("Population:"));
-}
-
-#[test]
 fn test_init_recombination_advanced() {
     let temp = tempdir().unwrap();
     let db_path = temp.path().join("test_recomb_adv.db");

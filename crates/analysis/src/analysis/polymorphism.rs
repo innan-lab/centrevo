@@ -2,7 +2,7 @@
 //!
 //! Functions for analyzing segregating sites and site frequency spectra.
 
-use centrevo_sim::base::Sequence;
+use centrevo_sim::base::{GenomeArena, Nucleotide};
 use centrevo_sim::simulation::Population;
 
 /// Calculate site frequency spectrum
@@ -22,6 +22,7 @@ pub fn site_frequency_spectrum(
     _population: &Population,
     _chromosome_idx: usize,
     _haplotype_idx: usize,
+    _arena: &GenomeArena,
 ) -> Vec<usize> {
     // TODO: Implement in Week 2
     vec![]
@@ -42,8 +43,9 @@ pub fn count_segregating_sites(
     population: &Population,
     chromosome_idx: usize,
     haplotype_idx: usize,
+    arena: &GenomeArena,
 ) -> usize {
-    let sequences: Vec<&Sequence> = population
+    let sequences: Vec<&[Nucleotide]> = population
         .individuals()
         .iter()
         .filter_map(|ind| {
@@ -52,7 +54,7 @@ pub fn count_segregating_sites(
             } else {
                 ind.haplotype2()
             };
-            haplotype.get(chromosome_idx).map(|chr| chr.sequence())
+            haplotype.get(chromosome_idx).map(|chr| chr.sequence(arena))
         })
         .collect();
 
@@ -75,11 +77,16 @@ mod tests {
     use centrevo_sim::base::{Nucleotide, Sequence};
     use centrevo_sim::genome::{Chromosome, Haplotype, Individual, RepeatMap};
 
-    fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
+    fn create_test_individual(
+        id: &str,
+        sequence: &[Nucleotide],
+        arena: &mut GenomeArena,
+    ) -> Individual {
         let mut seq = Sequence::with_capacity(sequence.len());
         for &nuc in sequence {
             seq.push(nuc);
         }
+        let data = arena.alloc(seq.as_slice());
 
         let total_len = seq.len();
         let ru_len = if total_len > 0 { total_len } else { 10 };
@@ -88,7 +95,7 @@ mod tests {
 
         let map = RepeatMap::uniform(ru_len, rus_per_hor, num_hors);
 
-        let chr = Chromosome::new(format!("chr_{id}"), seq, map);
+        let chr = Chromosome::new(format!("chr_{id}"), data, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr);
         let hap2 = Haplotype::new();
@@ -98,16 +105,17 @@ mod tests {
 
     #[test]
     fn test_count_segregating_sites() {
+        let mut arena = GenomeArena::new();
         let seq1 = vec![Nucleotide::A, Nucleotide::T, Nucleotide::C];
         let seq2 = vec![Nucleotide::A, Nucleotide::G, Nucleotide::C];
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
         let pop = Population::new("pop1", individuals);
 
-        let count = count_segregating_sites(&pop, 0, 0);
+        let count = count_segregating_sites(&pop, 0, 0, &arena);
         assert_eq!(count, 1); // Only position 1 differs
     }
 }

@@ -48,13 +48,14 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
     // Note: Since Gen 0 is uniform, the seed actually doesn't matter for the content,
     // but we use it for consistency if we add random initialization later.
     println!("\nCreating initial population (Generation 0)...");
-    let mut population = create_initial_population(population_size, structure);
+    let mut arena = centrevo_sim::base::GenomeArena::new();
+    let mut population = create_initial_population(population_size, structure, &mut arena);
     println!("✓ Created {} individuals", population.size());
 
     // Calculate initial fitness
     println!("Calculating initial fitness...");
     population.individuals_mut().par_iter_mut().for_each(|ind| {
-        config.evolution.fitness.update_cached_fitness(ind);
+        config.evolution.fitness.update_cached_fitness(ind, &arena);
     });
     println!("✓ Computed fitness for all individuals");
 
@@ -81,7 +82,7 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
         // Record initial generation
         let dummy_rng = vec![0u8; 32];
         recorder
-            .record_generation(&population, 0, Some(dummy_rng))
+            .record_generation(&population, 0, Some(dummy_rng), &arena)
             .await
             .context("Failed to record initial generation")?;
 
@@ -102,7 +103,11 @@ pub fn init_simulation(args: &InitArgs) -> Result<()> {
     Ok(())
 }
 
-fn create_initial_population(size: usize, structure: &UniformRepeatStructure) -> Population {
+fn create_initial_population(
+    size: usize,
+    structure: &UniformRepeatStructure,
+    arena: &mut centrevo_sim::base::GenomeArena,
+) -> Population {
     let mut individuals = Vec::with_capacity(size);
 
     for i in 0..size {
@@ -112,6 +117,7 @@ fn create_initial_population(size: usize, structure: &UniformRepeatStructure) ->
             structure.ru_length,
             structure.rus_per_hor,
             structure.hors_per_chr,
+            arena,
         );
 
         let chr2 = Chromosome::uniform(
@@ -120,6 +126,7 @@ fn create_initial_population(size: usize, structure: &UniformRepeatStructure) ->
             structure.ru_length,
             structure.rus_per_hor,
             structure.hors_per_chr,
+            arena,
         );
 
         let h1 = Haplotype::from_chromosomes(vec![chr1]);
@@ -272,8 +279,9 @@ mod tests {
     #[test]
     fn test_create_initial_population_regression() {
         // Use small structure for testing
+        let mut arena = centrevo_sim::base::GenomeArena::new();
         let structure = UniformRepeatStructure::new(Nucleotide::A, 10, 5, 2, 1);
-        let pop = create_initial_population(10, &structure);
+        let pop = create_initial_population(10, &structure, &mut arena);
 
         assert_eq!(pop.size(), 10);
         let ind = pop.get(0).unwrap();

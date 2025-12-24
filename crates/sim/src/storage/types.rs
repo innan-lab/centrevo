@@ -43,7 +43,11 @@ pub struct IndividualSnapshot {
 
 impl IndividualSnapshot {
     /// Create a snapshot from an individual.
-    pub fn from_individual(ind: &Individual, codec: &CodecStrategy) -> Self {
+    pub fn from_individual(
+        ind: &Individual,
+        codec: &CodecStrategy,
+        arena: &crate::base::GenomeArena,
+    ) -> Self {
         let h1 = ind.haplotype1();
         let h2 = ind.haplotype2();
 
@@ -52,12 +56,8 @@ impl IndividualSnapshot {
             |chr_opt: Option<&crate::genome::Chromosome>| -> (Vec<u8>, Option<Vec<u8>>) {
                 if let Some(chr) = chr_opt {
                     // 1. Sequence -> Configured Codec
-                    let raw_seq: Vec<u8> = chr
-                        .sequence()
-                        .as_slice()
-                        .iter()
-                        .map(|n| n.to_index())
-                        .collect();
+                    let raw_seq: Vec<u8> =
+                        chr.sequence(arena).iter().map(|n| n.to_index()).collect();
 
                     let encoded_seq = codec.encode(&raw_seq).expect("Failed to encode sequence");
 
@@ -83,76 +83,97 @@ impl IndividualSnapshot {
         }
     }
 
-    /// Reconstruct an Individual from a snapshot.
-    pub fn to_individual(&self, id: &str, codec: &CodecStrategy) -> Result<Individual, String> {
-        use crate::base::{LogFitnessValue, Nucleotide, Sequence};
-        use crate::genome::repeat_map::RepeatMap;
+    /// Convert to Individual (restoring full state).
+    ///
+    /// The sequences are decoded and allocated in the provided `GenomeArena`.
+    pub fn to_individual(
+        &self,
+        id: &str,
+        codec: &CodecStrategy,
+        arena: &mut crate::base::GenomeArena,
+    ) -> Result<Individual, String> {
+        use crate::base::FitnessValue;
         use crate::genome::{Chromosome, Haplotype};
 
-        // Helper to reconstruct chromosome
-        let reconstruct_chr = |chr_suffix: &str,
-                               seq_data: &[u8],
-                               map_data: Option<&[u8]>|
-         -> Result<Chromosome, String> {
-            // 1. Decode Sequence
-            if seq_data.is_empty() {
-                // Handle empty chromosome case if needed, though usually means logic error if expected
-                // For now, assume if check handles it upstream or returns empty chromosome
-                return Ok(Chromosome::new(
-                    format!("{id}_{chr_suffix}"),
-                    Sequence::new(),
-                    RepeatMap::new(vec![0], vec![0])
-                        .unwrap_or_else(|_| RepeatMap::uniform(0, 0, 0)),
-                ));
-            }
+        let hap1_seq = codec
+            .decode(&self.haplotype1_seq)
+            .map_err(|e| format!("Failed to decode hap1: {e}"))?;
+        let hap2_seq = codec
+            .decode(&self.haplotype2_seq)
+            .map_err(|e| format!("Failed to decode hap2: {e}"))?;
 
-            let raw_seq = codec
-                .decode(seq_data)
-                .map_err(|e| format!("Seq Decode: {e}"))?;
+        // 3. Reconstruct Chromosomes (using decoded sequences)
+        // Note: Codec output is Vec<u8> (indices). Convert to Vec<Nucleotide> first.
+        let hap1_seq: crate::base::Sequence = crate::base::Sequence::from_indices(hap1_seq)
+            .map_err(|e| format!("Invalid nucleotides in hap1: {e}"))?;
+        let hap2_seq: crate::base::Sequence = crate::base::Sequence::from_indices(hap2_seq)
+            .map_err(|e| format!("Invalid nucleotides in hap2: {e}"))?;
 
-            let nucs: Vec<Nucleotide> = raw_seq
-                .iter()
-                .map(|&i| Nucleotide::from_index(i).unwrap_or(Nucleotide::A))
-                .collect();
-            let seq = Sequence::from_nucleotides(nucs);
+        // Recover fitness from log-space (if needed, but Individual constructor doesn't take fitness)
+        // Fitness is cached in the Individual.
+        // We set it after creation.
 
-            // 2. Decode Map
-            let map = if let Some(bytes) = map_data {
-                let raw_map_bytes = CodecStrategy::UnpackedRS
-                    .decode(bytes)
-                    .map_err(|e| format!("Map Decode: {e}"))?;
+        // Assuming single chromosome per haplotype for now (as stored in DB)
+        // We allocate the sequences in the arena
+        let slice1 = arena.alloc(hap1_seq.as_slice());
+        let slice2 = arena.alloc(hap2_seq.as_slice());
 
-                bincode::deserialize::<RepeatMap>(&raw_map_bytes)
-                    .map_err(|e| format!("Map Deser: {e}"))?
-            } else {
-                RepeatMap::new(vec![0], vec![0]).unwrap_or_else(|_| RepeatMap::uniform(0, 0, 0))
-            };
-
-            Ok(Chromosome::new(format!("{id}_{chr_suffix}"), seq, map))
+        // Deserialize RepeatMap from bytes if present, otherwise assume simple default or error?
+        // Note: RepeatMap::uniform... but here we want to restore from DB.
+        // Assuming the Option<Vec<u8>> contains bincode encoded RepeatMap.
+        let map1 = if let Some(bytes) = &self.haplotype1_map {
+            let decoded = CodecStrategy::UnpackedRS
+                .decode(bytes)
+                .map_err(|e| format!("Failed to decode hap1 map: {e}"))?;
+            bincode::deserialize::<crate::genome::RepeatMap>(&decoded)
+                .map_err(|e| format!("Failed to deserialize hap1 map: {e}"))?
+        } else {
+            // Fallback or error? For now fallback to simple default until map storage is strictly required
+            // Or maybe we can't create valid Chromosome without it?
+            // Assuming default uniform for legacy data?
+            crate::genome::RepeatMap::uniform(10, 5, 2)
         };
 
-        let chr1 = reconstruct_chr(
-            "h1_chr1",
-            &self.haplotype1_seq,
-            self.haplotype1_map.as_deref(),
-        )?;
-        let chr2 = reconstruct_chr(
-            "h2_chr1",
-            &self.haplotype2_seq,
-            self.haplotype2_map.as_deref(),
-        )?;
+        // Similar for hap2
+        let map2 = if let Some(bytes) = &self.haplotype2_map {
+            let decoded = CodecStrategy::UnpackedRS
+                .decode(bytes)
+                .map_err(|e| format!("Failed to decode hap2 map: {e}"))?;
+            bincode::deserialize::<crate::genome::RepeatMap>(&decoded)
+                .map_err(|e| format!("Failed to deserialize hap2 map: {e}"))?
+        } else {
+            crate::genome::RepeatMap::uniform(10, 5, 2)
+        };
+
+        let chr1 = Chromosome::new(format!("{id}_h1_c0"), slice1, map1);
+
+        let chr2 = Chromosome::new(format!("{id}_h2_c0"), slice2, map2);
 
         let mut hap1 = Haplotype::new();
         hap1.push(chr1);
+
         let mut hap2 = Haplotype::new();
         hap2.push(chr2);
 
-        let mut individual = Individual::new(id, hap1, hap2);
-        if let Some(f) = self.fitness {
-            individual.set_cached_fitness(LogFitnessValue::new(f).exp());
+        let mut ind = Individual::new(id, hap1, hap2);
+
+        // Restore fitness
+        // fitness is recorded in log_fitness
+        // 10^log_fitness = fitness_value
+        // If fitness was LETHAL (0), log is -inf.
+        // We handle this carefully.
+        if let Some(log_f) = self.fitness {
+            // Assuming 'fitness' field now stores log10 fitness
+            if log_f.is_infinite() && log_f.is_sign_negative() {
+                ind.set_cached_fitness(FitnessValue::LETHAL_FITNESS);
+            } else {
+                // Convert back from log10
+                let val = log_f.exp();
+                ind.set_cached_fitness(FitnessValue::new(val));
+            }
         }
 
-        Ok(individual)
+        Ok(ind)
     }
 }
 
@@ -225,10 +246,23 @@ mod tests {
 
     #[test]
     fn test_individual_snapshot_log_fitness_roundtrip() {
-        let h1 =
-            Haplotype::from_chromosomes(vec![Chromosome::uniform("c1", Nucleotide::A, 10, 1, 1)]);
-        let h2 =
-            Haplotype::from_chromosomes(vec![Chromosome::uniform("c1", Nucleotide::T, 10, 1, 1)]);
+        let mut arena = crate::base::GenomeArena::new();
+        let h1 = Haplotype::from_chromosomes(vec![Chromosome::uniform(
+            "c1",
+            Nucleotide::A,
+            10,
+            1,
+            1,
+            &mut arena,
+        )]);
+        let h2 = Haplotype::from_chromosomes(vec![Chromosome::uniform(
+            "c1",
+            Nucleotide::T,
+            10,
+            1,
+            1,
+            &mut arena,
+        )]);
         let mut ind = Individual::new("test", h1, h2);
 
         // Linear fitness 0.5 -> Log fitness ln(0.5)
@@ -236,14 +270,14 @@ mod tests {
         ind.set_cached_fitness(linear_fitness);
 
         let codec = CodecStrategy::default();
-        let snapshot = IndividualSnapshot::from_individual(&ind, &codec);
+        let snapshot = IndividualSnapshot::from_individual(&ind, &codec, &arena);
 
         // Verify stored fitness is in log-space
         let expected_log_fitness: f64 = linear_fitness.ln().into();
         assert!((snapshot.fitness.unwrap() - expected_log_fitness).abs() < 1e-12);
 
         // Verify round-trip back to linear-space
-        let recovered_ind = snapshot.to_individual("test", &codec).unwrap();
+        let recovered_ind = snapshot.to_individual("test", &codec, &mut arena).unwrap();
         let recovered_fitness: f64 = recovered_ind.cached_fitness().unwrap().into();
         assert!((recovered_fitness - 0.5).abs() < 1e-12);
     }

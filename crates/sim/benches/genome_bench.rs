@@ -4,6 +4,7 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 
 fn bench_chromosome_ops(c: &mut Criterion) {
     let mut group = c.benchmark_group("chromosome_ops");
+    let mut arena = centrevo_sim::base::GenomeArena::new();
 
     group.bench_function("uniform_creation", |b| {
         b.iter(|| {
@@ -13,6 +14,7 @@ fn bench_chromosome_ops(c: &mut Criterion) {
                 black_box(171),
                 black_box(12),
                 black_box(100),
+                &mut arena,
             ));
         })
     });
@@ -25,8 +27,8 @@ fn bench_chromosome_ops(c: &mut Criterion) {
     for &hors in &hor_lengths {
         // Create chromosomes with different HOR lengths
         // Total length = 171 * hors * 1 (1 HOR per chromosome for simplicity of this bench)
-        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, ru_length, hors, 1);
-        let chr2 = Chromosome::uniform("chr2", Nucleotide::T, ru_length, hors, 1);
+        let chr1 = Chromosome::uniform("chr1", Nucleotide::A, ru_length, hors, 1, &mut arena);
+        let chr2 = Chromosome::uniform("chr2", Nucleotide::T, ru_length, hors, 1, &mut arena);
 
         for &k in &kmer_sizes {
             let parameter_string = format!("hors={hors}/k={k}");
@@ -41,6 +43,7 @@ fn bench_chromosome_ops(c: &mut Criterion) {
                             black_box(&chr2),
                             black_box(0),
                             black_box(k),
+                            &arena,
                         ));
                     })
                 },
@@ -49,20 +52,25 @@ fn bench_chromosome_ops(c: &mut Criterion) {
     }
 
     // Other operations with fixed size for regression testing
-    let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 171, 12, 10);
-    let chr2 = Chromosome::uniform("chr2", Nucleotide::T, 171, 12, 10);
+    let chr1 = Chromosome::uniform("chr1", Nucleotide::A, 171, 12, 10, &mut arena);
+    let chr2 = Chromosome::uniform("chr2", Nucleotide::T, 171, 12, 10, &mut arena);
 
     group.bench_function("gc_content", |b| {
         b.iter(|| {
-            black_box(chr1.gc_content());
+            black_box(chr1.gc_content(&arena));
         })
     });
 
     group.bench_function("crossover", |b| {
         b.iter(|| {
             black_box(
-                chr1.crossover(black_box(&chr2), black_box(5000), black_box(5000))
-                    .unwrap(),
+                chr1.crossover(
+                    black_box(&chr2),
+                    black_box(5000),
+                    black_box(5000),
+                    &mut arena,
+                )
+                .unwrap(),
             );
         })
     });
@@ -75,6 +83,7 @@ fn bench_chromosome_ops(c: &mut Criterion) {
                     black_box(1000),
                     black_box(1000),
                     black_box(500),
+                    &mut arena,
                 )
                 .unwrap(),
             );

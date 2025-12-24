@@ -49,9 +49,14 @@ pub enum RecombinationType {
     /// Crossover (recombination) at specific positions in both chromosomes
     Crossover { pos1: usize, pos2: usize },
     /// Gene conversion from start to end position
-    // `donor_start` is the position in the first chromosome passed to `sample_events`
-    // (source/donor). `recipient_start` is the position in the second chromosome passed
-    // to `sample_events` (target/recipient).
+    ///
+    /// Biologically: A "copy-paste" event where sequence from the **donor** is copied
+    /// to the **recipient**, overwriting its original sequence. This homogenizes sequences,
+    /// reducing differences between repeats.
+    ///
+    /// - `donor_start`: Start position in the donor chromosome
+    /// - `recipient_start`: Start position in the recipient chromosome
+    /// - `length`: Length of the tract copied
     GeneConversion {
         donor_start: usize,
         recipient_start: usize,
@@ -311,26 +316,35 @@ impl RecombinationModel {
     /// use centrevo_sim::evolution::RecombinationModel;
     /// use centrevo_sim::genome::{Chromosome, RepeatMap};
     /// use centrevo_sim::base::Sequence;
+    /// use centrevo_sim::base::Nucleotide;
     /// use rand::SeedableRng;
     /// use rand_xoshiro::Xoshiro256PlusPlus;
     ///
+    /// use centrevo_sim::base::GenomeArena;
+    ///
+    /// let mut arena = GenomeArena::new();
     /// let model = RecombinationModel::builder()
     ///     .break_prob(0.1) // High probability for example
     ///     .build()
     ///     .unwrap();
     ///
-    /// let seq: Sequence = "AAAAA".parse().unwrap();
+    /// let nucs: Vec<Nucleotide> = "AAAAA".chars()
+    ///     .map(|c| Nucleotide::from_ascii(c as u8).unwrap())
+    ///     .collect();
     /// let map = RepeatMap::uniform(1, 1, 5);
-    /// let chr1 = Chromosome::new("chr1", seq.clone(), map.clone());
-    /// let chr2 = Chromosome::new("chr2", seq, map);
+    /// // Allocate sequence in arena
+    /// let data = arena.alloc(&nucs);
+    /// let chr1 = Chromosome::new("chr1", data, map.clone());
+    /// let chr2 = Chromosome::new("chr2", data, map);
     ///
     /// let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-    /// let events = model.sample_events(&chr1, &chr2, &mut rng);
+    /// let events = model.sample_events(&chr1, &chr2, &arena, &mut rng);
     /// ```
     pub fn sample_events<R: Rng + ?Sized>(
         &self,
         seq1: &crate::genome::Chromosome,
         seq2: &crate::genome::Chromosome,
+        arena: &crate::base::GenomeArena,
         rng: &mut R,
     ) -> Vec<RecombinationType> {
         let mut events = Vec::new();
@@ -342,7 +356,7 @@ impl RecombinationModel {
         // If break_prob is 1.0, we have a break at every position.
         if self.break_prob >= 1.0 {
             for position in 0..length {
-                self.add_event_at(position, seq1, seq2, rng, &mut events);
+                self.add_event_at(position, seq1, seq2, arena, rng, &mut events);
             }
             return events;
         }
@@ -358,7 +372,7 @@ impl RecombinationModel {
                 break;
             }
 
-            self.add_event_at(current_pos, seq1, seq2, rng, &mut events);
+            self.add_event_at(current_pos, seq1, seq2, arena, rng, &mut events);
 
             // Move past the current break for the next iteration
             current_pos += 1;
@@ -373,6 +387,7 @@ impl RecombinationModel {
         pos1: usize,
         seq1: &crate::genome::Chromosome,
         seq2: &crate::genome::Chromosome,
+        arena: &crate::base::GenomeArena,
         rng: &mut R,
         events: &mut Vec<RecombinationType>,
     ) {
@@ -381,7 +396,7 @@ impl RecombinationModel {
         // refers to the mapped position in `seq2` (target/recipient). The
         // `RecombinationType::GeneConversion` event stores `donor_start` and `recipient_start`
         // corresponding to these positions respectively.
-        let pos2 = self.find_homologous_site(seq1, pos1, seq2, rng);
+        let pos2 = self.find_homologous_site(seq1, pos1, seq2, arena, rng);
 
         // Determine if crossover or gene conversion
         if rng.random::<f64>() < self.crossover_prob {
@@ -429,6 +444,7 @@ impl RecombinationModel {
         source: &crate::genome::Chromosome,
         source_pos: usize,
         target: &crate::genome::Chromosome,
+        arena: &crate::base::GenomeArena,
         rng: &mut R,
     ) -> usize {
         // 1. Identify Source RU
@@ -478,7 +494,7 @@ impl RecombinationModel {
 
         for idx in start_idx..=end_idx {
             let similarity =
-                source.calculate_similarity(source_ru_idx, target, idx, self.kmer_size);
+                source.calculate_similarity(source_ru_idx, target, idx, self.kmer_size, arena);
 
             // Weight = Similarity ^ Strength
             // We already handled strength == 0.0 above
@@ -550,17 +566,47 @@ impl RecombinationModel {
     /// # Returns
     /// A tuple of two new sequences (offspring1, offspring2).
     ///
-    /// # Errors
     /// Returns an error if the provided positions are invalid for the given
     /// sequences. Crossover does not require the sequences to be the same total length.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use centrevo_sim::evolution::RecombinationModel;
+    /// use centrevo_sim::genome::{Chromosome, RepeatMap};
+    /// use centrevo_sim::base::{Nucleotide, GenomeArena};
+    ///
+    /// let mut arena = GenomeArena::new();
+    /// let model = RecombinationModel::builder().build().unwrap();
+    ///
+    /// // Create two chromosomes: "AAAA" and "TTTT"
+    /// let seq_a: Vec<Nucleotide> = vec![Nucleotide::A; 4];
+    /// let seq_t: Vec<Nucleotide> = vec![Nucleotide::T; 4];
+    /// let map = RepeatMap::uniform(1, 4, 1);
+    ///
+    /// let data_a = arena.alloc(&seq_a);
+    /// let chr_a = Chromosome::new("A", data_a, map.clone());
+    ///
+    /// let data_t = arena.alloc(&seq_t);
+    /// let chr_t = Chromosome::new("T", data_t, map);
+    ///
+    /// // Crossover at index 2 (midpoint) implies:
+    /// // Offspring 1 takes first 2 of A ("AA") and rest of T ("TT") -> "AATT"
+    /// // Offspring 2 takes first 2 of T ("TT") and rest of A ("AA") -> "TTAA"
+    /// let (off1, off2) = model.crossover(&chr_a, &chr_t, 2, 2, &mut arena).unwrap();
+    ///
+    /// assert_eq!(off1.to_formatted_string("", "", &arena), "AATT");
+    /// assert_eq!(off2.to_formatted_string("", "", &arena), "TTAA");
+    /// ```
     pub fn crossover(
         &self,
         seq1: &crate::genome::Chromosome,
         seq2: &crate::genome::Chromosome,
         pos1: usize,
         pos2: usize,
+        arena: &mut crate::base::GenomeArena,
     ) -> Result<(crate::genome::Chromosome, crate::genome::Chromosome), RecombinationError> {
-        seq1.crossover(seq2, pos1, pos2)
+        seq1.crossover(seq2, pos1, pos2, arena)
             .map_err(|_| RecombinationError::InvalidPosition {
                 position: pos1,
                 length: seq1.len(),
@@ -576,8 +622,7 @@ impl RecombinationModel {
     /// Biologically: gene conversion arises from asymmetric resolution of recombination
     /// intermediates. The tract length reflects processivity of meiotic exonucleases:
     /// longer tracts = more processive exonucleases; shorter tracts = pausing/dissociation.
-    ///
-    /// Evolutionary consequence: gene conversion can homogenize sequences within
+    /// Gene conversion can homogenize sequences within
     /// tandem repeats, reducing sequence divergence between copies (important for
     /// maintaining repeat unit similarity).
     ///
@@ -588,6 +633,35 @@ impl RecombinationModel {
     /// Returns an error if the provided indices are invalid for the given
     /// chromosomes. Gene conversion does not require the chromosomes to be
     /// the same total length.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use centrevo_sim::evolution::RecombinationModel;
+    /// use centrevo_sim::genome::{Chromosome, RepeatMap};
+    /// use centrevo_sim::base::{Nucleotide, GenomeArena};
+    ///
+    /// let mut arena = GenomeArena::new();
+    /// let model = RecombinationModel::builder().build().unwrap();
+    ///
+    /// // Recipient: "AAAAA"
+    /// let seq_r: Vec<Nucleotide> = vec![Nucleotide::A; 5];
+    /// // Donor: "TTTTT"
+    /// let seq_d: Vec<Nucleotide> = vec![Nucleotide::T; 5];
+    /// let map = RepeatMap::uniform(1, 5, 1);
+    ///
+    /// let data_r = arena.alloc(&seq_r);
+    /// let chr_r = Chromosome::new("Rec", data_r, map.clone());
+    ///
+    /// let data_d = arena.alloc(&seq_d);
+    /// let chr_d = Chromosome::new("Don", data_d, map);
+    ///
+    /// // Copy 2 bases from Donor starting at index 1 to Recipient starting at index 1
+    /// // Recipient becomes: A (orig) + TT (copied) + AA (orig) = "ATTAA"
+    /// let res = model.gene_conversion(&chr_r, &chr_d, 1, 1, 2, &mut arena).unwrap();
+    ///
+    /// assert_eq!(res.to_formatted_string("", "", &arena), "ATTAA");
+    /// ```
     pub fn gene_conversion(
         &self,
         recipient: &crate::genome::Chromosome,
@@ -595,9 +669,10 @@ impl RecombinationModel {
         recipient_start: usize,
         donor_start: usize,
         length: usize,
+        arena: &mut crate::base::GenomeArena,
     ) -> Result<crate::genome::Chromosome, RecombinationError> {
         recipient
-            .gene_conversion(donor, recipient_start, donor_start, length)
+            .gene_conversion(donor, recipient_start, donor_start, length, arena)
             .map_err(|_| RecombinationError::InvalidRange {
                 start: recipient_start,
                 end: recipient_start + length,
@@ -610,17 +685,20 @@ impl RecombinationModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::Sequence;
+    use crate::base::{GenomeArena, Nucleotide}; // Added GenomeArena
     use crate::genome::{Chromosome, RepeatMap};
     use rand::SeedableRng;
     use rand_xoshiro::Xoshiro256PlusPlus;
-    use std::str::FromStr;
+    // use crate::base::Sequence; // Removed unused
 
-    fn make_test_chr(seq_str: &str) -> Chromosome {
-        let seq = Sequence::from_str(seq_str).unwrap();
-        // Uniform map 1bp RUs for simplicity
+    fn make_test_chr(seq_str: &str, arena: &mut GenomeArena) -> Chromosome {
+        let nucs: Vec<Nucleotide> = seq_str
+            .chars()
+            .map(|c| Nucleotide::from_ascii(c as u8).unwrap())
+            .collect();
+        let data = arena.alloc(&nucs);
         let map = RepeatMap::uniform(1, 1, seq_str.len());
-        Chromosome::new("chr1", seq, map)
+        Chromosome::new("chr1", data, map)
     }
 
     #[test]
@@ -674,6 +752,7 @@ mod tests {
 
     #[test]
     fn test_sample_event_zero_break_prob() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.0)
             .crossover_prob(0.5)
@@ -681,43 +760,45 @@ mod tests {
             .build()
             .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        let chr1 = make_test_chr("A".repeat(100).as_str());
-        let chr2 = make_test_chr("T".repeat(100).as_str());
+        let chr1 = make_test_chr(&"A".repeat(100), &mut arena); // .as_str() removed
+        let chr2 = make_test_chr(&"T".repeat(100), &mut arena);
 
         for _ in 0..100 {
-            let events = model.sample_events(&chr1, &chr2, &mut rng);
+            let events = model.sample_events(&chr1, &chr2, &arena, &mut rng);
             assert!(events.is_empty());
         }
     }
 
     #[test]
     fn test_sample_event_empty_sequence() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.5)
             .build()
             .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        let chr1 = make_test_chr("");
-        let chr2 = make_test_chr("");
+        let chr1 = make_test_chr("", &mut arena);
+        let chr2 = make_test_chr("", &mut arena);
 
-        let events = model.sample_events(&chr1, &chr2, &mut rng);
+        let events = model.sample_events(&chr1, &chr2, &arena, &mut rng);
         assert!(events.is_empty());
     }
 
     #[test]
     fn test_sample_event_types() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(1.0)
             .crossover_prob(1.0)
             .build()
             .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        let chr1 = make_test_chr("AAAAAAAAAA"); // Len 10
-        let chr2 = make_test_chr("TTTTTTTTTT");
+        let chr1 = make_test_chr("AAAAAAAAAA", &mut arena); // Len 10
+        let chr2 = make_test_chr("TTTTTTTTTT", &mut arena);
 
         // With break_prob=1.0 and crossover_prob=1.0, should always get crossover
         // For length 10, we expect 10 events (one at each position)
-        let events = model.sample_events(&chr1, &chr2, &mut rng);
+        let events = model.sample_events(&chr1, &chr2, &arena, &mut rng);
         assert_eq!(events.len(), 10);
         for event in events {
             match event {
@@ -734,17 +815,18 @@ mod tests {
 
     #[test]
     fn test_sample_event_gene_conversion() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(1.0)
             .crossover_prob(0.0)
             .build()
             .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        let chr1 = make_test_chr("AAAAAAAAAA");
-        let chr2 = make_test_chr("TTTTTTTTTT");
+        let chr1 = make_test_chr("AAAAAAAAAA", &mut arena);
+        let chr2 = make_test_chr("TTTTTTTTTT", &mut arena);
 
         // With break_prob=1.0, crossover_prob=0.0, should get gene conversion
-        let events = model.sample_events(&chr1, &chr2, &mut rng);
+        let events = model.sample_events(&chr1, &chr2, &arena, &mut rng);
         assert!(!events.is_empty());
 
         for event in events {
@@ -764,175 +846,234 @@ mod tests {
 
     #[test]
     fn test_crossover_basic() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.5)
             .build()
             .unwrap();
-        let chr1 = make_test_chr("AAAA");
-        let chr2 = make_test_chr("TTTT");
+        let chr1 = make_test_chr("AAAA", &mut arena);
+        let chr2 = make_test_chr("TTTT", &mut arena);
 
-        let (offspring1, offspring2) = model.crossover(&chr1, &chr2, 2, 2).unwrap();
+        let (offspring1, offspring2) = model.crossover(&chr1, &chr2, 2, 2, &mut arena).unwrap();
 
-        assert_eq!(offspring1.to_string(), "AATT");
-        assert_eq!(offspring2.to_string(), "TTAA");
+        assert_eq!(
+            offspring1
+                .to_formatted_string(" ", " ", &arena)
+                .replace(" ", ""),
+            "AATT"
+        );
+        assert_eq!(
+            offspring2
+                .to_formatted_string(" ", " ", &arena)
+                .replace(" ", ""),
+            "TTAA"
+        );
     }
 
     #[test]
     fn test_crossover_at_start() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.5)
             .build()
             .unwrap();
-        let chr1 = make_test_chr("AAAA");
-        let chr2 = make_test_chr("TTTT");
+        let chr1 = make_test_chr("AAAA", &mut arena);
+        let chr2 = make_test_chr("TTTT", &mut arena);
 
-        let (offspring1, offspring2) = model.crossover(&chr1, &chr2, 0, 0).unwrap();
+        let (offspring1, offspring2) = model.crossover(&chr1, &chr2, 0, 0, &mut arena).unwrap();
 
-        assert_eq!(offspring1.to_string(), "TTTT");
-        assert_eq!(offspring2.to_string(), "AAAA");
+        assert_eq!(
+            offspring1
+                .to_formatted_string(" ", " ", &arena)
+                .replace(" ", ""),
+            "TTTT"
+        );
+        assert_eq!(
+            offspring2
+                .to_formatted_string(" ", " ", &arena)
+                .replace(" ", ""),
+            "AAAA"
+        );
     }
 
     #[test]
     fn test_crossover_length_mismatch() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(1.0)
             .build()
             .unwrap();
-        let seq1 = make_test_chr("AAAAA"); // 5
-        let seq2 = make_test_chr("TTTTTTTTTT"); // 10
+        let seq1 = make_test_chr("AAAAA", &mut arena); // 5
+        let seq2 = make_test_chr("TTTTTTTTTT", &mut arena); // 10
 
         // Crossover at 2 in seq1 and 2 in seq2
         // seq1: AA|AAA, seq2: TT|TTTTTTTT
         // new1: AA|TTTTTTTT (10)
         // new2: TT|AAA (5)
-        let result = model.crossover(&seq1, &seq2, 2, 2);
+        let result = model.crossover(&seq1, &seq2, 2, 2, &mut arena);
         assert!(result.is_ok());
         let (new1, new2) = result.unwrap();
         assert_eq!(new1.len(), 10);
         assert_eq!(new2.len(), 5);
-        assert_eq!(new1.sequence().to_string(), "AATTTTTTTT");
-        assert_eq!(new2.sequence().to_string(), "TTAAA");
+        assert_eq!(
+            new1.to_formatted_string(" ", " ", &arena).replace(" ", ""),
+            "AATTTTTTTT"
+        );
+        assert_eq!(
+            new2.to_formatted_string(" ", " ", &arena).replace(" ", ""),
+            "TTAAA"
+        );
     }
 
     #[test]
     fn test_crossover_invalid_position() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.5)
             .build()
             .unwrap();
-        let chr1 = make_test_chr("AAAA");
-        let chr2 = make_test_chr("TTTT");
+        let chr1 = make_test_chr("AAAA", &mut arena);
+        let chr2 = make_test_chr("TTTT", &mut arena);
 
-        let result = model.crossover(&chr1, &chr2, 10, 10);
+        let result = model.crossover(&chr1, &chr2, 10, 10, &mut arena);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_gene_conversion_basic() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.0)
             .build()
             .unwrap();
-        let recipient = make_test_chr("AAAAA");
-        let donor = make_test_chr("TTTTT");
+        let recipient = make_test_chr("AAAAA", &mut arena);
+        let donor = make_test_chr("TTTTT", &mut arena);
 
         // Replace index 1 (len 2) with donor's index 1
         // Recipient: A|AA|AA -> A|TT|AA
-        let result = model.gene_conversion(&recipient, &donor, 1, 1, 2);
+        let result = model.gene_conversion(&recipient, &donor, 1, 1, 2, &mut arena);
         assert!(result.is_ok());
         let new_seq = result.unwrap();
-        assert_eq!(new_seq.sequence().to_string(), "ATTAA");
+        assert_eq!(
+            new_seq
+                .to_formatted_string(" ", " ", &arena)
+                .replace(" ", ""),
+            "ATTAA"
+        );
     }
 
     #[test]
     fn test_gene_conversion_full() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.0)
             .build()
             .unwrap();
-        let recipient = make_test_chr("AAAAA");
-        let donor = make_test_chr("TTTTT");
+        let recipient = make_test_chr("AAAAA", &mut arena);
+        let donor = make_test_chr("TTTTT", &mut arena);
 
-        let result = model.gene_conversion(&recipient, &donor, 0, 0, 5);
+        let result = model.gene_conversion(&recipient, &donor, 0, 0, 5, &mut arena);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().sequence().to_string(), "TTTTT");
+        assert_eq!(
+            result
+                .unwrap()
+                .to_formatted_string(" ", " ", &arena)
+                .replace(" ", ""),
+            "TTTTT"
+        );
     }
 
     #[test]
     fn test_gene_conversion_single_base() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.0)
             .build()
             .unwrap();
-        let recipient = make_test_chr("AAAAA");
-        let donor = make_test_chr("TTTTT");
+        let recipient = make_test_chr("AAAAA", &mut arena);
+        let donor = make_test_chr("TTTTT", &mut arena);
 
-        let result = model.gene_conversion(&recipient, &donor, 2, 2, 1);
+        let result = model.gene_conversion(&recipient, &donor, 2, 2, 1, &mut arena);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().sequence().to_string(), "AATAA");
+        assert_eq!(
+            result
+                .unwrap()
+                .to_formatted_string(" ", " ", &arena)
+                .replace(" ", ""),
+            "AATAA"
+        );
     }
 
     #[test]
     fn test_gene_conversion_length_mismatch() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.0)
             .build()
             .unwrap();
-        let recipient = make_test_chr("AAAAA"); // 5
-        let donor = make_test_chr("TTTTTTTTTT"); // 10
+        let recipient = make_test_chr("AAAAA", &mut arena); // 5
+        let donor = make_test_chr("TTTTTTTTTT", &mut arena); // 10
 
         // Replace index 1 (len 2) in recipient with index 5 (len 2) from donor
         // Recipient: A|AA|AA -> A|TT|AA
         // Donor: TTTTT|TT|TTT
-        let result = model.gene_conversion(&recipient, &donor, 1, 5, 2);
+        let result = model.gene_conversion(&recipient, &donor, 1, 5, 2, &mut arena);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().sequence().to_string(), "ATTAA");
+        assert_eq!(
+            result
+                .unwrap()
+                .to_formatted_string(" ", " ", &arena)
+                .replace(" ", ""),
+            "ATTAA"
+        );
     }
 
     #[test]
     fn test_gene_conversion_invalid_range() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.0)
             .build()
             .unwrap();
-        let recipient = make_test_chr("AAAAA"); // len 5
-        let donor = make_test_chr("TTTTT"); // len 5
+        let recipient = make_test_chr("AAAAA", &mut arena); // len 5
+        let donor = make_test_chr("TTTTT", &mut arena); // len 5
 
         // start + length > recipient.len()
         // 4 + 2 = 6 > 5
-        let result = model.gene_conversion(&recipient, &donor, 4, 0, 2);
+        let result = model.gene_conversion(&recipient, &donor, 4, 0, 2, &mut arena);
         assert!(result.is_err());
 
         // start + length > donor.len()
-        let recipient_long = make_test_chr("AAAAA");
-        let donor_short = make_test_chr("TTT");
-        let result = model.gene_conversion(&recipient_long, &donor_short, 1, 1, 3);
+        let recipient_long = make_test_chr("AAAAA", &mut arena);
+        let donor_short = make_test_chr("TTT", &mut arena);
+        let result = model.gene_conversion(&recipient_long, &donor_short, 1, 1, 3, &mut arena);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_gene_conversion_invalid_position() {
+        let mut arena = GenomeArena::new();
         let model = RecombinationModel::builder()
             .break_prob(0.01)
             .crossover_prob(0.5)
             .build()
             .unwrap();
-        let recipient = make_test_chr("AAAA");
-        let donor = make_test_chr("TTTT");
+        let recipient = make_test_chr("AAAA", &mut arena);
+        let donor = make_test_chr("TTTT", &mut arena);
 
-        let result = model.gene_conversion(&recipient, &donor, 10, 10, 1);
+        let result = model.gene_conversion(&recipient, &donor, 10, 10, 1, &mut arena);
         assert!(result.is_err());
 
-        let result = model.gene_conversion(&recipient, &donor, 0, 10, 1);
+        let result = model.gene_conversion(&recipient, &donor, 0, 10, 1, &mut arena);
         assert!(result.is_err());
     }
 
@@ -1011,10 +1152,11 @@ mod tests {
             .build()
             .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        let chr1 = make_test_chr("A".repeat(1000).as_str());
-        let chr2 = make_test_chr("T".repeat(1000).as_str());
+        let mut arena = GenomeArena::new();
+        let chr1 = make_test_chr(&"A".repeat(1000), &mut arena);
+        let chr2 = make_test_chr(&"T".repeat(1000), &mut arena);
 
-        let events = model.sample_events(&chr1, &chr2, &mut rng);
+        let events = model.sample_events(&chr1, &chr2, &arena, &mut rng);
         // Expected events ~ 100
         assert!(events.len() > 50);
         assert!(events.len() < 150);
@@ -1044,13 +1186,14 @@ mod tests {
             .build()
             .unwrap();
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        let chr1 = make_test_chr("A".repeat(100).as_str());
-        let chr2 = make_test_chr("T".repeat(100).as_str());
+        let mut arena = GenomeArena::new();
+        let chr1 = make_test_chr(&"A".repeat(100), &mut arena);
+        let chr2 = make_test_chr(&"T".repeat(100), &mut arena);
 
         let mut event_count = 0;
         let trials = 10000;
         for _ in 0..trials {
-            let events = model.sample_events(&chr1, &chr2, &mut rng);
+            let events = model.sample_events(&chr1, &chr2, &arena, &mut rng);
             if !events.is_empty() {
                 event_count += 1;
             }

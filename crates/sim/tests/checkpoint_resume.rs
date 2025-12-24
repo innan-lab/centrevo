@@ -84,7 +84,7 @@ fn test_checkpoint_and_resume_basic() {
             if strategy.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation, Some(rng_state))
+                    .record_generation(sim.population(), generation, Some(rng_state), sim.arena())
                     .await
                     .unwrap();
                 // Checkpoint is implicit in AsyncRecorder?
@@ -161,7 +161,7 @@ fn test_checkpoint_and_resume_basic() {
             if strategy.should_record(generation) {
                 let rng_state = sim.rng_state_bytes();
                 recorder
-                    .record_generation(sim.population(), generation, Some(rng_state))
+                    .record_generation(sim.population(), generation, Some(rng_state), sim.arena())
                     .await
                     .unwrap();
                 // recorder.record_checkpoint(generation, &rng_state).unwrap();
@@ -284,7 +284,12 @@ fn test_resume_multiple_times() {
                 if strategy.should_record(generation) {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation, Some(rng_state))
+                        .record_generation(
+                            sim.population(),
+                            generation,
+                            Some(rng_state),
+                            sim.arena(),
+                        )
                         .await
                         .unwrap();
                 }
@@ -342,8 +347,7 @@ fn test_resume_preserves_rng_state() {
             .haplotype1()
             .get(0)
             .unwrap()
-            .sequence()
-            .as_slice()
+            .sequence(sim.arena())
             .to_vec()
     };
 
@@ -387,7 +391,12 @@ fn test_resume_preserves_rng_state() {
                 if strategy.should_record(generation) {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation, Some(rng_state))
+                        .record_generation(
+                            sim.population(),
+                            generation,
+                            Some(rng_state),
+                            sim.arena(),
+                        )
                         .await
                         .unwrap();
                 }
@@ -411,8 +420,7 @@ fn test_resume_preserves_rng_state() {
                 .haplotype1()
                 .get(0)
                 .unwrap()
-                .sequence()
-                .as_slice()
+                .sequence(sim.arena())
                 .to_vec()
         }
     };

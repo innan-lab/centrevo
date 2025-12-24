@@ -7,7 +7,7 @@
 //! - Haplotype diversity
 
 use crate::analysis::utils::{hamming_distance_fast, harmonic_number};
-use centrevo_sim::base::Sequence;
+use centrevo_sim::base::{GenomeArena, Nucleotide};
 use centrevo_sim::simulation::Population;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -49,14 +49,18 @@ use std::collections::HashMap;
 ///
 /// Nei, M., & Li, W. H. (1979). Mathematical model for studying genetic
 /// variation in terms of restriction endonucleases. PNAS, 76(10), 5269-5273.
-pub fn nucleotide_diversity(population: &Population, chromosome_idx: usize) -> f64 {
-    let sequences: Vec<&Sequence> = population
+pub fn nucleotide_diversity(
+    population: &Population,
+    chromosome_idx: usize,
+    arena: &GenomeArena,
+) -> f64 {
+    let sequences: Vec<&[Nucleotide]> = population
         .individuals()
         .iter()
         .flat_map(|ind| {
             [ind.haplotype1(), ind.haplotype2()]
                 .into_iter()
-                .filter_map(|hap| hap.get(chromosome_idx).map(|chr| chr.sequence()))
+                .filter_map(|hap| hap.get(chromosome_idx).map(|chr| chr.sequence(arena)))
         })
         .collect();
 
@@ -110,14 +114,14 @@ pub fn nucleotide_diversity(population: &Population, chromosome_idx: usize) -> f
 ///
 /// Tajima, F. (1989). Statistical method for testing the neutral mutation
 /// hypothesis by DNA polymorphism. Genetics, 123(3), 585-595.
-pub fn tajimas_d(population: &Population, chromosome_idx: usize) -> f64 {
-    let sequences: Vec<&Sequence> = population
+pub fn tajimas_d(population: &Population, chromosome_idx: usize, arena: &GenomeArena) -> f64 {
+    let sequences: Vec<&[Nucleotide]> = population
         .individuals()
         .iter()
         .flat_map(|ind| {
             [ind.haplotype1(), ind.haplotype2()]
                 .into_iter()
-                .filter_map(|hap| hap.get(chromosome_idx).map(|chr| chr.sequence()))
+                .filter_map(|hap| hap.get(chromosome_idx).map(|chr| chr.sequence(arena)))
         })
         .collect();
 
@@ -132,10 +136,10 @@ pub fn tajimas_d(population: &Population, chromosome_idx: usize) -> f64 {
     }
 
     // Calculate π (nucleotide diversity)
-    let pi = nucleotide_diversity(population, chromosome_idx);
+    let pi = nucleotide_diversity(population, chromosome_idx, arena);
 
     // Calculate θ_W (Watterson's estimator)
-    let theta_w = wattersons_theta(population, chromosome_idx);
+    let theta_w = wattersons_theta(population, chromosome_idx, arena);
 
     // If both are zero, no variation
     if pi == 0.0 && theta_w == 0.0 {
@@ -197,14 +201,18 @@ pub fn tajimas_d(population: &Population, chromosome_idx: usize) -> f64 {
 ///
 /// Watterson, G. A. (1975). On the number of segregating sites in genetical
 /// models without recombination. Theoretical Population Biology, 7(2), 256-276.
-pub fn wattersons_theta(population: &Population, chromosome_idx: usize) -> f64 {
-    let sequences: Vec<&Sequence> = population
+pub fn wattersons_theta(
+    population: &Population,
+    chromosome_idx: usize,
+    arena: &GenomeArena,
+) -> f64 {
+    let sequences: Vec<&[Nucleotide]> = population
         .individuals()
         .iter()
         .flat_map(|ind| {
             [ind.haplotype1(), ind.haplotype2()]
                 .into_iter()
-                .filter_map(|hap| hap.get(chromosome_idx).map(|chr| chr.sequence()))
+                .filter_map(|hap| hap.get(chromosome_idx).map(|chr| chr.sequence(arena)))
         })
         .collect();
 
@@ -244,7 +252,11 @@ pub fn wattersons_theta(population: &Population, chromosome_idx: usize) -> f64 {
 /// # Returns
 ///
 /// Haplotype diversity (0.0 to 1.0) across all 2n sequences
-pub fn haplotype_diversity(population: &Population, chromosome_idx: usize) -> f64 {
+pub fn haplotype_diversity(
+    population: &Population,
+    chromosome_idx: usize,
+    arena: &GenomeArena,
+) -> f64 {
     let sequences: Vec<String> = population
         .individuals()
         .iter()
@@ -254,7 +266,7 @@ pub fn haplotype_diversity(population: &Population, chromosome_idx: usize) -> f6
                 .filter_map(|hap| {
                     hap.get(chromosome_idx).map(|chr| {
                         // Convert sequence to string for hashing
-                        let seq = chr.sequence();
+                        let seq = chr.sequence(arena);
                         (0..seq.len())
                             .filter_map(|i| seq.get(i))
                             .map(|n| format!("{n:?}"))
@@ -290,7 +302,7 @@ pub fn haplotype_diversity(population: &Population, chromosome_idx: usize) -> f6
 // ===== Helper Functions =====
 
 /// Calculate number of segregating sites
-fn segregating_sites(sequences: &[&Sequence]) -> usize {
+fn segregating_sites(sequences: &[&[Nucleotide]]) -> usize {
     let n_seq = sequences.len();
     if n_seq == 0 {
         return 0;
@@ -311,11 +323,16 @@ mod tests {
     use centrevo_sim::base::Nucleotide;
     use centrevo_sim::genome::{Chromosome, Haplotype, Individual};
 
-    fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
-        let mut seq = Sequence::with_capacity(sequence.len());
+    fn create_test_individual(
+        id: &str,
+        sequence: &[Nucleotide],
+        arena: &mut GenomeArena,
+    ) -> Individual {
+        let mut seq = centrevo_sim::base::Sequence::with_capacity(sequence.len());
         for &nuc in sequence {
             seq.push(nuc);
         }
+        let data = arena.alloc(seq.as_slice());
 
         // Assume uniform structure for tests
         let ru_len = 10;
@@ -323,9 +340,10 @@ mod tests {
         let hor_len = ru_len * rus_per_hor;
         let hors_per_chr = if hor_len > 0 { seq.len() / hor_len } else { 0 };
 
-        let map = centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
+        let map =
+            centrevo_sim::genome::repeat_map::RepeatMap::uniform(ru_len, rus_per_hor, hors_per_chr);
 
-        let chr = Chromosome::new(format!("chr_{id}"), seq.clone(), map);
+        let chr = Chromosome::new(format!("chr_{id}"), data, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr.clone());
         let mut hap2 = Haplotype::new();
@@ -336,22 +354,24 @@ mod tests {
 
     #[test]
     fn test_nucleotide_diversity_identical_sequences() {
+        let mut arena = GenomeArena::new();
         // All identical sequences should have π = 0
         let sequence = vec![Nucleotide::A; 100];
         let individuals = vec![
-            create_test_individual("ind1", &sequence),
-            create_test_individual("ind2", &sequence),
-            create_test_individual("ind3", &sequence),
+            create_test_individual("ind1", &sequence, &mut arena),
+            create_test_individual("ind2", &sequence, &mut arena),
+            create_test_individual("ind3", &sequence, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let pi = nucleotide_diversity(&pop, 0);
+        let pi = nucleotide_diversity(&pop, 0, &arena);
 
         assert_eq!(pi, 0.0);
     }
 
     #[test]
     fn test_nucleotide_diversity_completely_different() {
+        let mut arena = GenomeArena::new();
         // Two individuals with completely different sequences
         // Total: 4 sequences (2 × 2 haplotypes)
         // Since both haplotypes are identical within each individual,
@@ -360,12 +380,12 @@ mod tests {
         let seq2 = vec![Nucleotide::T; 100];
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let pi = nucleotide_diversity(&pop, 0);
+        let pi = nucleotide_diversity(&pop, 0, &arena);
 
         // 6 pairwise comparisons:
         // - 1 comparison within seq1 (0 differences)
@@ -378,6 +398,7 @@ mod tests {
 
     #[test]
     fn test_nucleotide_diversity_known_value() {
+        let mut arena = GenomeArena::new();
         // Simple test case: 3 individuals with 6 total sequences (3 × 2 haplotypes)
         // Each individual has identical haplotypes for simplicity
         // Seq1: AAAA (ind1, both haplotypes)
@@ -391,13 +412,13 @@ mod tests {
         let seq3 = vec![Nucleotide::A, Nucleotide::A, Nucleotide::T, Nucleotide::T];
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
-            create_test_individual("ind3", &seq3),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
+            create_test_individual("ind3", &seq3, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let pi = nucleotide_diversity(&pop, 0);
+        let pi = nucleotide_diversity(&pop, 0, &arena);
 
         // With 6 identical pairs (doubled from 3 individuals):
         // Comparisons: seq1-seq2 (×4 ways) = 4 diff, seq1-seq3 (×4 ways) = 8 diff, seq2-seq3 (×4 ways) = 4 diff
@@ -408,18 +429,20 @@ mod tests {
 
     #[test]
     fn test_nucleotide_diversity_empty_population() {
+        let arena = GenomeArena::new();
         let pop = Population::new("pop1", Vec::new());
-        let pi = nucleotide_diversity(&pop, 0);
+        let pi = nucleotide_diversity(&pop, 0, &arena);
         assert_eq!(pi, 0.0);
     }
 
     #[test]
     fn test_nucleotide_diversity_single_individual() {
+        let mut arena = GenomeArena::new();
         let sequence = vec![Nucleotide::A; 100];
-        let individuals = vec![create_test_individual("ind1", &sequence)];
+        let individuals = vec![create_test_individual("ind1", &sequence, &mut arena)];
 
         let pop = Population::new("pop1", individuals);
-        let pi = nucleotide_diversity(&pop, 0);
+        let pi = nucleotide_diversity(&pop, 0, &arena);
 
         // Single individual has 2 identical haplotypes (by construction)
         // π between identical sequences = 0
@@ -428,12 +451,13 @@ mod tests {
 
     #[test]
     fn test_segregating_sites_no_variation() {
-        let mut seq = Sequence::with_capacity(10);
+        let mut seq = Vec::with_capacity(10);
         for _ in 0..10 {
             seq.push(Nucleotide::A);
         }
 
-        let sequences = vec![&seq, &seq, &seq];
+        let slice = seq.as_slice();
+        let sequences = vec![slice, slice, slice];
         let s = segregating_sites(&sequences);
 
         assert_eq!(s, 0);
@@ -441,19 +465,12 @@ mod tests {
 
     #[test]
     fn test_segregating_sites_all_different() {
-        let mut seq1 = Sequence::with_capacity(4);
-        seq1.push(Nucleotide::A);
-        seq1.push(Nucleotide::A);
-        seq1.push(Nucleotide::A);
-        seq1.push(Nucleotide::A);
+        let seq1 = vec![Nucleotide::A; 4];
+        let seq2 = vec![Nucleotide::T; 4];
 
-        let mut seq2 = Sequence::with_capacity(4);
-        seq2.push(Nucleotide::T);
-        seq2.push(Nucleotide::T);
-        seq2.push(Nucleotide::T);
-        seq2.push(Nucleotide::T);
-
-        let sequences = vec![&seq1, &seq2];
+        let slice1 = seq1.as_slice();
+        let slice2 = seq2.as_slice();
+        let sequences = vec![slice1, slice2];
         let s = segregating_sites(&sequences);
 
         assert_eq!(s, 4);
@@ -469,32 +486,34 @@ mod tests {
 
     #[test]
     fn test_wattersons_theta_no_variation() {
+        let mut arena = GenomeArena::new();
         let sequence = vec![Nucleotide::A; 100];
         let individuals = vec![
-            create_test_individual("ind1", &sequence),
-            create_test_individual("ind2", &sequence),
+            create_test_individual("ind1", &sequence, &mut arena),
+            create_test_individual("ind2", &sequence, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let theta = wattersons_theta(&pop, 0);
+        let theta = wattersons_theta(&pop, 0, &arena);
 
         assert_eq!(theta, 0.0);
     }
 
     #[test]
     fn test_wattersons_theta_with_variation() {
+        let mut arena = GenomeArena::new();
         // Two individuals, 4 total sequences
         let seq1 = vec![Nucleotide::A; 100];
         let mut seq2 = vec![Nucleotide::A; 100];
         seq2[50] = Nucleotide::T;
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let theta = wattersons_theta(&pop, 0);
+        let theta = wattersons_theta(&pop, 0, &arena);
 
         // With 4 sequences: a_n = 1 + 1/2 + 1/3 ≈ 1.833
         // S = 1 segregating site
@@ -505,20 +524,21 @@ mod tests {
 
     #[test]
     fn test_haplotype_diversity_all_unique() {
+        let mut arena = GenomeArena::new();
         let seq1 = vec![Nucleotide::A; 10];
         let seq2 = vec![Nucleotide::T; 10];
         let seq3 = vec![Nucleotide::C; 10];
         let seq4 = vec![Nucleotide::G; 10];
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
-            create_test_individual("ind3", &seq3),
-            create_test_individual("ind4", &seq4),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
+            create_test_individual("ind3", &seq3, &mut arena),
+            create_test_individual("ind4", &seq4, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let h = haplotype_diversity(&pop, 0);
+        let h = haplotype_diversity(&pop, 0, &arena);
 
         // 4 individuals × 2 haplotypes = 8 total sequences
         // Each individual has both haplotypes identical, so we have:
@@ -529,15 +549,16 @@ mod tests {
 
     #[test]
     fn test_haplotype_diversity_all_identical() {
+        let mut arena = GenomeArena::new();
         let sequence = vec![Nucleotide::A; 10];
         let individuals = vec![
-            create_test_individual("ind1", &sequence),
-            create_test_individual("ind2", &sequence),
-            create_test_individual("ind3", &sequence),
+            create_test_individual("ind1", &sequence, &mut arena),
+            create_test_individual("ind2", &sequence, &mut arena),
+            create_test_individual("ind3", &sequence, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let h = haplotype_diversity(&pop, 0);
+        let h = haplotype_diversity(&pop, 0, &arena);
 
         // All 6 sequences (3 individuals × 2 haplotypes) are identical
         // H = 1 - 1 = 0
@@ -546,6 +567,7 @@ mod tests {
 
     #[test]
     fn test_tajimas_d_neutral() {
+        let mut arena = GenomeArena::new();
         // For neutral population, expect D ≈ 0
         // This is a simple test with limited data
         let mut seq1 = vec![Nucleotide::A; 100];
@@ -554,12 +576,12 @@ mod tests {
         seq2[20] = Nucleotide::C;
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
-        let d = tajimas_d(&pop, 0);
+        let d = tajimas_d(&pop, 0, &arena);
 
         // With 4 sequences (2 individuals × 2 haplotypes), the result should be defined
         // The exact value depends on the implementation details
@@ -568,8 +590,8 @@ mod tests {
 
     #[test]
     fn test_hamming_distance() {
-        let mut seq1 = Sequence::with_capacity(10);
-        let mut seq2 = Sequence::with_capacity(10);
+        let mut seq1 = Vec::with_capacity(10);
+        let mut seq2 = Vec::with_capacity(10);
 
         for i in 0..10 {
             seq1.push(if i % 2 == 0 {

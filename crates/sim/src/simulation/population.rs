@@ -166,13 +166,13 @@ impl Population {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::base::{Nucleotide, Sequence};
+    use super::{FitnessValue, Individual, Population};
+    use crate::base::{GenomeArena, Nucleotide, Sequence};
     use crate::genome::{Chromosome, Haplotype, RepeatMap};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
-    fn create_test_individual(id: &str, base: Nucleotide) -> Individual {
+    fn create_test_individual(id: &str, base: Nucleotide, arena: &mut GenomeArena) -> Individual {
         let mut seq = Sequence::with_capacity(100);
         for _ in 0..100 {
             seq.push(base);
@@ -181,7 +181,8 @@ mod tests {
         // 100 bp. RU=10. RUs=10. HOR=5 RUs. HORs=2.
         let map = RepeatMap::uniform(10, 5, 2);
 
-        let chr = Chromosome::new(format!("chr_{id}"), seq, map);
+        let slice = arena.alloc(seq.as_slice());
+        let chr = Chromosome::new(format!("chr_{id}"), slice, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr.clone());
         let mut hap2 = Haplotype::new();
@@ -191,10 +192,27 @@ mod tests {
     }
 
     #[test]
+    fn test_population_select_parents_selection_probabilities() {
+        // Create individuals with specific fitnesses
+        let mut arena = GenomeArena::new();
+        let mut ind1 = create_test_individual("ind1", Nucleotide::A, &mut arena);
+        ind1.set_cached_fitness(FitnessValue::new(10.0));
+
+        let mut ind2 = create_test_individual("ind2", Nucleotide::C, &mut arena);
+        ind2.set_cached_fitness(FitnessValue::new(1.0));
+
+        let pop = Population::new("pop1", vec![ind1, ind2]);
+        assert_eq!(pop.size(), 2);
+        assert_eq!(pop.generation(), 0);
+        assert_eq!(pop.id(), "pop1");
+    }
+
+    #[test]
     fn test_population_new() {
+        let mut arena = GenomeArena::new();
         let individuals = vec![
-            create_test_individual("ind1", Nucleotide::A),
-            create_test_individual("ind2", Nucleotide::C),
+            create_test_individual("ind1", Nucleotide::A, &mut arena),
+            create_test_individual("ind2", Nucleotide::C, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
@@ -205,7 +223,8 @@ mod tests {
 
     #[test]
     fn test_population_increment_generation() {
-        let individuals = vec![create_test_individual("ind1", Nucleotide::A)];
+        let mut arena = GenomeArena::new();
+        let individuals = vec![create_test_individual("ind1", Nucleotide::A, &mut arena)];
         let mut pop = Population::new("pop1", individuals);
 
         assert_eq!(pop.generation(), 0);
@@ -217,10 +236,11 @@ mod tests {
 
     #[test]
     fn test_population_size() {
+        let mut arena = GenomeArena::new();
         let individuals = vec![
-            create_test_individual("ind1", Nucleotide::A),
-            create_test_individual("ind2", Nucleotide::C),
-            create_test_individual("ind3", Nucleotide::G),
+            create_test_individual("ind1", Nucleotide::A, &mut arena),
+            create_test_individual("ind2", Nucleotide::C, &mut arena),
+            create_test_individual("ind3", Nucleotide::G, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
@@ -237,9 +257,10 @@ mod tests {
 
     #[test]
     fn test_population_get() {
+        let mut arena = GenomeArena::new();
         let individuals = vec![
-            create_test_individual("ind1", Nucleotide::A),
-            create_test_individual("ind2", Nucleotide::C),
+            create_test_individual("ind1", Nucleotide::A, &mut arena),
+            create_test_individual("ind2", Nucleotide::C, &mut arena),
         ];
 
         let pop = Population::new("pop1", individuals);
@@ -253,11 +274,12 @@ mod tests {
 
     #[test]
     fn test_population_select_parents_uniform() {
+        let mut arena = GenomeArena::new();
         let individuals = vec![
-            create_test_individual("ind1", Nucleotide::A),
-            create_test_individual("ind2", Nucleotide::C),
-            create_test_individual("ind3", Nucleotide::G),
-            create_test_individual("ind4", Nucleotide::T),
+            create_test_individual("ind1", Nucleotide::A, &mut arena),
+            create_test_individual("ind2", Nucleotide::C, &mut arena),
+            create_test_individual("ind3", Nucleotide::G, &mut arena),
+            create_test_individual("ind4", Nucleotide::T, &mut arena),
         ];
 
         // Manually set fitness for testing
@@ -281,10 +303,11 @@ mod tests {
 
     #[test]
     fn test_population_select_parents_weighted() {
+        let mut arena = GenomeArena::new();
         let individuals = vec![
-            create_test_individual("ind1", Nucleotide::A),
-            create_test_individual("ind2", Nucleotide::C),
-            create_test_individual("ind3", Nucleotide::G),
+            create_test_individual("ind1", Nucleotide::A, &mut arena),
+            create_test_individual("ind2", Nucleotide::C, &mut arena),
+            create_test_individual("ind3", Nucleotide::G, &mut arena),
         ];
 
         let mut individuals = individuals;
@@ -311,13 +334,14 @@ mod tests {
 
     #[test]
     fn test_population_set_individuals() {
-        let individuals1 = vec![create_test_individual("ind1", Nucleotide::A)];
+        let mut arena = GenomeArena::new();
+        let individuals1 = vec![create_test_individual("ind1", Nucleotide::A, &mut arena)];
         let mut pop = Population::new("pop1", individuals1);
         assert_eq!(pop.size(), 1);
 
         let individuals2 = vec![
-            create_test_individual("ind2", Nucleotide::C),
-            create_test_individual("ind3", Nucleotide::G),
+            create_test_individual("ind2", Nucleotide::C, &mut arena),
+            create_test_individual("ind3", Nucleotide::G, &mut arena),
         ];
         pop.set_individuals(individuals2);
         assert_eq!(pop.size(), 2);

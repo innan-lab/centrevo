@@ -41,17 +41,13 @@ use crate::simulation::{
 ///     .unwrap();
 /// ```
 ///
-/// ```no_run
-/// use centrevo_sim::simulation::SimulationBuilder;
-/// use centrevo_sim::simulation::UniformRepeatStructure;
-/// use centrevo_sim::base::Nucleotide;
-///
-/// // From imported sequences (requires sequences.fasta to exist)
-/// let structure = UniformRepeatStructure::new(Nucleotide::A, 171, 12, 10, 1);
+/// // Custom structure (From formatted string)
+/// // Visual: "AC-GT" (HOR) = "AA-TT" (HOR)
+/// // This creates a chromosome with 2 HORs. First has RUs "AC", "GT". Second has "AA", "TT".
 /// let sim = SimulationBuilder::new()
 ///     .population_size(50)
 ///     .generations(100)
-///     .init_from_fasta_uniform("sequences.fasta", structure)
+///     .init_from_formatted_string("AC-GT=AA-TT", '=', '-')
 ///     .mutation_rate(0.0001)
 ///     .build()
 ///     .unwrap();

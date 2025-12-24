@@ -10,8 +10,10 @@
 //! ### Haplotype Fitness (Single Chromosome)
 //! Fitness of a single chromosome, typically based on sequence properties:
 //! - **GC Content**: Many organisms have GC-content-dependent fitness, reflecting
-//!   GC-bias mutations or selection for stability (GC bonds are stronger)
-//! - **Length**: Longer sequences might be more robust (more genes) or costly (more to replicate)
+//!   GC-bias mutations or selection for stability (GC bonds are stronger).
+//!   Example: Thermophilic bacteria often have high GC content to prevent DNA melting.
+//! - **Length**: Longer sequences might be more robust (more genes) or costly (more to replicate).
+
 //!
 //! ### Individual Fitness (Diploid Organism)
 //! Fitness of a whole organism with two chromosome copies (alleles). Can be:
@@ -38,10 +40,16 @@ pub trait HaplotypeFitness {
     ///
     /// Returns a non-negative fitness value. Higher values indicate better fitness.
     /// The default implementation returns neutral fitness of 1.0.
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
+    fn haplotype_fitness(
+        &self,
+        _chromosome: &Chromosome,
+        _arena: &crate::base::GenomeArena,
+    ) -> FitnessValue {
         FitnessValue::NEUTRAL_FITNESS
     }
 }
+
+// Example implementation included in trait documentation above
 
 /// Trait for scoring fitness of a diploid individual (two haplotypes).
 ///
@@ -68,7 +76,7 @@ pub trait HaplotypeFitness {
 /// struct MyFitness;
 /// impl centrevo_sim::evolution::HaplotypeFitness for MyFitness {}
 /// impl IndividualFitness for MyFitness {
-///     fn individual_fitness(&self, _ind: &Individual) -> FitnessValue {
+///     fn individual_fitness(&self, _ind: &Individual, _arena: &centrevo_sim::base::GenomeArena) -> FitnessValue {
 ///         FitnessValue::new(0.42)
 ///     }
 /// }
@@ -77,9 +85,13 @@ pub trait IndividualFitness: HaplotypeFitness {
     /// Calculate fitness score for a diploid individual.
     ///
     /// The default implementation multiplies the fitness scores of both haplotypes.
-    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
-        let fit1 = self.haplotype_fitness(individual.haplotype1().get(0).unwrap());
-        let fit2 = self.haplotype_fitness(individual.haplotype2().get(0).unwrap());
+    fn individual_fitness(
+        &self,
+        individual: &Individual,
+        arena: &crate::base::GenomeArena,
+    ) -> FitnessValue {
+        let fit1 = self.haplotype_fitness(individual.haplotype1().get(0).unwrap(), arena);
+        let fit2 = self.haplotype_fitness(individual.haplotype2().get(0).unwrap(), arena);
         fit1 * fit2
     }
 }
@@ -153,8 +165,12 @@ impl GCContentFitness {
 }
 
 impl HaplotypeFitness for GCContentFitness {
-    fn haplotype_fitness(&self, chromosome: &Chromosome) -> FitnessValue {
-        let gc_content = chromosome.gc_content();
+    fn haplotype_fitness(
+        &self,
+        chromosome: &Chromosome,
+        arena: &crate::base::GenomeArena,
+    ) -> FitnessValue {
+        let gc_content = chromosome.gc_content(arena);
 
         // Handle edge cases with small epsilon to avoid log(0)
         let gc = gc_content.clamp(1e-10, 1.0 - 1e-10);
@@ -224,7 +240,11 @@ impl LengthFitness {
 }
 
 impl HaplotypeFitness for LengthFitness {
-    fn haplotype_fitness(&self, chromosome: &Chromosome) -> FitnessValue {
+    fn haplotype_fitness(
+        &self,
+        chromosome: &Chromosome,
+        _arena: &crate::base::GenomeArena,
+    ) -> FitnessValue {
         if chromosome.is_empty() {
             return FitnessValue::LETHAL_FITNESS;
         }
@@ -290,7 +310,11 @@ impl SequenceSimilarityFitness {
 }
 
 impl HaplotypeFitness for SequenceSimilarityFitness {
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
+    fn haplotype_fitness(
+        &self,
+        _chromosome: &Chromosome,
+        _arena: &crate::base::GenomeArena,
+    ) -> FitnessValue {
         panic!(
             "SequenceSimilarityFitness requires two haplotypes. Use individual_fitness instead."
         );
@@ -298,7 +322,11 @@ impl HaplotypeFitness for SequenceSimilarityFitness {
 }
 
 impl IndividualFitness for SequenceSimilarityFitness {
-    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
+    fn individual_fitness(
+        &self,
+        individual: &Individual,
+        arena: &crate::base::GenomeArena,
+    ) -> FitnessValue {
         let chr1 = individual.haplotype1().get(0).unwrap();
         let chr2 = individual.haplotype2().get(0).unwrap();
 
@@ -311,10 +339,7 @@ impl IndividualFitness for SequenceSimilarityFitness {
 
         // Compare up to the shorter length (compare actual sequence content)
         // Count differences using Hamming distance
-        let distance = Self::hamming_distance(
-            &chr1.sequence().as_slice()[..min_len],
-            &chr2.sequence().as_slice()[..min_len],
-        );
+        let distance = Self::hamming_distance(chr1.sequence(arena), chr2.sequence(arena));
 
         // Add penalty for length difference
         let length_diff = max_len - min_len;
@@ -369,13 +394,21 @@ impl LengthSimilarityFitness {
 }
 
 impl HaplotypeFitness for LengthSimilarityFitness {
-    fn haplotype_fitness(&self, _chromosome: &Chromosome) -> FitnessValue {
+    fn haplotype_fitness(
+        &self,
+        _chromosome: &Chromosome,
+        _arena: &crate::base::GenomeArena,
+    ) -> FitnessValue {
         panic!("LengthSimilarityFitness requires two haplotypes. Use individual_fitness instead.");
     }
 }
 
 impl IndividualFitness for LengthSimilarityFitness {
-    fn individual_fitness(&self, individual: &Individual) -> FitnessValue {
+    fn individual_fitness(
+        &self,
+        individual: &Individual,
+        arena: &crate::base::GenomeArena,
+    ) -> FitnessValue {
         let chr1 = individual.haplotype1().get(0).unwrap();
         let chr2 = individual.haplotype2().get(0).unwrap();
 
@@ -384,8 +417,7 @@ impl IndividualFitness for LengthSimilarityFitness {
         }
 
         // Compare the lengths of the sequences as a ratio
-        let similarity =
-            1.0 - Self::length_ratio(chr1.sequence().as_slice(), chr2.sequence().as_slice());
+        let similarity = 1.0 - Self::length_ratio(chr1.sequence(arena), chr2.sequence(arena));
 
         // Apply shape parameter
         FitnessValue::new(similarity.powf(self.shape))
@@ -395,17 +427,22 @@ impl IndividualFitness for LengthSimilarityFitness {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::base::{GenomeArena, Nucleotide};
     use crate::genome::{Haplotype, RepeatMap};
-    use std::str::FromStr;
+    // use std::str::FromStr; // removed unused import but it was there
 
-    fn test_chromosome(seq: &str) -> Chromosome {
-        let sequence = crate::base::Sequence::from_str(seq).unwrap();
-        let total_len = sequence.len();
+    fn test_chromosome(seq: &str, arena: &mut GenomeArena) -> Chromosome {
+        let nucs: Vec<Nucleotide> = seq
+            .chars()
+            .map(|c| Nucleotide::from_ascii(c as u8).unwrap())
+            .collect();
+        let data = arena.alloc(&nucs);
+        let total_len = nucs.len();
         let ru_len = if total_len > 0 { total_len } else { 4 };
         let rus_per_hor = 1;
         let num_hors = if total_len > 0 { 1 } else { 0 };
         let map = RepeatMap::uniform(ru_len, rus_per_hor, num_hors);
-        Chromosome::new("test", sequence, map)
+        Chromosome::new("test", data, map)
     }
 
     // ===== GCContentFitness Tests =====
@@ -434,25 +471,28 @@ mod tests {
 
     #[test]
     fn test_gc_content_fitness_all_gc() {
+        let mut arena = GenomeArena::new();
         let fitness = GCContentFitness::new(0.5, 2.0).unwrap();
-        let chr = test_chromosome("GCGCGCGC");
-        let score = fitness.haplotype_fitness(&chr);
+        let chr = test_chromosome("GCGCGCGC", &mut arena);
+        let score = fitness.haplotype_fitness(&chr, &arena);
         assert!(*score > 0.0);
     }
 
     #[test]
     fn test_gc_content_fitness_all_at() {
+        let mut arena = GenomeArena::new();
         let fitness = GCContentFitness::new(0.5, 2.0).unwrap();
-        let chr = test_chromosome("ATATATAT");
-        let score = fitness.haplotype_fitness(&chr);
+        let chr = test_chromosome("ATATATAT", &mut arena);
+        let score = fitness.haplotype_fitness(&chr, &arena);
         assert!(*score > 0.0);
     }
 
     #[test]
     fn test_gc_content_fitness_half() {
+        let mut arena = GenomeArena::new();
         let fitness = GCContentFitness::new(0.5, 2.0).unwrap();
-        let chr = test_chromosome("ACGT");
-        let score = fitness.haplotype_fitness(&chr);
+        let chr = test_chromosome("ACGT", &mut arena);
+        let score = fitness.haplotype_fitness(&chr, &arena);
         assert!(*score > 0.0);
     }
 
@@ -478,20 +518,22 @@ mod tests {
 
     #[test]
     fn test_length_fitness_at_optimum() {
+        let mut arena = GenomeArena::new();
         let fitness = LengthFitness::new(8, 0.5).unwrap();
-        let chr = test_chromosome("ACGTACGT");
-        let score = fitness.haplotype_fitness(&chr);
+        let chr = test_chromosome("ACGTACGT", &mut arena);
+        let score = fitness.haplotype_fitness(&chr, &arena);
         assert!((*score - 1.0).abs() < 0.01); // Should be close to 1.0
     }
 
     #[test]
     fn test_length_fitness_decreases_with_distance() {
+        let mut arena = GenomeArena::new();
         let fitness = LengthFitness::new(8, 0.5).unwrap();
-        let chr_optimal = test_chromosome("ACGTACGT");
-        let chr_longer = test_chromosome("ACGTACGTACGTACGT");
+        let chr_optimal = test_chromosome("ACGTACGT", &mut arena);
+        let chr_longer = test_chromosome("ACGTACGTACGTACGT", &mut arena);
 
-        let score_optimal = fitness.haplotype_fitness(&chr_optimal);
-        let score_longer = fitness.haplotype_fitness(&chr_longer);
+        let score_optimal = fitness.haplotype_fitness(&chr_optimal, &arena);
+        let score_longer = fitness.haplotype_fitness(&chr_longer, &arena);
 
         assert!(*score_optimal > *score_longer);
     }
@@ -513,57 +555,61 @@ mod tests {
     #[test]
     #[should_panic(expected = "requires two haplotypes")]
     fn test_sequence_similarity_panic_on_single_haplotype() {
+        let mut arena = GenomeArena::new();
         let fitness = SequenceSimilarityFitness::new(1.0).unwrap();
-        let chr = test_chromosome("ACGT");
-        fitness.haplotype_fitness(&chr);
+        let chr = test_chromosome("ACGT", &mut arena);
+        fitness.haplotype_fitness(&chr, &arena);
     }
 
     #[test]
     fn test_sequence_similarity_identical() {
+        let mut arena = GenomeArena::new();
         let fitness = SequenceSimilarityFitness::new(1.0).unwrap();
 
-        let chr = test_chromosome("ACGTACGT");
+        let chr = test_chromosome("ACGTACGT", &mut arena);
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr.clone());
         hap2.push(chr);
 
         let ind = Individual::new("test", hap1, hap2);
-        let score = fitness.individual_fitness(&ind);
+        let score = fitness.individual_fitness(&ind, &arena);
 
         assert_eq!(*score, 1.0); // Identical sequences
     }
 
     #[test]
     fn test_sequence_similarity_completely_different() {
+        let mut arena = GenomeArena::new();
         let fitness = SequenceSimilarityFitness::new(1.0).unwrap();
 
-        let chr1 = test_chromosome("AAAAAAAA");
-        let chr2 = test_chromosome("TTTTTTTT");
+        let chr1 = test_chromosome("AAAAAAAA", &mut arena);
+        let chr2 = test_chromosome("TTTTTTTT", &mut arena);
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
 
         let ind = Individual::new("test", hap1, hap2);
-        let score = fitness.individual_fitness(&ind);
+        let score = fitness.individual_fitness(&ind, &arena);
 
         assert_eq!(*score, 0.0); // Completely different
     }
 
     #[test]
     fn test_sequence_similarity_partial() {
+        let mut arena = GenomeArena::new();
         let fitness = SequenceSimilarityFitness::new(1.0).unwrap();
 
-        let chr1 = test_chromosome("ACGTACGT");
-        let chr2 = test_chromosome("ACGTTCGT");
+        let chr1 = test_chromosome("ACGTACGT", &mut arena);
+        let chr2 = test_chromosome("ACGTTCGT", &mut arena);
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
 
         let ind = Individual::new("test", hap1, hap2);
-        let score = fitness.individual_fitness(&ind);
+        let score = fitness.individual_fitness(&ind, &arena);
 
         assert!(*score > 0.0 && *score < 1.0); // Partially similar
     }
@@ -598,40 +644,43 @@ mod tests {
     #[test]
     #[should_panic(expected = "requires two haplotypes")]
     fn test_length_similarity_panic_on_single_haplotype() {
+        let mut arena = GenomeArena::new();
         let fitness = LengthSimilarityFitness::new(1.0).unwrap();
-        let chr = test_chromosome("ACGT");
-        fitness.haplotype_fitness(&chr);
+        let chr = test_chromosome("ACGT", &mut arena);
+        fitness.haplotype_fitness(&chr, &arena);
     }
 
     #[test]
     fn test_length_similarity_identical() {
+        let mut arena = GenomeArena::new();
         let fitness = LengthSimilarityFitness::new(1.0).unwrap();
 
-        let chr = test_chromosome("ACGTACGT");
+        let chr = test_chromosome("ACGTACGT", &mut arena);
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr.clone());
         hap2.push(chr);
 
         let ind = Individual::new("test", hap1, hap2);
-        let score = fitness.individual_fitness(&ind);
+        let score = fitness.individual_fitness(&ind, &arena);
 
         assert_eq!(*score, 1.0); // Identical lengths
     }
 
     #[test]
     fn test_length_similarity_different_lengths() {
+        let mut arena = GenomeArena::new();
         let fitness = LengthSimilarityFitness::new(1.0).unwrap();
 
-        let chr1 = test_chromosome("ACGT");
-        let chr2 = test_chromosome("ACGTACGT");
+        let chr1 = test_chromosome("ACGT", &mut arena);
+        let chr2 = test_chromosome("ACGTACGT", &mut arena);
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
 
         let ind = Individual::new("test", hap1, hap2);
-        let score = fitness.individual_fitness(&ind);
+        let score = fitness.individual_fitness(&ind, &arena);
 
         // Length diff is 4, max length is 8, so similarity = 1 - 4/8 = 0.5
         assert_eq!(*score, 0.5);
@@ -639,17 +688,18 @@ mod tests {
 
     #[test]
     fn test_length_similarity_completely_different() {
+        let mut arena = GenomeArena::new();
         let fitness = LengthSimilarityFitness::new(1.0).unwrap();
 
-        let chr1 = test_chromosome("A");
-        let chr2 = test_chromosome("ACGTACGTACGTACGT");
+        let chr1 = test_chromosome("A", &mut arena);
+        let chr2 = test_chromosome("ACGTACGTACGTACGT", &mut arena);
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
 
         let ind = Individual::new("test", hap1, hap2);
-        let score = fitness.individual_fitness(&ind);
+        let score = fitness.individual_fitness(&ind, &arena);
 
         // Length diff is 15, max length is 16, so similarity = 1 - 15/16 = 0.0625
         assert!((*score - 0.0625).abs() < 0.001);
@@ -657,17 +707,18 @@ mod tests {
 
     #[test]
     fn test_length_similarity_with_shape() {
+        let mut arena = GenomeArena::new();
         let fitness = LengthSimilarityFitness::new(2.0).unwrap();
 
-        let chr1 = test_chromosome("ACGT");
-        let chr2 = test_chromosome("ACGTACGT");
+        let chr1 = test_chromosome("ACGT", &mut arena);
+        let chr2 = test_chromosome("ACGTACGT", &mut arena);
         let mut hap1 = Haplotype::new();
         let mut hap2 = Haplotype::new();
         hap1.push(chr1);
         hap2.push(chr2);
 
         let ind = Individual::new("test", hap1, hap2);
-        let score = fitness.individual_fitness(&ind);
+        let score = fitness.individual_fitness(&ind, &arena);
 
         // Similarity is 0.5, with shape 2.0: 0.5^2.0 = 0.25
         assert_eq!(*score, 0.25);

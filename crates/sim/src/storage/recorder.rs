@@ -172,6 +172,7 @@ impl AsyncRecorder {
         population: &Population,
         generation: usize,
         rng_state: Option<Vec<u8>>,
+        arena: &crate::base::GenomeArena,
     ) -> Result<(), DatabaseError> {
         use rayon::prelude::*;
         let codec = &self.codec;
@@ -179,7 +180,7 @@ impl AsyncRecorder {
         let snapshots: Vec<IndividualSnapshot> = population
             .individuals()
             .par_iter()
-            .map(|ind| IndividualSnapshot::from_individual(ind, codec))
+            .map(|ind| IndividualSnapshot::from_individual(ind, codec, arena))
             .collect();
 
         if self.is_buffer_high() {
@@ -452,7 +453,11 @@ mod tests {
         }
     }
 
-    fn create_test_population(size: usize, chr_length: usize) -> Population {
+    fn create_test_population(
+        size: usize,
+        chr_length: usize,
+        arena: &mut crate::base::GenomeArena,
+    ) -> Population {
         // Minimal mock for population
         let mut individuals = Vec::new();
         for i in 0..size {
@@ -462,6 +467,7 @@ mod tests {
                 10,
                 1,
                 chr_length / 10,
+                arena,
             )]);
             let h2 = Haplotype::from_chromosomes(vec![Chromosome::uniform(
                 "c1",
@@ -469,6 +475,7 @@ mod tests {
                 10,
                 1,
                 chr_length / 10,
+                arena,
             )]);
             let mut ind = Individual::new(format!("ind{i}"), h1, h2);
             ind.set_cached_fitness(FitnessValue::new(0.5));
@@ -491,9 +498,10 @@ mod tests {
         )
         .expect("Failed to create recorder");
 
-        let pop = create_test_population(5, 100);
+        let mut arena = crate::base::GenomeArena::new();
+        let pop = create_test_population(5, 100, &mut arena);
         recorder
-            .record_generation(&pop, 0, Some(vec![1, 2, 3]))
+            .record_generation(&pop, 0, Some(vec![1, 2, 3]), &arena)
             .await
             .expect("Failed to record");
 

@@ -104,7 +104,7 @@ pub fn run_simulation(
                 if should_record {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation, Some(rng_state))
+                        .record_generation(sim.population(), generation, Some(rng_state), sim.arena())
                         .await
                         .context(format!("Failed to record generation {generation}"))?;
                 }
@@ -230,7 +230,7 @@ pub fn run_simulation(
                 if should_record {
                     let rng_state = sim.rng_state_bytes();
                     recorder
-                        .record_generation(sim.population(), generation, Some(rng_state))
+                        .record_generation(sim.population(), generation, Some(rng_state), sim.arena())
                         .await
                         .context(format!("Failed to record generation {generation}"))?;
                 }

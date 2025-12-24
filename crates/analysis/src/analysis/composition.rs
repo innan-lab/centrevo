@@ -8,7 +8,7 @@
 //! - Haplotype level: individual_idx and haplotype_idx specified
 //! - Chromosome level: All indices specified
 
-use centrevo_sim::base::Nucleotide;
+use centrevo_sim::base::{GenomeArena, Nucleotide};
 use centrevo_sim::simulation::Population;
 use std::collections::HashMap;
 
@@ -55,21 +55,24 @@ pub fn gc_content(
     individual_idx: Option<usize>,
     haplotype_idx: Option<usize>,
     chromosome_idx: Option<usize>,
+    arena: &GenomeArena,
 ) -> f64 {
     match (individual_idx, haplotype_idx, chromosome_idx) {
         // Chromosome level: specific chromosome
         (Some(ind_idx), Some(hap_idx), Some(chr_idx)) => {
-            gc_content_chromosome(population, ind_idx, hap_idx, chr_idx)
+            gc_content_chromosome(population, ind_idx, hap_idx, chr_idx, arena)
         }
 
         // Haplotype level: all chromosomes in haplotype
-        (Some(ind_idx), Some(hap_idx), None) => gc_content_haplotype(population, ind_idx, hap_idx),
+        (Some(ind_idx), Some(hap_idx), None) => {
+            gc_content_haplotype(population, ind_idx, hap_idx, arena)
+        }
 
         // Individual level: both haplotypes
-        (Some(ind_idx), None, None) => gc_content_individual(population, ind_idx),
+        (Some(ind_idx), None, None) => gc_content_individual(population, ind_idx, arena),
 
         // Population level: all individuals, haplotypes, chromosomes
-        (None, None, None) => gc_content_population(population),
+        (None, None, None) => gc_content_population(population, arena),
 
         // Invalid combinations
         _ => {
@@ -121,21 +124,24 @@ pub fn nucleotide_composition(
     individual_idx: Option<usize>,
     haplotype_idx: Option<usize>,
     chromosome_idx: Option<usize>,
+    arena: &GenomeArena,
 ) -> HashMap<Nucleotide, usize> {
     match (individual_idx, haplotype_idx, chromosome_idx) {
         // Chromosome level: specific chromosome
         (Some(ind_idx), Some(hap_idx), Some(chr_idx)) => {
-            composition_chromosome(population, ind_idx, hap_idx, chr_idx)
+            composition_chromosome(population, ind_idx, hap_idx, chr_idx, arena)
         }
 
         // Haplotype level: all chromosomes in haplotype
-        (Some(ind_idx), Some(hap_idx), None) => composition_haplotype(population, ind_idx, hap_idx),
+        (Some(ind_idx), Some(hap_idx), None) => {
+            composition_haplotype(population, ind_idx, hap_idx, arena)
+        }
 
         // Individual level: both haplotypes
-        (Some(ind_idx), None, None) => composition_individual(population, ind_idx),
+        (Some(ind_idx), None, None) => composition_individual(population, ind_idx, arena),
 
         // Population level: all individuals, haplotypes, chromosomes
-        (None, None, None) => composition_population(population),
+        (None, None, None) => composition_population(population, arena),
 
         // Invalid combinations
         _ => {
@@ -154,6 +160,7 @@ fn gc_content_chromosome(
     individual_idx: usize,
     haplotype_idx: usize,
     chromosome_idx: usize,
+    arena: &GenomeArena,
 ) -> f64 {
     if let Some(ind) = population.individuals().get(individual_idx) {
         let haplotype = if haplotype_idx == 0 {
@@ -163,14 +170,13 @@ fn gc_content_chromosome(
         };
 
         if let Some(chr) = haplotype.get(chromosome_idx) {
-            let seq = chr.sequence();
+            let seq = chr.sequence(arena);
             let total = seq.len();
             if total == 0 {
                 return 0.0;
             }
 
             let gc_count = seq
-                .as_slice()
                 .iter()
                 .filter(|&n| *n == Nucleotide::G || *n == Nucleotide::C)
                 .count();
@@ -185,6 +191,7 @@ fn gc_content_haplotype(
     population: &Population,
     individual_idx: usize,
     haplotype_idx: usize,
+    arena: &GenomeArena,
 ) -> f64 {
     if let Some(ind) = population.individuals().get(individual_idx) {
         let haplotype = if haplotype_idx == 0 {
@@ -197,10 +204,9 @@ fn gc_content_haplotype(
         let mut total_bases = 0;
 
         for chr in haplotype.chromosomes() {
-            let seq = chr.sequence();
+            let seq = chr.sequence(arena);
             total_bases += seq.len();
             total_gc += seq
-                .as_slice()
                 .iter()
                 .filter(|&n| *n == Nucleotide::G || *n == Nucleotide::C)
                 .count();
@@ -213,7 +219,11 @@ fn gc_content_haplotype(
     0.0
 }
 
-fn gc_content_individual(population: &Population, individual_idx: usize) -> f64 {
+fn gc_content_individual(
+    population: &Population,
+    individual_idx: usize,
+    arena: &GenomeArena,
+) -> f64 {
     if let Some(ind) = population.individuals().get(individual_idx) {
         let mut total_gc = 0;
         let mut total_bases = 0;
@@ -221,10 +231,9 @@ fn gc_content_individual(population: &Population, individual_idx: usize) -> f64 
         // Process both haplotypes
         for haplotype in [ind.haplotype1(), ind.haplotype2()] {
             for chr in haplotype.chromosomes() {
-                let seq = chr.sequence();
+                let seq = chr.sequence(arena);
                 total_bases += seq.len();
                 total_gc += seq
-                    .as_slice()
                     .iter()
                     .filter(|&n| *n == Nucleotide::G || *n == Nucleotide::C)
                     .count();
@@ -238,17 +247,16 @@ fn gc_content_individual(population: &Population, individual_idx: usize) -> f64 
     0.0
 }
 
-fn gc_content_population(population: &Population) -> f64 {
+fn gc_content_population(population: &Population, arena: &GenomeArena) -> f64 {
     let mut total_gc = 0;
     let mut total_bases = 0;
 
     for ind in population.individuals() {
         for haplotype in [ind.haplotype1(), ind.haplotype2()] {
             for chr in haplotype.chromosomes() {
-                let seq = chr.sequence();
+                let seq = chr.sequence(arena);
                 total_bases += seq.len();
                 total_gc += seq
-                    .as_slice()
                     .iter()
                     .filter(|&n| *n == Nucleotide::G || *n == Nucleotide::C)
                     .count();
@@ -270,6 +278,7 @@ fn composition_chromosome(
     individual_idx: usize,
     haplotype_idx: usize,
     chromosome_idx: usize,
+    arena: &GenomeArena,
 ) -> HashMap<Nucleotide, usize> {
     let mut counts = HashMap::new();
     counts.insert(Nucleotide::A, 0);
@@ -285,10 +294,10 @@ fn composition_chromosome(
         };
 
         if let Some(chr) = haplotype.get(chromosome_idx) {
-            let seq = chr.sequence();
+            let seq = chr.sequence(arena);
             for i in 0..seq.len() {
                 if let Some(nuc) = seq.get(i) {
-                    *counts.entry(nuc).or_insert(0) += 1;
+                    *counts.entry(*nuc).or_insert(0) += 1;
                 }
             }
         }
@@ -301,6 +310,7 @@ fn composition_haplotype(
     population: &Population,
     individual_idx: usize,
     haplotype_idx: usize,
+    arena: &GenomeArena,
 ) -> HashMap<Nucleotide, usize> {
     let mut counts = HashMap::new();
     counts.insert(Nucleotide::A, 0);
@@ -316,10 +326,10 @@ fn composition_haplotype(
         };
 
         for chr in haplotype.chromosomes() {
-            let seq = chr.sequence();
+            let seq = chr.sequence(arena);
             for i in 0..seq.len() {
                 if let Some(nuc) = seq.get(i) {
-                    *counts.entry(nuc).or_insert(0) += 1;
+                    *counts.entry(*nuc).or_insert(0) += 1;
                 }
             }
         }
@@ -331,6 +341,7 @@ fn composition_haplotype(
 fn composition_individual(
     population: &Population,
     individual_idx: usize,
+    arena: &GenomeArena,
 ) -> HashMap<Nucleotide, usize> {
     let mut counts = HashMap::new();
     counts.insert(Nucleotide::A, 0);
@@ -341,10 +352,10 @@ fn composition_individual(
     if let Some(ind) = population.individuals().get(individual_idx) {
         for haplotype in [ind.haplotype1(), ind.haplotype2()] {
             for chr in haplotype.chromosomes() {
-                let seq = chr.sequence();
+                let seq = chr.sequence(arena);
                 for i in 0..seq.len() {
                     if let Some(nuc) = seq.get(i) {
-                        *counts.entry(nuc).or_insert(0) += 1;
+                        *counts.entry(*nuc).or_insert(0) += 1;
                     }
                 }
             }
@@ -354,7 +365,10 @@ fn composition_individual(
     counts
 }
 
-fn composition_population(population: &Population) -> HashMap<Nucleotide, usize> {
+fn composition_population(
+    population: &Population,
+    arena: &GenomeArena,
+) -> HashMap<Nucleotide, usize> {
     let mut counts = HashMap::new();
     counts.insert(Nucleotide::A, 0);
     counts.insert(Nucleotide::C, 0);
@@ -364,10 +378,10 @@ fn composition_population(population: &Population) -> HashMap<Nucleotide, usize>
     for ind in population.individuals() {
         for haplotype in [ind.haplotype1(), ind.haplotype2()] {
             for chr in haplotype.chromosomes() {
-                let seq = chr.sequence();
+                let seq = chr.sequence(arena);
                 for i in 0..seq.len() {
                     if let Some(nuc) = seq.get(i) {
-                        *counts.entry(nuc).or_insert(0) += 1;
+                        *counts.entry(*nuc).or_insert(0) += 1;
                     }
                 }
             }
@@ -383,11 +397,16 @@ mod tests {
     use centrevo_sim::base::Sequence;
     use centrevo_sim::genome::{Chromosome, Haplotype, Individual, RepeatMap};
 
-    fn create_test_individual(id: &str, sequence: &[Nucleotide]) -> Individual {
+    fn create_test_individual(
+        id: &str,
+        sequence: &[Nucleotide],
+        arena: &mut GenomeArena,
+    ) -> Individual {
         let mut seq = Sequence::with_capacity(sequence.len());
         for &nuc in sequence {
             seq.push(nuc);
         }
+        let data = arena.alloc(seq.as_slice());
 
         let total_len = seq.len();
         let ru_len = if total_len > 0 { total_len } else { 10 };
@@ -396,7 +415,7 @@ mod tests {
 
         let map = RepeatMap::uniform(ru_len, rus_per_hor, num_hors);
 
-        let chr = Chromosome::new(format!("chr_{id}"), seq, map);
+        let chr = Chromosome::new(format!("chr_{id}"), data, map);
         let mut hap1 = Haplotype::new();
         hap1.push(chr);
         let hap2 = Haplotype::new();
@@ -406,78 +425,85 @@ mod tests {
 
     #[test]
     fn test_gc_content_all_gc() {
+        let mut arena = GenomeArena::new();
         let seq = vec![Nucleotide::G, Nucleotide::C, Nucleotide::G, Nucleotide::C];
-        let individuals = vec![create_test_individual("ind1", &seq)];
+        let individuals = vec![create_test_individual("ind1", &seq, &mut arena)];
         let pop = Population::new("pop1", individuals);
 
         // Chromosome level
-        let gc = gc_content(&pop, Some(0), Some(0), Some(0));
+        let gc = gc_content(&pop, Some(0), Some(0), Some(0), &arena);
         assert_eq!(gc, 1.0);
     }
 
     #[test]
     fn test_gc_content_all_at() {
+        let mut arena = GenomeArena::new();
         let seq = vec![Nucleotide::A, Nucleotide::T, Nucleotide::A, Nucleotide::T];
-        let individuals = vec![create_test_individual("ind1", &seq)];
+        let individuals = vec![create_test_individual("ind1", &seq, &mut arena)];
         let pop = Population::new("pop1", individuals);
 
         // Chromosome level
-        let gc = gc_content(&pop, Some(0), Some(0), Some(0));
+        let gc = gc_content(&pop, Some(0), Some(0), Some(0), &arena);
         assert_eq!(gc, 0.0);
     }
 
     #[test]
     fn test_gc_content_half() {
+        let mut arena = GenomeArena::new();
         let seq = vec![Nucleotide::G, Nucleotide::C, Nucleotide::A, Nucleotide::T];
-        let individuals = vec![create_test_individual("ind1", &seq)];
+        let individuals = vec![create_test_individual("ind1", &seq, &mut arena)];
         let pop = Population::new("pop1", individuals);
 
         // Chromosome level
-        let gc = gc_content(&pop, Some(0), Some(0), Some(0));
+        let gc = gc_content(&pop, Some(0), Some(0), Some(0), &arena);
         assert_eq!(gc, 0.5);
     }
 
     #[test]
     fn test_gc_content_population_level() {
+        let mut arena = GenomeArena::new();
         let seq1 = vec![Nucleotide::G, Nucleotide::C]; // GC = 1.0
         let seq2 = vec![Nucleotide::A, Nucleotide::T]; // GC = 0.0
 
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
         let pop = Population::new("pop1", individuals);
 
         // Population level - should average across all sequences
-        let pop_gc = gc_content(&pop, None, None, None);
+        let pop_gc = gc_content(&pop, None, None, None, &arena);
         assert_eq!(pop_gc, 0.5);
     }
 
     #[test]
     fn test_gc_content_individual_level() {
         // Create individual with different GC content in haplotype
+        let mut arena = GenomeArena::new();
         let seq_gc = vec![Nucleotide::G, Nucleotide::C];
-        let individuals = vec![create_test_individual("ind1", &seq_gc)];
+        let individuals = vec![create_test_individual("ind1", &seq_gc, &mut arena)];
         let pop = Population::new("pop1", individuals);
 
         // Individual level (only haplotype1 has data, haplotype2 is empty)
-        let ind_gc = gc_content(&pop, Some(0), None, None);
+        let ind_gc = gc_content(&pop, Some(0), None, None, &arena);
         assert_eq!(ind_gc, 1.0);
     }
 
     #[test]
     fn test_gc_content_haplotype_level() {
+        let mut arena = GenomeArena::new();
         let seq = vec![Nucleotide::G, Nucleotide::C];
-        let individuals = vec![create_test_individual("ind1", &seq)];
+        let individuals = vec![create_test_individual("ind1", &seq, &mut arena)];
         let pop = Population::new("pop1", individuals);
 
         // Haplotype level
-        let hap_gc = gc_content(&pop, Some(0), Some(0), None);
+        let hap_gc = gc_content(&pop, Some(0), Some(0), None, &arena);
         assert_eq!(hap_gc, 1.0);
     }
 
     #[test]
     fn test_nucleotide_composition_chromosome() {
+        let mut arena = GenomeArena::new();
         let seq = vec![
             Nucleotide::A,
             Nucleotide::A,
@@ -485,11 +511,11 @@ mod tests {
             Nucleotide::G,
             Nucleotide::C,
         ];
-        let individuals = vec![create_test_individual("ind1", &seq)];
+        let individuals = vec![create_test_individual("ind1", &seq, &mut arena)];
         let pop = Population::new("pop1", individuals);
 
         // Chromosome level
-        let comp = nucleotide_composition(&pop, Some(0), Some(0), Some(0));
+        let comp = nucleotide_composition(&pop, Some(0), Some(0), Some(0), &arena);
         assert_eq!(*comp.get(&Nucleotide::A).unwrap(), 2);
         assert_eq!(*comp.get(&Nucleotide::T).unwrap(), 1);
         assert_eq!(*comp.get(&Nucleotide::G).unwrap(), 1);
@@ -498,16 +524,17 @@ mod tests {
 
     #[test]
     fn test_nucleotide_composition_population() {
+        let mut arena = GenomeArena::new();
         let seq1 = vec![Nucleotide::A, Nucleotide::A];
         let seq2 = vec![Nucleotide::T, Nucleotide::T];
         let individuals = vec![
-            create_test_individual("ind1", &seq1),
-            create_test_individual("ind2", &seq2),
+            create_test_individual("ind1", &seq1, &mut arena),
+            create_test_individual("ind2", &seq2, &mut arena),
         ];
         let pop = Population::new("pop1", individuals);
 
         // Population level
-        let comp = nucleotide_composition(&pop, None, None, None);
+        let comp = nucleotide_composition(&pop, None, None, None, &arena);
         assert_eq!(*comp.get(&Nucleotide::A).unwrap(), 2);
         assert_eq!(*comp.get(&Nucleotide::T).unwrap(), 2);
         assert_eq!(*comp.get(&Nucleotide::G).unwrap(), 0);
@@ -516,12 +543,13 @@ mod tests {
 
     #[test]
     fn test_nucleotide_composition_individual() {
+        let mut arena = GenomeArena::new();
         let seq = vec![Nucleotide::A, Nucleotide::C];
-        let individuals = vec![create_test_individual("ind1", &seq)];
+        let individuals = vec![create_test_individual("ind1", &seq, &mut arena)];
         let pop = Population::new("pop1", individuals);
 
         // Individual level (haplotype1 has data, haplotype2 is empty)
-        let comp = nucleotide_composition(&pop, Some(0), None, None);
+        let comp = nucleotide_composition(&pop, Some(0), None, None, &arena);
         assert_eq!(*comp.get(&Nucleotide::A).unwrap(), 1);
         assert_eq!(*comp.get(&Nucleotide::C).unwrap(), 1);
         assert_eq!(*comp.get(&Nucleotide::G).unwrap(), 0);
@@ -530,16 +558,17 @@ mod tests {
 
     #[test]
     fn test_invalid_index_combinations() {
+        let mut arena = GenomeArena::new();
         let seq = vec![Nucleotide::A];
-        let individuals = vec![create_test_individual("ind1", &seq)];
+        let individuals = vec![create_test_individual("ind1", &seq, &mut arena)];
         let pop = Population::new("pop1", individuals);
 
         // Invalid: haplotype specified but not individual
-        let gc = gc_content(&pop, None, Some(0), None);
+        let gc = gc_content(&pop, None, Some(0), None, &arena);
         assert_eq!(gc, 0.0);
 
         // Invalid: chromosome specified but not haplotype
-        let gc = gc_content(&pop, Some(0), None, Some(0));
+        let gc = gc_content(&pop, Some(0), None, Some(0), &arena);
         assert_eq!(gc, 0.0);
     }
 }

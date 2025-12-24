@@ -19,6 +19,12 @@ use commands::{export, init, inspect, run, setup, validate};
 #[command(name = "centrevo")]
 #[command(author, version, about = "Simulates the evolution of centromeres over time", long_about = None)]
 struct Cli {
+    /// Number of threads to use for parallel processing
+    ///
+    /// If not specified, defaults to the number of logical CPUs.
+    #[arg(short = 't', long, global = true)]
+    threads: Option<usize>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -160,6 +166,12 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if let Some(threads) = cli.threads {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global()?;
+    }
 
     match cli.command {
         Commands::Init(args) => {
